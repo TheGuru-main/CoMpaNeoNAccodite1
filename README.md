@@ -1,2 +1,2 @@
 # CoMpaNeoNAccodite1
-AI agent
+AI coding agent

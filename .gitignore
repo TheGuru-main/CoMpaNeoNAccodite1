@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+.env
+*.db
+*.sqlite
+*.sqlite3
+buckets/
+ai_isolated_workspace/
+.pytest_cache/
+.DS_Store

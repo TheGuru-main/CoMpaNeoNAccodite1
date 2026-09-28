@@ -1,0 +1,9 @@
+[project]
+name = "accodite"
+version = "0.1.0"
+description = "Fork of CoMpaNeoN-AI into CoMpaNeoNAccodite1"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+pythonpath = ["backend"]
+testpaths = ["tests"]

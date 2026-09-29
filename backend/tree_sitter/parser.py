@@ -47,6 +47,17 @@ class ParseResult:
     source_hash: str = ""
     backend: str = "none"          # tree-sitter | python-ast | regex
 
+    def as_dict(self) -> Dict[str, Any]:
+        return {
+            "path": self.path,
+            "lang": self.lang,
+            "ok": self.ok,
+            "errors": list(self.errors),
+            "symbols": [s.as_dict() for s in self.symbols],
+            "source_hash": self.source_hash,
+            "backend": self.backend,
+        }
+
 
 # ---------------------------------------------------------------------------
 

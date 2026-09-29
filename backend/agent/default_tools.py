@@ -175,4 +175,52 @@ def build_registry(
             "matches": sorted(matches),
         }
 
+    # ---------------------------------------------------------------
+    # PAIR 3: ts.parse / ts.symbols
+    # ---------------------------------------------------------------
+
+    @reg.tool(
+        name="ts.parse",
+        category="ts",
+        description="Parse a file with tree-sitter (falls back to ast / regex).",
+        mutating=False,
+    )
+    def ts_parse(path: str) -> Dict[str, Any]:
+        from tree_sitter.parser import parse_file
+        p = ctx["guard"].resolve(path)
+        if not p.exists() or not p.is_file():
+            raise FileNotFoundError(f"no such file: {path}")
+        source = p.read_text(encoding="utf-8", errors="replace")
+        res = parse_file(str(p.relative_to(ctx["guard"].root)), source)
+        return res.as_dict()
+
+    @reg.tool(
+        name="ts.symbols",
+        category="ts",
+        description="Extract symbols from a workspace file.",
+        mutating=False,
+    )
+    def ts_symbols(
+        path: str,
+        kind: str = "",
+        limit: int = 500,
+    ) -> Dict[str, Any]:
+        from tree_sitter.parser import parse_file
+        p = ctx["guard"].resolve(path)
+        if not p.exists() or not p.is_file():
+            raise FileNotFoundError(f"no such file: {path}")
+        source = p.read_text(encoding="utf-8", errors="replace")
+        res = parse_file(str(p.relative_to(ctx["guard"].root)), source)
+        syms = [s.as_dict() for s in res.symbols]
+        if kind:
+            syms = [s for s in syms if s.get("kind") == kind]
+        return {
+            "path": str(p.relative_to(ctx["guard"].root)),
+            "lang": res.lang,
+            "backend": res.backend,
+            "ok": res.ok,
+            "count": len(syms[:limit]),
+            "symbols": syms[:limit],
+        }
+
     return reg

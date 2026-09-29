@@ -615,7 +615,7 @@ class Workspace(Base):
 
     Example:
 
-        @org
+        @AI
 
     The workspace supplies the project/room context to the AI.
     """
@@ -722,7 +722,7 @@ class Workspace(Base):
 
     ai_invocation = Column(
         String(100),
-        default="@org",
+        default="@AI",
         nullable=False,
     )
 

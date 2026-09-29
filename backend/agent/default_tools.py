@@ -223,4 +223,64 @@ def build_registry(
             "symbols": syms[:limit],
         }
 
+    # ---------------------------------------------------------------
+    # PAIR 4: lsp.diagnostics / lsp.symbols
+    # ---------------------------------------------------------------
+
+    @reg.tool(
+        name="lsp.diagnostics",
+        category="lsp",
+        description="Run LSP diagnostics on a workspace file (fallback: compiler_gate).",
+        mutating=False,
+    )
+    def lsp_diagnostics(path: str) -> Dict[str, Any]:
+        from lsp.manager import LSPManager
+        p = ctx["guard"].resolve(path)
+        if not p.exists() or not p.is_file():
+            raise FileNotFoundError(f"no such file: {path}")
+        source = p.read_text(encoding="utf-8", errors="replace")
+        mgr = ctx.get("lsp")
+        if mgr is None:
+            mgr = LSPManager()
+            ctx["lsp"] = mgr
+        diags = mgr.diagnose(
+            root=str(ctx["guard"].root),
+            path=str(p.relative_to(ctx["guard"].root)),
+            source=source,
+        )
+        return {
+            "path": str(p.relative_to(ctx["guard"].root)),
+            "backend": mgr.last_backend,
+            "count": len(diags),
+            "errors": [d.as_dict() for d in diags if d.severity == "error"],
+            "warnings": [d.as_dict() for d in diags if d.severity == "warning"],
+        }
+
+    @reg.tool(
+        name="lsp.symbols",
+        category="lsp",
+        description="Symbol view of a file (currently delegates to tree_sitter).",
+        mutating=False,
+    )
+    def lsp_symbols(
+        path: str,
+        kind: str = "",
+        limit: int = 500,
+    ) -> Dict[str, Any]:
+        from tree_sitter.parser import parse_file
+        p = ctx["guard"].resolve(path)
+        if not p.exists() or not p.is_file():
+            raise FileNotFoundError(f"no such file: {path}")
+        source = p.read_text(encoding="utf-8", errors="replace")
+        res = parse_file(str(p.relative_to(ctx["guard"].root)), source)
+        syms = [s.as_dict() for s in res.symbols]
+        if kind:
+            syms = [s for s in syms if s.get("kind") == kind]
+        return {
+            "path": str(p.relative_to(ctx["guard"].root)),
+            "backend": "tree-sitter",
+            "count": len(syms[:limit]),
+            "symbols": syms[:limit],
+        }
+
     return reg

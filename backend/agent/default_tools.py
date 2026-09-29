@@ -475,4 +475,125 @@ def build_registry(
             "stages": [s.as_dict() for s in report.stages],
         }
 
+    # ---------------------------------------------------------------
+    # PAIR 7: doc.pdf.create / archive.zip.create
+    # ---------------------------------------------------------------
+
+    @reg.tool(
+        name="doc.pdf.create",
+        category="doc",
+        description="Create a PDF from text (reportlab if available, minimal fallback).",
+        mutating=True,
+    )
+    def doc_pdf_create(
+        output: str,
+        content: str,
+        title: str = "",
+    ) -> Dict[str, Any]:
+        p = ctx["guard"].resolve(output)
+        p.parent.mkdir(parents=True, exist_ok=True)
+
+        text_lines = (content or "").splitlines() or [""]
+        try:
+            from reportlab.lib.pagesizes import A4
+            from reportlab.pdfgen import canvas
+            c = canvas.Canvas(str(p), pagesize=A4)
+            w, h = A4
+            y = h - 40
+            if title:
+                c.setFont("Helvetica-Bold", 14)
+                c.drawString(40, y, title[:80])
+                y -= 24
+            c.setFont("Helvetica", 10)
+            for line in text_lines:
+                if y < 40:
+                    c.showPage()
+                    c.setFont("Helvetica", 10)
+                    y = h - 40
+                c.drawString(40, y, line[:110])
+                y -= 14
+            c.save()
+            engine = "reportlab"
+        except ImportError:
+            # minimal valid PDF (single page, plain text)
+            escaped = (content or "").replace("(", "\\(").replace(")", "\\)")
+            body = f"BT /F1 12 Tf 40 780 Td ({escaped[:2000]}) Tj ET"
+            pdf = (
+                b"%PDF-1.4\n"
+                b"1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
+                b"2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n"
+                b"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]"
+                b"/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj\n"
+                + f"4 0 obj<</Length {len(body)}>>stream\n".encode()
+                + body.encode()
+                + b"\nendstream endobj\n"
+                b"5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\n"
+                b"xref\n0 6\n0000000000 65535 f \n"
+                b"trailer<</Size 6/Root 1 0 R>>\nstartxref\n0\n%%EOF\n"
+            )
+            p.write_bytes(pdf)
+            engine = "minimal"
+
+        return {
+            "path": str(p.relative_to(ctx["guard"].root)),
+            "size": p.stat().st_size,
+            "engine": engine,
+            "lines": len(text_lines),
+        }
+
+    @reg.tool(
+        name="archive.zip.create",
+        category="archive",
+        description="Create a ZIP from workspace files (zip-slip protected).",
+        mutating=True,
+    )
+    def archive_zip_create(
+        output: str,
+        sources: List[str],
+        compression: str = "deflate",
+    ) -> Dict[str, Any]:
+        import zipfile
+        p = ctx["guard"].resolve(output)
+        p.parent.mkdir(parents=True, exist_ok=True)
+
+        compression_map = {
+            "store":   zipfile.ZIP_STORED,
+            "deflate": zipfile.ZIP_DEFLATED,
+            "bzip2":   zipfile.ZIP_BZIP2,
+            "lzma":    zipfile.ZIP_LZMA,
+        }
+        cmode = compression_map.get(compression, zipfile.ZIP_DEFLATED)
+
+        added = []
+        skipped = []
+        with zipfile.ZipFile(str(p), "w", compression=cmode) as zf:
+            for src in sources or []:
+                try:
+                    sp = ctx["guard"].resolve(src)
+                except PermissionError:
+                    skipped.append({"src": src, "reason": "escapes workspace"})
+                    continue
+                if not sp.exists():
+                    skipped.append({"src": src, "reason": "not found"})
+                    continue
+                if sp.is_file():
+                    arc = sp.relative_to(ctx["guard"].root).as_posix()
+                    zf.write(str(sp), arcname=arc)
+                    added.append(arc)
+                elif sp.is_dir():
+                    for child in sp.rglob("*"):
+                        if child.is_file():
+                            arc = child.relative_to(ctx["guard"].root).as_posix()
+                            zf.write(str(child), arcname=arc)
+                            added.append(arc)
+
+        return {
+            "path": str(p.relative_to(ctx["guard"].root)),
+            "size": p.stat().st_size,
+            "compression": compression,
+            "added_count": len(added),
+            "added": added[:200],
+            "skipped": skipped,
+        }
+
     return reg

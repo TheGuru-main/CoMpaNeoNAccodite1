@@ -1,0 +1,118 @@
+"""
+Accodite Stream Gate
+====================
+The single boundary between "model produced output" and
+"user sees output".
+
+Flow:
+    patch → StreamGate.check() → PipelineReport
+         → if green: emit to frontend
+         → if red:   return findings + retry hint
+
+The gate never mutates the patch. It only decides.
+"""
+from __future__ import annotations
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
+
+from verification.pipeline import VerificationPipeline, PipelineReport
+from tree_sitter.languages import lang_for
+
+
+# ============================================================================
+# DECISION
+# ============================================================================
+
+@dataclass
+class GateDecision:
+    allowed: bool
+    path: str
+    lang: str
+    report: Optional[PipelineReport] = None
+    retry_hint: str = ""
+    reasons: List[str] = field(default_factory=list)
+
+    def as_dict(self) -> Dict[str, Any]:
+        return {
+            "allowed": self.allowed,
+            "path": self.path,
+            "lang": self.lang,
+            "retry_hint": self.retry_hint,
+            "reasons": list(self.reasons),
+            "report": self.report.as_dict() if self.report else None,
+        }
+
+
+# ============================================================================
+# GATE
+# ============================================================================
+
+class StreamGate:
+    def __init__(
+        self,
+        *,
+        root: str = ".",
+        pipeline: Optional[VerificationPipeline] = None,
+    ):
+        self.root = root
+        self.pipeline = pipeline or VerificationPipeline(
+            root=root, stop_on_first_failure=True,
+        )
+
+    # -----------------------------------------------------------------
+
+    def check(
+        self,
+        *,
+        path: str,
+        source: str,
+        lang: Optional[str] = None,
+        run_tests: bool = True,
+        run_security: bool = True,
+    ) -> GateDecision:
+        lang = lang or lang_for(path or "")
+
+        # trivial rejects before touching the pipeline
+        if not source or not source.strip():
+            return GateDecision(
+                allowed=False, path=path, lang=lang,
+                reasons=["empty patch"],
+                retry_hint="the patch is empty; produce a non-empty candidate",
+            )
+
+        report = self.pipeline.verify(
+            path=path, source=source, lang=lang,
+            run_tests=run_tests, run_security=run_security,
+        )
+
+        if report.ok:
+            return GateDecision(
+                allowed=True, path=path, lang=lang,
+                report=report,
+                reasons=["all gates passed"],
+            )
+
+        # build retry hint from the first failing stage
+        reasons: List[str] = []
+        hint_bits: List[str] = []
+        for s in report.stages:
+            if not s.ok and not s.skipped:
+                reasons.append(f"{s.name}: {len(s.findings)} finding(s)"
+                               + (f" — {s.error}" if s.error else ""))
+                for f in s.findings[:3]:
+                    msg = f.get("message") or f.get("pattern") or str(f)
+                    line = f.get("line", "?")
+                    hint_bits.append(f"  - [{s.name}] line {line}: {msg}")
+
+        retry_hint = (
+            "the patch failed verification; fix the following before retrying:
+"
+            + "
+".join(hint_bits) if hint_bits else
+            "the patch failed verification; inspect the report and retry"
+        )
+
+        return GateDecision(
+            allowed=False, path=path, lang=lang,
+            report=report, reasons=reasons, retry_hint=retry_hint,
+        )

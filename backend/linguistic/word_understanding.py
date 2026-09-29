@@ -975,6 +975,68 @@ class WordUnderstanding:
 # FACTORY
 # =====================================================================
 
+    def get_context_with_learning(
+        self,
+        query,
+        *args,
+        learn: bool = True,
+        **kwargs,
+    ):
+        """
+        Token-by-token wrapper around get_context().
+
+        For each token in the query:
+            1. feed it to LearnWords.learn_record (if available)
+            2. detect langdetect language per token
+            3. call memory.symbols.recognize_symbols per token
+        Then delegate to the original get_context and merge results.
+        """
+        import re as _re
+        token_details = []
+        try:
+            from learnwords import LearnWords, learn_words
+        except Exception:
+            LearnWords = None
+            learn_words = None
+
+        learner = None
+        if learn and LearnWords is not None:
+            try:
+                learner = LearnWords()
+            except Exception:
+                learner = None
+
+        for tok in _re.findall(r"[A-Za-z_][A-Za-z0-9_]*", query or ""):
+            info = {"token": tok}
+
+            try:
+                info["lang"] = detect_lang(tok)
+            except Exception:
+                info["lang"] = "en"
+
+            try:
+                info["symbols"] = recognize_symbols(tok)
+            except Exception:
+                info["symbols"] = []
+
+            if learner is not None:
+                try:
+                    learner.learn_record(tok)
+                except Exception:
+                    pass
+            elif learn_words is not None:
+                try:
+                    learn_words(tok)
+                except Exception:
+                    pass
+
+            token_details.append(info)
+
+        base = self.get_context(query, *args, **kwargs) or {}
+        if isinstance(base, dict):
+            base = {**base, "token_details": token_details}
+        return base
+
 def create_word_understanding(
     memory_grid: MemoryGrid,
     word_chain: Optional[WordChain] = None,

@@ -5,14 +5,38 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from langdetect import detect, LangDetectException
+try:
+    import torch
+    import torch.nn as nn
+    import torch.optim as optim
+    TORCH_AVAILABLE = True
+except ImportError:
+    torch = None
+    nn = None
+    optim = None
+    TORCH_AVAILABLE = False
 
-from ai_model import MiniCompanionAI
-from memory_grid import MemoryGrid
-from tokenizer import tokenize, normalize_lang
+try:
+    from langdetect import detect, LangDetectException
+except ImportError:
+    def detect(_): return "en"
+    class LangDetectException(Exception): pass
+
+try:
+    from ai_model import MiniCompanionAI
+except ImportError:
+    MiniCompanionAI = None
+
+try:
+    from memory_grid import MemoryGrid
+except ImportError:
+    MemoryGrid = None
+
+try:
+    from tokenizer import tokenize, normalize_lang
+except ImportError:
+    def tokenize(t): return (t or "").split()
+    def normalize_lang(l): return l or "en"
 
 
 # ============================================================================
@@ -878,6 +902,96 @@ async def auto_train_monitor():
 # ============================================================================
 # START BACKGROUND TRAINING
 # ============================================================================
+
+def run_consolidation_cycle(
+    grid: "MemoryGrid" = None,
+    top_k: int = 200,
+) -> Dict[str, Any]:
+    """
+    Consolidation pass:
+        1. collect MemoryGrid texts (existing helper)
+        2. filter via data.filter.DataFilter.is_training_worthy
+        3. feed survivors to FineTunerAndWeightScalar.process
+        4. return counters
+
+    Safe to call from the background daemon alongside train_model().
+    """
+    report = {
+        "collected": 0,
+        "kept": 0,
+        "rejected": 0,
+        "processed": 0,
+        "errors": 0,
+    }
+
+    try:
+        texts = collect_memorygrid_texts()
+    except Exception:
+        texts = []
+
+    report["collected"] = len(texts)
+    if not texts:
+        return report
+
+    # --- filter ---
+    try:
+        from data.filter import DataFilter
+        dfilter = DataFilter()
+    except Exception:
+        dfilter = None
+
+    kept = []
+    for t in texts[:top_k]:
+        if dfilter is None:
+            kept.append(t)
+            continue
+        try:
+            ok = dfilter.is_training_worthy(t) if hasattr(dfilter, "is_training_worthy") else True
+        except Exception:
+            ok = True
+        if ok:
+            kept.append(t)
+        else:
+            report["rejected"] += 1
+
+    report["kept"] = len(kept)
+    if not kept:
+        return report
+
+    # --- fine tuner ---
+    try:
+        from training.finetuner import FineTunerAndWeightScalar
+    except Exception:
+        try:
+            from finetuner import FineTunerAndWeightScalar
+        except Exception:
+            return report
+
+    try:
+        ft = FineTunerAndWeightScalar()
+    except Exception:
+        try:
+            ft = FineTunerAndWeightScalar.__new__(FineTunerAndWeightScalar)
+        except Exception:
+            return report
+
+    for t in kept:
+        try:
+            if hasattr(ft, "process"):
+                ft.process(t)
+            elif hasattr(ft, "process_user_input"):
+                ft.process_user_input(t)
+            report["processed"] += 1
+        except Exception:
+            report["errors"] += 1
+
+    try:
+        print(f"[consolidation] {report}")
+    except Exception:
+        pass
+
+    return report
+
 
 def start_background_training():
     """

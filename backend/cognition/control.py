@@ -65,6 +65,9 @@ class CognitionControl:
         # per-instance allocator (one brain = one allocator)
         self.allocator = HeadAllocator()
 
+        # user/workspace preference memory (optional)
+        self.preference_store = None
+
         # detector is optional until write/route callbacks are provided
         self.detector: Optional[PatternDetector] = None
 
@@ -134,12 +137,25 @@ class CognitionControl:
         self._last_head_map = _head_map
         self._last_seg_to_idx = _seg_to_idx
 
+        # preference block (per user / workspace)
+        pref_block = ""
+        if self.preference_store is not None and user_id and workspace_id:
+            try:
+                pref_block = self.pm._preference_block(
+                    user_id=user_id,
+                    workspace_id=workspace_id,
+                    store=self.preference_store,
+                ) if self.pm is not None else ""
+            except Exception:
+                pref_block = ""
+
         bundle = self._compose_bundle(
             query=query,
             intent=intent,
             segments=segments,
             binding_plan=binding_plan,
             role=role,
+            preference_context=pref_block,
         )
 
         self._trace("plan_query", {
@@ -166,6 +182,7 @@ class CognitionControl:
         segments: List[Segment],
         binding_plan,
         role: str,
+        preference_context: str = "",
     ) -> Dict[str, Any]:
         """
         Prefer prompt_manager if it exposes a builder; otherwise
@@ -185,6 +202,7 @@ class CognitionControl:
             "domain_pack": self.cfg.domain_pack,
             "dialect": self.cfg.dialect,
             "approval_required_for": sorted(self.cfg.require_approval_for),
+            "preference_context": preference_context,
         }
 
         if self.pm is None:
@@ -286,6 +304,10 @@ class CognitionControl:
 
     def last_segment_to_idx(self) -> dict:
         return dict(self._last_seg_to_idx)
+
+    def set_preference_store(self, store) -> None:
+        """Attach a UserWorkspacePreferenceStore for prompt injection."""
+        self.preference_store = store
 
     def _trace(self, action: str, payload: dict) -> None:
         if self.tracer is None:

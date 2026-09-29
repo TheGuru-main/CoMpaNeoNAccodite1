@@ -1231,6 +1231,7 @@ class PromptManager:
         domain_pack: str = "general",
         dialect: Optional[str] = None,
         approval_required_for: Optional[List[str]] = None,
+        preference_context: str = "",
     ) -> str:
         """
         Assemble the final prompt string sent to the model.
@@ -1322,6 +1323,10 @@ class PromptManager:
         if last_message:
             parts.append(f"Last message:\n{last_message.strip()}")
 
+        # --- USER / WORKSPACE PREFERENCES ---
+        if preference_context:
+            parts.append("User preferences (along/pivot):\n" + preference_context.strip())
+
         # --- CONTEXT + QUERY ---
         if context:
             parts.append(f"Retrieved context:\n{context.strip()}")
@@ -1370,6 +1375,41 @@ class PromptManager:
     # BUNDLE ENTRY (called by CognitionControl)
     # ==========================================================================
 
+    def _preference_block(
+        self,
+        *,
+        user_id: str,
+        workspace_id: str,
+        store: Any = None,
+        top_k: int = 5,
+    ) -> str:
+        """Build a preference block from a UserWorkspacePreferenceStore."""
+        if store is None:
+            return ""
+        try:
+            summary = store.summary(user_id, workspace_id, k=top_k)
+        except Exception:
+            return ""
+        along = summary.get("along") or []
+        pivot = summary.get("pivot") or []
+        if not along and not pivot:
+            return ""
+
+        lines = []
+        if along:
+            lines.append("ALONG (user tends to accept these):")
+            for e in along:
+                s = e.get("strength", 0)
+                lines.append(f"  - ({s:.2f}) {e.get('text','')}")
+        if pivot:
+            lines.append("PIVOT (user redirected here; respect these):")
+            for e in pivot:
+                s = e.get("strength", 0)
+                d = e.get("direction") or ""
+                tail = f" [{d}]" if d else ""
+                lines.append(f"  - ({s:.2f}) {e.get('text','')}{tail}")
+        return "\n".join(lines)
+
     def build_prompt_from_bundle(self, bundle: Dict[str, Any]) -> str:
         """
         Unpack a bundle dict (from CognitionControl) into build_prompt kwargs.
@@ -1388,6 +1428,7 @@ class PromptManager:
             "code_mode", "verification_level", "max_iterations",
             "allow_mutations", "domain_pack", "dialect",
             "approval_required_for",
+            "preference_context",
         }
         kwargs = {k: v for k, v in (bundle or {}).items() if k in allowed}
         return self.build_prompt(**kwargs)

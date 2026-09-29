@@ -1,8 +1,24 @@
 import os
 import json
 import asyncio
-import torch
-import torch.nn.functional as F
+
+# ACCD-TORCH-GUARD: torch is optional at import time.
+# Real inference requires torch; everything else works without it.
+try:
+    import torch
+    import torch.nn.functional as F
+    TORCH_AVAILABLE = True
+except ImportError:
+    torch = None
+    F = None
+    TORCH_AVAILABLE = False
+    import warnings
+    warnings.warn(
+        "torch not installed — model inference is disabled. "
+        "Install torch on the runtime to enable generation.",
+        RuntimeWarning, stacklevel=2,
+    )
+
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -35,11 +51,18 @@ from summary import generate_summary as generate_ai_summary
 from follow_up import generate_follow_ups
 from message import send_message, get_conversations, get_messages_between, DirectMessage
 
+# ACCD-INTEGRATION
+from integration import (
+    bootstrap as accd_bootstrap,
+    handle_message as accd_handle_message,
+    verify_and_frame as accd_verify_and_frame,
+)
+
 app = FastAPI(title="CoMpaNeoN AI", version="1.0.0")
 
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = (torch.device("cuda" if torch.cuda.is_available() else "cpu") if TORCH_AVAILABLE else "cpu")
 
 # Global components
 model: Optional[MiniCompanionAI] = None
@@ -65,7 +88,7 @@ def load_model_if_exists():
     else:
         tokenizer_vocab = {"<pad>":0, "<unk>":1, "<start>":2, "<end>":3}
         reverse_vocab = {0:"<pad>",1:"<unk>",2:"<start>",3:"<end>"}
-    if os.path.exists('companion_model.pth'):
+    if os.path.exists('companion_model.pth') and TORCH_AVAILABLE:
         model = MiniCompanionAI(len(tokenizer_vocab))
         model.load_state_dict(torch.load('companion_model.pth', map_location=device))
         model.to(device)
@@ -74,6 +97,12 @@ def load_model_if_exists():
         model = None
 
 load_model_if_exists()
+
+# ACCD-INTEGRATION: build pipeline singletons (idempotent)
+try:
+    accd_bootstrap(root=os.path.dirname(os.path.abspath(__file__)) + "/..")
+except Exception as _accd_boot_err:
+    print(f"[ACCD] bootstrap error: {type(_accd_boot_err).__name__}: {_accd_boot_err}")
 
 # Helpers
 def encode_text(text: str, lang: str = "en") -> List[int]:
@@ -92,6 +121,8 @@ def get_context_from_memory(query: str) -> str:
     return word_understanding.get_context(query)
 
 def generate_from_prompt(prompt: str, max_len: int, temperature: float) -> str:
+    if not TORCH_AVAILABLE:
+        return prompt
     if model is not None and tokenizer_vocab is not None:
         input_ids = torch.tensor([encode_text(prompt)], dtype=torch.long).to(device)
         output_ids = []
@@ -356,13 +387,36 @@ async def add_workspace_message(
 
         db.commit()
 
+        # ACCD-INTEGRATION: decide whether the AI should respond
+        try:
+            from models_org import WorkspaceMember
+            member_count = 1 + db.query(WorkspaceMember).filter(
+                WorkspaceMember.workspace_id == ws.id
+            ).count()
+        except Exception:
+            member_count = 1
+
+        try:
+            ai_state = accd_handle_message(
+                workspace_id=str(ws.id),
+                user_id=str(user.id),
+                text=req.content,
+                member_count=member_count,
+            )
+        except Exception as e:
+            ai_state = {"invoked": False, "trigger": None,
+                        "error": f"{type(e).__name__}: {e}"}
+
         return {
             "ok": True,
             "workspace_id": str(ws.id),
             "keywords": all_keywords,
             "grid_cv": project_grid_cv,
             "domain": message_domain,
-            "temporal_context": temporal_context
+            "temporal_context": temporal_context,
+            "member_count": member_count,
+            "ai_invoked": ai_state.get("invoked", False),
+            "ai_trigger": ai_state.get("trigger"),
         }
 
     finally:
@@ -448,6 +502,13 @@ async def generate_in_workspace(
         if not enforce_rules(generated, user.temperament):
             generated = "I apologize, I cannot provide that answer."
 
+        # ACCD-INTEGRATION: verify every code block before it reaches the client
+        try:
+            accd_frames, accd_summary = accd_verify_and_frame(generated)
+        except Exception as e:
+            accd_frames = [f"#error#integration: {type(e).__name__}: {e}"]
+            accd_summary = {"error": str(e)}
+
         msg = Message(
             workspace_id=ws.id,
             user_id=user.id,
@@ -466,6 +527,8 @@ async def generate_in_workspace(
 
         return {
             "generated": generated,
+            "frames": accd_frames,
+            "verification": accd_summary,
             "workspace": {
                 "id": str(ws.id),
                 "project_name": ws.project_name,

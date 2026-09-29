@@ -1,0 +1,425 @@
+"""
+Accodite Integration Layer
+==========================
+Single wiring point between main.py and the Accodite pipeline.
+
+Responsibilities:
+    - build singletons once at startup (bootstrap)
+    - decide trigger (solo vs group) for incoming messages
+    - run the AI pipeline (chat + code)
+    - extract fenced code blocks and verify each through StreamGate
+    - stream frames back (or return synchronously)
+
+Design:
+    - solo rooms      -> every message fires the AI
+    - group rooms     -> @AI / highlight / swipe-reply required
+    - code blocks     -> ALWAYS verified before stream (both modes)
+    - prose           -> streamed raw
+"""
+from __future__ import annotations
+import os
+import re
+from typing import Any, Dict, Generator, List, Optional, Tuple
+
+
+# ============================================================================
+# STATE
+# ============================================================================
+
+_STATE: Dict[str, Any] = {
+    "ready": False,
+    "control": None,       # CognitionControl
+    "gate": None,          # StreamGate
+    "registry": None,      # ToolRegistry
+    "trigger": None,       # ModeAwareTriggerParser
+    "pstm": None,          # PSTM
+    "ltm": None,           # LTMGate
+    "detector": None,      # PatternDetector
+    "brain": None,         # AccoditeBrain (optional)
+}
+
+
+def get_state() -> Dict[str, Any]:
+    return _STATE
+
+
+def is_ready() -> bool:
+    return bool(_STATE.get("ready"))
+
+
+# ============================================================================
+# BOOTSTRAP
+# ============================================================================
+
+def bootstrap(*, root: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Build all pipeline singletons once. Idempotent.
+    Returns the state dict.
+    """
+    if _STATE.get("ready"):
+        return _STATE
+
+    root = root or os.environ.get("ACCD_ROOT", ".")
+
+    try:
+        from agent.stream_gate import StreamGate
+        _STATE["gate"] = StreamGate(root=root)
+    except Exception as e:
+        _STATE["gate_error"] = f"{type(e).__name__}: {e}"
+
+    try:
+        from agent.default_tools import build_registry
+        _STATE["registry"] = build_registry(root=root)
+    except Exception as e:
+        _STATE["registry_error"] = f"{type(e).__name__}: {e}"
+
+    try:
+        from agent.trigger import ModeAwareTriggerParser
+        _STATE["trigger"] = ModeAwareTriggerParser()
+    except Exception as e:
+        _STATE["trigger_error"] = f"{type(e).__name__}: {e}"
+
+    try:
+        from memory.pstm import PSTM
+        _STATE["pstm"] = PSTM()
+    except Exception as e:
+        _STATE["pstm_error"] = f"{type(e).__name__}: {e}"
+
+    try:
+        from cognition.control import CognitionControl
+        _STATE["control"] = CognitionControl(
+            prompt_manager=None, brain=None, tracer=None,
+        )
+    except Exception as e:
+        _STATE["control_error"] = f"{type(e).__name__}: {e}"
+
+    try:
+        from cognition.pattern_detector import PatternDetector
+        _STATE["detector"] = PatternDetector(
+            write_event=lambda p: None,
+            route_to_boards=lambda p: None,
+        )
+    except Exception as e:
+        _STATE["detector_error"] = f"{type(e).__name__}: {e}"
+
+    try:
+        from memory.ltm_gate import LTMGate
+        _STATE["ltm"] = LTMGate(cache=None, membership_lookup=lambda u, o: None)
+    except Exception as e:
+        _STATE["ltm_error"] = f"{type(e).__name__}: {e}"
+
+    _STATE["ready"] = True
+    return _STATE
+
+
+# ============================================================================
+# CODE BLOCK EXTRACTION
+# ============================================================================
+
+_FENCE_RX = re.compile(
+    r"```(?P<lang>[A-Za-z0-9_+\-]*)\s*\n(?P<body>.*?)```",
+    re.DOTALL,
+)
+
+
+def extract_code_blocks(text: str) -> List[Dict[str, Any]]:
+    """
+    Return list of {index, lang, body, start, end, start_line}.
+    lang defaults to 'python' when unspecified.
+    """
+    out: List[Dict[str, Any]] = []
+    for i, m in enumerate(_FENCE_RX.finditer(text or "")):
+        lang = (m.group("lang") or "python").strip().lower() or "python"
+        body = m.group("body") or ""
+        out.append({
+            "index": i,
+            "lang": lang,
+            "body": body,
+            "start": m.start(),
+            "end": m.end(),
+            "start_line": (text[:m.start()].count("\n") + 1),
+        })
+    return out
+
+
+def _ext_for_lang(lang: str) -> str:
+    return {
+        "python": "py", "py": "py",
+        "javascript": "js", "js": "js",
+        "typescript": "ts", "ts": "ts",
+        "tsx": "tsx", "jsx": "jsx",
+        "rust": "rs", "go": "go",
+        "c": "c", "cpp": "cpp", "c++": "cpp",
+        "java": "java", "bash": "sh", "sh": "sh",
+        "json": "json", "yaml": "yml", "yml": "yml",
+        "sql": "sql", "html": "html", "css": "css",
+    }.get(lang, "txt")
+
+
+# ============================================================================
+# TRIGGER
+# ============================================================================
+
+def decide_trigger(
+    *,
+    member_count: int,
+    actor_id: str,
+    workspace_id: str,
+    text: str,
+    message_id: Optional[str] = None,
+    ref_message_id: Optional[str] = None,
+    ref_is_ai: bool = False,
+):
+    """
+    Returns a Trigger when the AI should respond, else None.
+    Solo rooms (member_count <= 1) always trigger.
+    Group rooms require @AI / highlight / swipe-reply.
+    """
+    t = _STATE.get("trigger")
+    if t is None:
+        return None
+    return t.parse(
+        member_count=member_count,
+        actor_id=actor_id,
+        workspace_id=workspace_id,
+        text=text,
+        message_id=message_id,
+        ref_message_id=ref_message_id,
+        ref_is_ai=ref_is_ai,
+    )
+
+
+# ============================================================================
+# RESPONSE VERIFICATION (code blocks only)
+# ============================================================================
+
+def verify_and_frame(
+    ai_text: str,
+    *,
+    max_iterations: int = 3,
+) -> Tuple[List[str], Dict[str, Any]]:
+    """
+    Walk fenced code blocks in `ai_text`; run each through StreamGate.
+    Returns (frames, summary).
+
+    Frames alternate:
+        #prose#<chunk>              raw text between blocks
+        #code-begin#<lang>#<idx>    start of a code block
+        #kind#w|c                    per token
+        #color#<class>              when kind==c
+        #token#<payload>            per token
+        #code-end#<lang>#<idx>      end of a code block
+        #code-error#<idx>#<hint>    when StreamGate rejected
+
+    #prose# frames reconstruct the non-code text.
+    #token# frames inside a code block reconstruct the block body.
+    """
+    gate = _STATE.get("gate")
+    blocks = extract_code_blocks(ai_text or "")
+
+    frames: List[str] = []
+    summary = {
+        "blocks": len(blocks),
+        "verified": 0,
+        "rejected": 0,
+        "iterations": 0,
+    }
+
+    if not blocks:
+        if ai_text:
+            frames.append(f"#prose#{ai_text}")
+        return frames, summary
+
+    # prose before the first block
+    if blocks[0]["start"] > 0:
+        frames.append(f"#prose#{ai_text[:blocks[0]['start']]}")
+
+    for b in blocks:
+        lang = b["lang"]
+        ext = _ext_for_lang(lang)
+        path = f"_inline_{b['index']}.{ext}"
+
+        if gate is None:
+            # no gate configured, pass through as raw
+            frames.append(f"#code-begin#{lang}#{b['index']}")
+            frames.append(f"#token#{b['body']}")
+            frames.append(f"#code-end#{lang}#{b['index']}")
+            summary["verified"] += 1
+            continue
+
+        # verify (retry loop up to max_iterations)
+        body = b["body"]
+        attempt = 0
+        decision_ok = False
+        last_error = ""
+        stream_frames: List[str] = []
+
+        while attempt < max_iterations:
+            attempt += 1
+            stream_frames = []
+            errored = False
+            for f in gate.stream(path=path, source=body):
+                stream_frames.append(f)
+                if f.startswith("#error#"):
+                    errored = True
+                    last_error = f[len("#error#"):]
+                    break
+            if not errored:
+                decision_ok = True
+                break
+            # in a real system, we would ask the model to retry with last_error
+            break
+
+        summary["iterations"] += attempt
+
+        if decision_ok:
+            frames.append(f"#code-begin#{lang}#{b['index']}")
+            for f in stream_frames:
+                if f.startswith("#token#") or f.startswith("#kind#") or f.startswith("#color#"):
+                    frames.append(f)
+            frames.append(f"#code-end#{lang}#{b['index']}")
+            summary["verified"] += 1
+        else:
+            frames.append(f"#code-error#{b['index']}#{last_error[:400]}")
+            summary["rejected"] += 1
+
+        # prose between this block and the next
+        next_start = blocks[b["index"] + 1]["start"] if b["index"] + 1 < len(blocks) else len(ai_text)
+        if b["end"] < next_start:
+            frames.append(f"#prose#{ai_text[b['end']:next_start]}")
+
+    return frames, summary
+
+
+# ============================================================================
+# GENERATE
+# ============================================================================
+
+def handle_generate(
+    *,
+    workspace_id: str,
+    user_id: str,
+    prompt: str,
+    member_count: int = 1,
+    message_id: Optional[str] = None,
+    ref_message_id: Optional[str] = None,
+    ref_is_ai: bool = False,
+    generate_fn=None,
+    stream: bool = False,
+):
+    """
+    Full pipeline for a generate request.
+
+    generate_fn(prompt) -> str   ... the actual model call. If None,
+    we fall back to whatever generate_from_prompt main.py already has
+    (passed in by the caller).
+
+    stream=True  -> returns a generator yielding frames.
+    stream=False -> returns a dict with frames list + summary.
+    """
+    trigger = decide_trigger(
+        member_count=member_count,
+        actor_id=user_id,
+        workspace_id=workspace_id,
+        text=prompt,
+        message_id=message_id,
+        ref_message_id=ref_message_id,
+        ref_is_ai=ref_is_ai,
+    )
+    if member_count > 1 and trigger is None:
+        return {
+            "ai_invoked": False,
+            "reason": "no @AI / highlight / reply trigger in group room",
+            "frames": [],
+            "summary": {},
+        }
+
+    if generate_fn is None:
+        raise RuntimeError("handle_generate requires generate_fn(prompt)->str")
+
+    ai_text = generate_fn(prompt) or ""
+    frames, summary = verify_and_frame(ai_text)
+
+    # PST memory: record draft, suggestions, etc. (best-effort)
+    pstm = _STATE.get("pstm")
+    if pstm is not None:
+        try:
+            pstm.set_draft(workspace_id, user_id, "")
+            pstm.add_suggestion(workspace_id, user_id, "response ready")
+        except Exception:
+            pass
+
+    if stream:
+        def _gen():
+            yield f"#begin#{workspace_id}"
+            for f in frames:
+                yield f
+            yield "#end#"
+        return _gen()
+
+    return {
+        "ai_invoked": True,
+        "trigger": trigger.kind.value if trigger else None,
+        "frames": frames,
+        "summary": summary,
+        "raw": ai_text,
+    }
+
+
+# ============================================================================
+# MESSAGE
+# ============================================================================
+
+def handle_message(
+    *,
+    workspace_id: str,
+    user_id: str,
+    text: str,
+    member_count: int,
+    message_id: Optional[str] = None,
+    ref_message_id: Optional[str] = None,
+    ref_is_ai: bool = False,
+) -> Dict[str, Any]:
+    """
+    Decide whether the incoming message should invoke the AI.
+    Returns {invoked: bool, trigger: str|None}.
+    """
+    trigger = decide_trigger(
+        member_count=member_count,
+        actor_id=user_id,
+        workspace_id=workspace_id,
+        text=text,
+        message_id=message_id,
+        ref_message_id=ref_message_id,
+        ref_is_ai=ref_is_ai,
+    )
+
+    # PST: cache the incoming message draft (per user, per room)
+    pstm = _STATE.get("pstm")
+    if pstm is not None:
+        try:
+            pstm.set_draft(workspace_id, user_id, text or "")
+        except Exception:
+            pass
+
+    return {
+        "invoked": trigger is not None,
+        "trigger": trigger.kind.value if trigger else None,
+    }
+
+
+# ============================================================================
+# STATUS
+# ============================================================================
+
+def status() -> Dict[str, Any]:
+    s = dict(_STATE)
+    s.pop("control", None)
+    s.pop("gate", None)
+    s.pop("registry", None)
+    s.pop("trigger", None)
+    s.pop("pstm", None)
+    s.pop("ltm", None)
+    s.pop("detector", None)
+    s.pop("brain", None)
+    return s

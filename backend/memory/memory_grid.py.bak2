@@ -911,77 +911,9 @@ class MemoryGrid:
 
         return document_id
 
-    # ========================================================================
-    # TOKEN RECORD
-    # ========================================================================
-
-    def _build_token_record(
-        self,
-        token: Dict[str, Any],
-        position: int,
-        document: Dict[str, Any],
-        placement: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        """
-        Build the token record used by every MemoryGrid index route.
-        """
-        token_data = token if isinstance(token, dict) else {}
-
-        original = (
-            token_data.get("original")
-            or token_data.get("token")
-            or token_data.get("word")
-            or ""
-        )
-        if isinstance(original, dict):
-            original = original.get("text") or str(original)
-        original = str(original)
-
-        stem = (
-            token_data.get("stem")
-            or token_data.get("token")
-            or original
-        )
-        if isinstance(stem, dict):
-            stem = str(stem)
-        stem = str(stem)
-
-        word_data = token_data.get("word") or {}
-        if not isinstance(word_data, dict):
-            word_data = {}
-
-        tokenizer_c = token_data.get("c", 0)
-        try:
-            tokenizer_c = int(tokenizer_c)
-        except Exception:
-            tokenizer_c = 0
-
-        row = token_data.get("row") or placement.get("start_row") or 1
-        try:
-            row = int(row)
-        except Exception:
-            row = 1
-
-        col = (
-            token_data.get("col")
-            or token_data.get("language_phase")
-            or placement.get("start_col")
-            or 0
-        )
-        try:
-            col = int(col)
-        except Exception:
-            col = 0
-
-        language_phase = token_data.get("language_phase", col)
-        try:
-            language_phase = int(language_phase)
-        except Exception:
-            language_phase = col
-
-        normalized_letters = token_data.get("letter") or []
-        if not isinstance(normalized_letters, (list, tuple)):
-            normalized_letters = []
+# --------------------------------------------------------------------
+        # TOKEN RECORD
+        # --------------------------------------------------------------------
 
         return {
 

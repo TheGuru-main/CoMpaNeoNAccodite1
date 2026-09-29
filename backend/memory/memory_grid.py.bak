@@ -160,26 +160,6 @@ from keyboard import (
 
 
 # ============================================================================
-# CODE TOKENIZER  (code-aware placement)
-# ============================================================================
-
-try:
-    from code_tokenizer import (
-        code_word_cell,
-        classify_code_token,
-        split_code_identifiers,
-        tokenize_code,
-    )
-    CODE_TOKENIZER_AVAILABLE = True
-except ImportError:
-    CODE_TOKENIZER_AVAILABLE = False
-    code_word_cell = None
-    classify_code_token = None
-    split_code_identifiers = None
-    tokenize_code = None
-
-
-# ============================================================================
 # GRID DIMENSIONS
 # ============================================================================
 
@@ -911,77 +891,9 @@ class MemoryGrid:
 
         return document_id
 
-    # ========================================================================
-    # TOKEN RECORD
-    # ========================================================================
-
-    def _build_token_record(
-        self,
-        token: Dict[str, Any],
-        position: int,
-        document: Dict[str, Any],
-        placement: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        """
-        Build the token record used by every MemoryGrid index route.
-        """
-        token_data = token if isinstance(token, dict) else {}
-
-        original = (
-            token_data.get("original")
-            or token_data.get("token")
-            or token_data.get("word")
-            or ""
-        )
-        if isinstance(original, dict):
-            original = original.get("text") or str(original)
-        original = str(original)
-
-        stem = (
-            token_data.get("stem")
-            or token_data.get("token")
-            or original
-        )
-        if isinstance(stem, dict):
-            stem = str(stem)
-        stem = str(stem)
-
-        word_data = token_data.get("word") or {}
-        if not isinstance(word_data, dict):
-            word_data = {}
-
-        tokenizer_c = token_data.get("c", 0)
-        try:
-            tokenizer_c = int(tokenizer_c)
-        except Exception:
-            tokenizer_c = 0
-
-        row = token_data.get("row") or placement.get("start_row") or 1
-        try:
-            row = int(row)
-        except Exception:
-            row = 1
-
-        col = (
-            token_data.get("col")
-            or token_data.get("language_phase")
-            or placement.get("start_col")
-            or 0
-        )
-        try:
-            col = int(col)
-        except Exception:
-            col = 0
-
-        language_phase = token_data.get("language_phase", col)
-        try:
-            language_phase = int(language_phase)
-        except Exception:
-            language_phase = col
-
-        normalized_letters = token_data.get("letter") or []
-        if not isinstance(normalized_letters, (list, tuple)):
-            normalized_letters = []
+# --------------------------------------------------------------------
+        # TOKEN RECORD
+        # --------------------------------------------------------------------
 
         return {
 
@@ -1068,29 +980,6 @@ class MemoryGrid:
         crawler rooters.
         """
 
-
-        # --------------------------------------------------------------
-        # ACC_CODE_BRANCH
-        # Additive: code recognition + color-class routing.
-        # Existing word/letter/storage/phase routes below remain unchanged.
-        # --------------------------------------------------------------
-        tk = token.get("token") or token.get("original") or ""
-        if tk:
-            try:
-                from code_tokenizer import classify_code_token, code_word_cell
-                color = classify_code_token(tk)
-                token["color_class"] = color
-                if color not in ("IDENT_VAR", "IDENT"):
-                    token["kind"] = "code"
-                    ccol = code_word_cell(tk)["c"]
-                    token["code_col"] = ccol
-                    if not hasattr(self, "code_index"):
-                        self.code_index = {}
-                    self.code_index.setdefault(ccol, []).append(token)
-                else:
-                    token["kind"] = "word"
-            except Exception:
-                token["kind"] = token.get("kind", "word")
         row = (
             _normalise_row(
                 token[

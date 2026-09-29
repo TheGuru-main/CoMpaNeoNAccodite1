@@ -187,6 +187,14 @@ DEFAULT_PROJECT_STATE = "active"
 
 DEFAULT_PARTITION_LIMIT = 250
 
+# Accodite extended scopes (used by PSTM and preference store)
+PARTITION_SCOPE_PSTM       = "pstm"
+PARTITION_SCOPE_PREFERENCE = "preference"
+PARTITION_SCOPES = (
+    PARTITION_SCOPE_PSTM,
+    PARTITION_SCOPE_PREFERENCE,
+)
+
 
 # ============================================================================
 # TIME
@@ -2352,6 +2360,114 @@ class MemoryPartition:
 # ============================================================================
 # FUNCTIONAL API
 # ============================================================================
+
+    # ======================================================================
+    # EXTENDED SCOPES — PSTM + PREFERENCE
+    # ======================================================================
+
+    def partition_pstm(
+        self,
+        *,
+        user_id: str,
+        room_id: str,
+        payload: Dict[str, Any],
+        domain: str = DEFAULT_DOMAIN,
+        role: str = DEFAULT_ROLE,
+        project_id: str = "",
+    ) -> Dict[str, Any]:
+        """
+        Return a partition reference for a per-(user, room) PSTM entry.
+
+        Same GSP-XOR shard math, different scope tag. Does not mutate
+        MemoryGrid; caller decides whether to also index content.
+        """
+        key = self.build_partition_key(
+            domain=domain,
+            hierarchy=room_id or DEFAULT_HIERARCHY,
+            role=role,
+            project_id=project_id,
+            project_context=user_id,
+        )
+        pid = self.partition_id(key)
+
+        # GSP-FIX
+        shard = self.gsp_xor_quorum(
+            domain=key.domain,
+            hierarchy=key.hierarchy,
+            role=key.role,
+            project_id=key.project_id,
+            relevancy_bucket=getattr(key, "relevancy_bucket", DEFAULT_RELEVANCY),
+        )
+
+        return {
+            "scope": PARTITION_SCOPE_PSTM,
+            "user_id": user_id,
+            "room_id": room_id,
+            "project_id": project_id,
+            "partition_id": pid,
+            "shard": shard,
+            "key": {
+                "domain": key.domain,
+                "hierarchy": key.hierarchy,
+                "role": key.role,
+                "project_id": key.project_id,
+                "project_context": key.project_context,
+                "relevancy_bucket": getattr(key, "relevancy_bucket", None),
+            },
+            "payload": dict(payload or {}),
+        }
+
+    def partition_preference(
+        self,
+        *,
+        user_id: str,
+        workspace_id: str,
+        payload: Dict[str, Any],
+        kind: str = "",
+        domain: str = DEFAULT_DOMAIN,
+        role: str = DEFAULT_ROLE,
+        project_id: str = "",
+    ) -> Dict[str, Any]:
+        """
+        Return a partition reference for a per-(user, workspace) preference.
+        """
+        key = self.build_partition_key(
+            domain=domain,
+            hierarchy=workspace_id or DEFAULT_HIERARCHY,
+            role=role,
+            project_id=project_id,
+            project_context=user_id,
+        )
+        pid = self.partition_id(key)
+
+        # GSP-FIX
+        shard = self.gsp_xor_quorum(
+            domain=key.domain,
+            hierarchy=key.hierarchy,
+            role=key.role,
+            project_id=key.project_id,
+            relevancy_bucket=getattr(key, "relevancy_bucket", DEFAULT_RELEVANCY),
+        )
+
+        return {
+            "scope": PARTITION_SCOPE_PREFERENCE,
+            "user_id": user_id,
+            "workspace_id": workspace_id,
+            "kind": kind,
+            "project_id": project_id,
+            "partition_id": pid,
+            "shard": shard,
+            "key": {
+                "domain": key.domain,
+                "hierarchy": key.hierarchy,
+                "role": key.role,
+                "project_id": key.project_id,
+                "project_context": key.project_context,
+                "relevancy_bucket": getattr(key, "relevancy_bucket", None),
+            },
+            "payload": dict(payload or {}),
+        }
+
 
 def create_memory_partition(
     memory_grid: MemoryGrid,

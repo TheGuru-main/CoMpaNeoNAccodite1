@@ -58,6 +58,63 @@ class UserState:
         }
 
 
+def _run_data_filter(data_filter, text: str, *, domain: str = "general",
+                     user_id: str = "", room_id: str = "") -> Dict[str, Any]:
+    """
+    Run DataFilter against a text fragment. Tolerant across signatures.
+
+    Tries, in order:
+        filter_text(text, domain=...)
+        filter_text(text)
+        filter_record({...})
+        recognize({...})
+        is_training_worthy(text)
+    Returns a small metadata dict, never raises.
+    """
+    out: Dict[str, Any] = {"used": True}
+
+    for name in ("filter_text", "filter_record", "recognize"):
+        fn = getattr(data_filter, name, None)
+        if fn is None:
+            continue
+        try:
+            try:
+                res = fn(text, domain=domain)
+            except TypeError:
+                try:
+                    res = fn(text)
+                except TypeError:
+                    res = fn({"text": text, "domain": domain,
+                              "user_id": user_id, "room_id": room_id})
+        except Exception as e:
+            out["error"] = f"{name}: {type(e).__name__}: {e}"
+            continue
+
+        if isinstance(res, dict):
+            out["result"] = {k: res[k] for k in list(res.keys())[:20]}
+            for key in ("domain", "language", "lang", "keywords",
+                        "clean_text", "text", "training_worthy",
+                        "worth_training", "score", "relevancy"):
+                if key in res:
+                    out[key] = res[key]
+        else:
+            out["result"] = res
+        out["method"] = name
+        return out
+
+    ftw = getattr(data_filter, "is_training_worthy", None)
+    if callable(ftw):
+        try:
+            out["training_worthy"] = bool(ftw(text))
+            out["method"] = "is_training_worthy"
+            return out
+        except Exception as e:
+            out["error"] = f"is_training_worthy: {type(e).__name__}: {e}"
+
+    out["used"] = False
+    return out
+
+
 class PSTM:
     def __init__(self, *, ttl_s: int = 1800, max_entries: int = 10000):
         self.ttl_s = int(ttl_s)

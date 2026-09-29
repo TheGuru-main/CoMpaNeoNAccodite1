@@ -17,6 +17,18 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass, field
+
+# ACCD-FILTER: optional data filter for promotion pipeline
+try:
+    from data_filter import DataFilter  # type: ignore
+    DATA_FILTER_AVAILABLE = True
+except Exception:
+    try:
+        from data.filter import DataFilter  # type: ignore
+        DATA_FILTER_AVAILABLE = True
+    except Exception:
+        DataFilter = None
+        DATA_FILTER_AVAILABLE = False
 from typing import Any, Dict, Optional, Tuple
 
 
@@ -99,6 +111,96 @@ class PSTM:
     def set_extra(self, room_id, user_id, key: str, value: Any) -> None:
         s = self.get(room_id, user_id)
         s.extras[key] = value
+
+    def promote_draft(
+        self,
+        room_id: str,
+        user_id: str,
+        *,
+        grid=None,
+        partition=None,
+        project_id: str = "",
+        source_tag: str = "pstm-promotion",
+        data_filter=None,
+        filter_domain: str = "general",
+    ) -> Dict[str, Any]:
+        """
+        Promote the user's current draft out of PSTM.
+
+        Flow:
+            draft -> DataFilter (classify / clean)
+                  -> grid.add_document (index)
+                  -> partition.partition_pstm (trace ref)
+                  -> clear draft
+
+        Returns {promoted, doc_id, partition_ref, filter, text}.
+        """
+        s = self.get(room_id, user_id)
+        text = (s.draft or "").strip()
+
+        result: Dict[str, Any] = {
+            "promoted": False,
+            "doc_id": None,
+            "partition_ref": None,
+            "filter": {},
+            "text": text,
+        }
+        if not text:
+            return result
+
+        # 0) data filter
+        filter_meta: Dict[str, Any] = {}
+        if data_filter is not None:
+            try:
+                filter_meta = _run_data_filter(
+                    data_filter, text,
+                    domain=filter_domain,
+                    user_id=user_id,
+                    room_id=room_id,
+                )
+            except Exception as e:
+                filter_meta = {"filter_error": f"{type(e).__name__}: {e}"}
+        result["filter"] = filter_meta
+
+        # 1) grid indexing
+        if grid is not None and hasattr(grid, "add_document"):
+            try:
+                doc_id = grid.add_document(
+                    text,
+                    source=source_tag,
+                    metadata={
+                        "room_id": room_id,
+                        "user_id": user_id,
+                        "kind": "pstm_promotion",
+                        "project_id": project_id,
+                        "filter": filter_meta,
+                    },
+                )
+                result["doc_id"] = doc_id
+            except Exception as e:
+                result["grid_error"] = f"{type(e).__name__}: {e}"
+
+        # 2) partition trace ref
+        if partition is not None and hasattr(partition, "partition_pstm"):
+            try:
+                ref = partition.partition_pstm(
+                    user_id=user_id,
+                    room_id=room_id,
+                    payload={
+                        "text": text[:500],
+                        "doc_id": result["doc_id"],
+                        "filter": filter_meta,
+                    },
+                    project_id=project_id,
+                )
+                result["partition_ref"] = ref
+            except Exception as e:
+                result["partition_error"] = f"{type(e).__name__}: {e}"
+
+        # 3) clear the draft
+        s.draft = ""
+        result["promoted"] = True
+        return result
 
     def clear(self, room_id, user_id) -> None:
         self._store.pop(self._key(room_id, user_id), None)

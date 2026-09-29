@@ -15,17 +15,20 @@ EXT_TO_LANG = {
 }
 
 LANG_LSP = {
-    "python":     ["pylsp", "pyright-langserver --stdio"],
-    "javascript": ["typescript-language-server --stdio"],
-    "typescript": ["typescript-language-server --stdio"],
-    "tsx":        ["typescript-language-server --stdio"],
+    "python":     ["pylsp"],
+    "javascript": ["typescript-language-server", "--stdio"],
+    "typescript": ["typescript-language-server", "--stdio"],
+    "tsx":        ["typescript-language-server", "--stdio"],
     "go":         ["gopls"],
     "rust":       ["rust-analyzer"],
     "c":          ["clangd"],
     "cpp":        ["clangd"],
     "csharp":     ["omnisharp"],
-    "ruby":       ["solargraph stdio"],
-    "php":        ["intelephense --stdio"],
+    "ruby":       ["solargraph", "stdio"],
+    "php":        ["intelephense", "--stdio"],
+    "bash":       ["bash-language-server", "start"],
+    "json":       ["vscode-json-language-server", "--stdio"],
+    "yaml":       ["yaml-language-server", "--stdio"],
 }
 
 def lang_for(path: str) -> str:

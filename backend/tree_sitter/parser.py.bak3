@@ -193,14 +193,9 @@ def _parse_python_ast(path: str, source: str) -> ParseResult:
 # regex fallback
 # ---------------------------------------------------------------------------
 
-_RX_FLAGS = re.MULTILINE
-
-_RX_PY_FUNC = re.compile(r"^\s*(?:async\s+)?def\s+(\w+)", _RX_FLAGS)
-_RX_CLASS   = re.compile(r"^\s*class\s+(\w+)", _RX_FLAGS)
-_RX_JS_FUNC = re.compile(r"^\s*(?:export\s+)?(?:async\s+)?function\s+(\w+)", _RX_FLAGS)
-_RX_JS_ARROW= re.compile(r"^\s*(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?\(", _RX_FLAGS)
-
-
+_RX_FUNC = re.compile(r"^\s*(?:async\s+)?def\s+(\w+)")
+_RX_CLASS = re.compile(r"^\s*class\s+(\w+)", re.MULTILINE)
+_RX_JS_FUNC = re.compile(r"^\s*(?:export\s+)?function\s+(\w+)"), re.MULTILINE)
 def _parse_regex(path: str, source: str, lang: str) -> ParseResult:
     res = ParseResult(path=path, lang=lang)
     for i, line in enumerate((source or "").splitlines(), start=1):
@@ -208,7 +203,7 @@ def _parse_regex(path: str, source: str, lang: str) -> ParseResult:
         if m:
             res.symbols.append(Symbol(m.group(1), "class", path, i, i, lang=lang))
             continue
-        m = _RX_PY_FUNC.match(line) or _RX_JS_FUNC.match(line) or _RX_JS_ARROW.match(line)
+        m = _RX_FUNC.match(line) or _RX_JS_FUNC.match(line)
         if m:
             res.symbols.append(Symbol(m.group(1), "function", path, i, i, lang=lang))
     return res

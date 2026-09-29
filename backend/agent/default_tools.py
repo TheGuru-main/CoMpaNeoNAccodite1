@@ -283,4 +283,116 @@ def build_registry(
             "symbols": syms[:limit],
         }
 
+    # ---------------------------------------------------------------
+    # PAIR 5: build.compile / build.lint  (SANDBOXPATH FIX applied)
+    # ---------------------------------------------------------------
+
+    @reg.tool(
+        name="build.compile",
+        category="build",
+        description="Compile-check a file in the sandbox.",
+        mutating=False,
+    )
+    def build_compile(
+        path: str,
+        lang: str = "python",
+        timeout_s: int = 15,
+    ) -> Dict[str, Any]:
+        from sandbox.runner import SandboxRunner
+        p = ctx["guard"].resolve(path)
+        if not p.exists() or not p.is_file():
+            raise FileNotFoundError(f"no such file: {path}")
+
+        rel = str(p.relative_to(ctx["guard"].root))
+        source = p.read_text(encoding="utf-8", errors="replace")
+
+        runner = ctx.get("sandbox")
+        if runner is None:
+            runner = SandboxRunner(prefer="subprocess", timeout_s=timeout_s)
+            ctx["sandbox"] = runner
+
+        if lang == "python":
+            extra = {rel: source}
+            wrapped = (
+                "import py_compile\n"
+                f"py_compile.compile({rel!r}, doraise=True)\n"
+                "print('compile-ok')\n"
+            )
+            res = runner.run_code(
+                source=wrapped, filename="_accd_compile_check.py",
+                lang="python", extra_files=extra,
+            )
+        else:
+            res = runner.run_code(source=source, filename=rel, lang=lang)
+
+        return {
+            "path": rel,
+            "lang": lang,
+            "ok": res.ok,
+            "exit_code": res.exit_code,
+            "stdout": res.stdout[-2000:],
+            "stderr": res.stderr[-2000:],
+            "duration_s": res.duration_s,
+            "timed_out": res.timed_out,
+        }
+
+    @reg.tool(
+        name="build.lint",
+        category="build",
+        description="Lint a file (py_compile fallback for python).",
+        mutating=False,
+    )
+    def build_lint(
+        path: str,
+        lang: str = "python",
+        timeout_s: int = 15,
+    ) -> Dict[str, Any]:
+        from sandbox.runner import SandboxRunner
+        p = ctx["guard"].resolve(path)
+        if not p.exists() or not p.is_file():
+            raise FileNotFoundError(f"no such file: {path}")
+
+        rel = str(p.relative_to(ctx["guard"].root))
+        source = p.read_text(encoding="utf-8", errors="replace")
+
+        runner = ctx.get("sandbox")
+        if runner is None:
+            runner = SandboxRunner(prefer="subprocess", timeout_s=timeout_s)
+            ctx["sandbox"] = runner
+
+        if lang != "python":
+            return {
+                "path": rel, "lang": lang,
+                "ok": True, "skipped": True,
+                "reason": f"lint not implemented for {lang}",
+                "findings": [],
+            }
+
+        extra = {rel: source}
+        wrapper = (
+            "import py_compile\n"
+            f"py_compile.compile({rel!r}, doraise=True)\n"
+            "print('lint-fallback-compile-ok')\n"
+        )
+        res = runner.run_code(
+            source=wrapper, filename="_accd_lint_check.py",
+            lang="python", extra_files=extra,
+        )
+
+        findings = []
+        if res.stderr.strip():
+            for line in res.stderr.strip().splitlines()[-20:]:
+                findings.append({"message": line})
+
+        return {
+            "path": rel,
+            "lang": lang,
+            "ok": res.ok,
+            "exit_code": res.exit_code,
+            "stdout": res.stdout[-2000:],
+            "stderr": res.stderr[-2000:],
+            "duration_s": res.duration_s,
+            "findings": findings,
+        }
+
     return reg

@@ -53,7 +53,13 @@ class PSTM:
         self._store: Dict[Tuple[str, str], UserState] = {}
 
     def _key(self, room_id: str, user_id: str) -> Tuple[str, str]:
-        return (str(room_id), str(user_id))
+        # IDENTITY: phone-first
+        # In an org instance, the worker's identity is their phone number.
+        # Callers pass the phone as `user_id`. If it's empty (solo user
+        # before phone is captured), we fall back to whatever string
+        # came in — including UUID.
+        identity = str(user_id or "").strip()
+        return (str(room_id or ""), identity)
 
     # ------------------------------------------------------------------
 
@@ -144,3 +150,38 @@ class PSTM:
             self._store[self._key(r, u)] = s
             count += 1
         return count
+
+
+# ============================================================================
+# IDENTITY HELPERS
+# ============================================================================
+
+def pstm_id_from_user(user) -> str:
+    """
+    Return the PSTM identity for a User row.
+
+    Preference order:
+        1. user.phone      — canonical org identity
+        2. user.id         — solo-user fallback
+        3. ""              — unresolvable
+    """
+    if user is None:
+        return ""
+    phone = getattr(user, "phone", None)
+    if phone:
+        return str(phone).strip()
+    uid = getattr(user, "id", None)
+    if uid:
+        return str(uid)
+    return ""
+
+
+def pstm_id_from_membership(membership) -> str:
+    """
+    Return the PSTM identity for an OrganizationMembership row.
+    Memberships don't carry phone directly; the linked user does.
+    """
+    if membership is None:
+        return ""
+    user = getattr(membership, "user", None)
+    return pstm_id_from_user(user)

@@ -341,11 +341,20 @@ def handle_generate(
     frames, summary = verify_and_frame(ai_text)
 
     # PST memory: record draft, suggestions, etc. (best-effort)
+    # GEN-IDENTITY: phone-first identity for PSTM keying
     pstm = _STATE.get("pstm")
     if pstm is not None:
         try:
-            pstm.set_draft(workspace_id, user_id, "")
-            pstm.add_suggestion(workspace_id, user_id, "response ready")
+            from memory.pstm import pstm_id_from_user
+            actor_identity = user_id
+            try:
+                user_obj = _STATE.get("user_lookup") and _STATE["user_lookup"](user_id)
+                if user_obj is not None:
+                    actor_identity = pstm_id_from_user(user_obj) or user_id
+            except Exception:
+                pass
+            pstm.set_draft(workspace_id, actor_identity, "")
+            pstm.add_suggestion(workspace_id, actor_identity, "response ready")
         except Exception:
             pass
 
@@ -395,12 +404,25 @@ def handle_message(
     )
 
     # PST: cache the incoming message draft (per user, per room)
+    # IDENTITY: phone-first — resolve user_id -> phone when possible.
     pstm = _STATE.get("pstm")
     if pstm is not None:
         try:
-            pstm.set_draft(workspace_id, user_id, text or "")
+            from memory.pstm import pstm_id_from_user
+            actor_identity = user_id
+            user_obj = None
+            try:
+                user_obj = _STATE.get("user_lookup") and _STATE["user_lookup"](user_id)
+            except Exception:
+                user_obj = None
+            if user_obj is not None:
+                actor_identity = pstm_id_from_user(user_obj) or user_id
+            pstm.set_draft(workspace_id, actor_identity, text or "")
         except Exception:
-            pass
+            try:
+                pstm.set_draft(workspace_id, user_id, text or "")
+            except Exception:
+                pass
 
     return {
         "invoked": trigger is not None,

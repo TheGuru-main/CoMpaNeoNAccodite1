@@ -1,10 +1,11 @@
 __pycache__/
 *.pyc
 *.pyo
-*.pyd
+*.py.bak
+*.py.bak2
+*.py.bak3
 .venv/
 venv/
-env/
 .env
 *.db
 *.sqlite
@@ -13,3 +14,5 @@ buckets/
 ai_isolated_workspace/
 .pytest_cache/
 .DS_Store
+diag.py
+/tmp/

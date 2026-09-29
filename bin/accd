@@ -1,0 +1,21 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Accodite console launcher.
+#   accd              -> interactive console
+#   accd <script>     -> run a python file with backend on sys.path
+#   accd --check      -> run environment check
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+BACKEND="$ROOT/backend"
+
+export ACCD_ROOT="$ROOT"
+export PYTHONPATH="$BACKEND:$PYTHONPATH"
+
+if [ "$1" = "--check" ]; then
+  exec python3 "$ROOT/scripts/env_check.py"
+fi
+
+if [ -n "$1" ]; then
+  exec python3 "$1" "${@:2}"
+fi
+
+exec python3 "$ROOT/console.py"

@@ -596,4 +596,110 @@ def build_registry(
             "skipped": skipped,
         }
 
+    # ---------------------------------------------------------------
+    # PAIR 8: web.http.get / web.http.post
+    # ---------------------------------------------------------------
+
+    _web_allow = {"allow_hosts": None}  # None = all HTTPS hosts
+
+    @reg.tool(
+        name="web.http.get",
+        category="web",
+        description="HTTPS GET. HTTP refused unless insecure=True.",
+        mutating=False,
+    )
+    def web_http_get(
+        url: str,
+        timeout_s: int = 20,
+        max_bytes: int = 2_000_000,
+        insecure: bool = False,
+        headers: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Any]:
+        import urllib.request
+        import urllib.error
+
+        if not url.startswith("https://"):
+            if not insecure:
+                raise PermissionError("only HTTPS is allowed (pass insecure=True to override)")
+        try:
+            req = urllib.request.Request(
+                url, headers=headers or {}, method="GET",
+            )
+            with urllib.request.urlopen(req, timeout=timeout_s) as r:
+                raw = r.read(max_bytes + 1)
+                truncated = len(raw) > max_bytes
+                raw = raw[:max_bytes]
+                text = raw.decode("utf-8", errors="replace")
+                return {
+                    "url": url,
+                    "status": getattr(r, "status", None),
+                    "content_type": r.headers.get("Content-Type", ""),
+                    "bytes": len(raw),
+                    "truncated": truncated,
+                    "text": text,
+                }
+        except urllib.error.HTTPError as e:
+            return {
+                "url": url, "status": e.code, "bytes": 0,
+                "truncated": False, "text": "",
+                "error": f"HTTP {e.code} {e.reason}",
+            }
+        except Exception as e:
+            raise RuntimeError(f"{type(e).__name__}: {e}")
+
+    @reg.tool(
+        name="web.http.post",
+        category="web",
+        description="HTTPS POST with JSON or raw data.",
+        mutating=False,
+    )
+    def web_http_post(
+        url: str,
+        json_body: Optional[Dict[str, Any]] = None,
+        data: Optional[str] = None,
+        timeout_s: int = 20,
+        max_bytes: int = 2_000_000,
+        insecure: bool = False,
+        headers: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Any]:
+        import urllib.request
+        import urllib.error
+
+        if not url.startswith("https://"):
+            if not insecure:
+                raise PermissionError("only HTTPS is allowed (pass insecure=True to override)")
+
+        body_bytes = b""
+        hdrs = dict(headers or {})
+        if json_body is not None:
+            import json as _json
+            body_bytes = _json.dumps(json_body).encode("utf-8")
+            hdrs.setdefault("Content-Type", "application/json")
+        elif data is not None:
+            body_bytes = str(data).encode("utf-8")
+
+        try:
+            req = urllib.request.Request(url, data=body_bytes, headers=hdrs, method="POST")
+            with urllib.request.urlopen(req, timeout=timeout_s) as r:
+                raw = r.read(max_bytes + 1)
+                truncated = len(raw) > max_bytes
+                raw = raw[:max_bytes]
+                text = raw.decode("utf-8", errors="replace")
+                return {
+                    "url": url,
+                    "status": getattr(r, "status", None),
+                    "content_type": r.headers.get("Content-Type", ""),
+                    "bytes": len(raw),
+                    "truncated": truncated,
+                    "text": text,
+                }
+        except urllib.error.HTTPError as e:
+            return {
+                "url": url, "status": e.code, "bytes": 0,
+                "truncated": False, "text": "",
+                "error": f"HTTP {e.code} {e.reason}",
+            }
+        except Exception as e:
+            raise RuntimeError(f"{type(e).__name__}: {e}")
+
     return reg

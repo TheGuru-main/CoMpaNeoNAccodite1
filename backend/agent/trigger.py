@@ -49,3 +49,55 @@ class TriggerParser:
             return Trigger(TriggerKind.SWIPE_REPLY, actor_id, workspace_id,
                            message_id, ref_message_id, text)
         return None
+
+
+# ============================================================================
+# MODE-AWARE TRIGGERING (v2)
+# ============================================================================
+
+class RoomMode(str, Enum):
+    SOLO  = "solo"     # 1 member -> DIRECT every message
+    GROUP = "group"    # 2+ members -> @AI / highlight / swipe-reply required
+
+
+def room_mode(member_count: int) -> RoomMode:
+    return RoomMode.SOLO if (member_count or 0) <= 1 else RoomMode.GROUP
+
+
+class ModeAwareTriggerParser:
+    """
+    Wraps TriggerParser. Chooses SOLO vs GROUP based on room member count.
+
+    SOLO rooms  -> every message fires the AI (manual, like DeepSeek).
+    GROUP rooms -> only @AI mentions, highlight+followup, or swipe-reply.
+    """
+
+    def __init__(self, tokens=DEFAULT_TRIGGERS):
+        self._base = TriggerParser(tokens)
+
+    def parse(
+        self,
+        *,
+        member_count: int,
+        actor_id: str,
+        workspace_id: str,
+        text: str,
+        message_id: Optional[str] = None,
+        ref_message_id: Optional[str] = None,
+        ref_is_ai: bool = False,
+    ) -> Optional[Trigger]:
+        mode = room_mode(member_count)
+        if mode == RoomMode.SOLO:
+            return Trigger(
+                TriggerKind.DIRECT, actor_id, workspace_id,
+                message_id, None, text,
+            )
+        return self._base.parse(
+            actor_id=actor_id,
+            workspace_id=workspace_id,
+            text=text,
+            message_id=message_id,
+            ref_message_id=ref_message_id,
+            ref_is_ai=ref_is_ai,
+            is_one_to_one=False,
+        )

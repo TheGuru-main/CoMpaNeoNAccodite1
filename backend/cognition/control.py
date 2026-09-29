@@ -28,6 +28,11 @@ from typing import Any, Dict, List, Optional, Set
 from model.head_router import HeadAllocator, Segment
 from cognition.pattern_detector import PatternDetector
 
+from model.head_wire import (
+    plan_to_head_map as _plan_to_head_map,
+    apply_binding_to_model as _apply_binding_to_model,
+)
+
 
 LTM_READERS = {"owner", "ceo", "c_suite", "hr"}
 
@@ -62,6 +67,12 @@ class CognitionControl:
 
         # detector is optional until write/route callbacks are provided
         self.detector: Optional[PatternDetector] = None
+
+        # head_wire state
+        self._model = None
+        self._last_plan = None
+        self._last_seg_to_idx: dict = {}
+        self._last_head_map: list = []
 
     # -----------------------------------------------------------------
     # DETECTOR
@@ -114,6 +125,15 @@ class CognitionControl:
 
         binding_plan = self.allocator.plan(segments)
 
+        # head_wire: convert binding plan -> head map + segment index
+        try:
+            _head_map, _seg_to_idx = _plan_to_head_map(binding_plan)
+        except Exception:
+            _head_map, _seg_to_idx = [], {}
+        self._last_plan = binding_plan
+        self._last_head_map = _head_map
+        self._last_seg_to_idx = _seg_to_idx
+
         bundle = self._compose_bundle(
             query=query,
             intent=intent,
@@ -134,6 +154,8 @@ class CognitionControl:
             "segments": segments,
             "binding_plan": binding_plan,
             "bundle": bundle,
+            "head_map": _head_map,
+            "segment_to_idx": _seg_to_idx,
         }
 
     def _compose_bundle(
@@ -235,6 +257,35 @@ class CognitionControl:
         return self.cfg.allow_mutations
 
     # -----------------------------------------------------------------
+
+    # -----------------------------------------------------------------
+    # HEAD WIRING
+    # -----------------------------------------------------------------
+
+    def set_model(self, model) -> None:
+        """Attach the model so plan_query results can be pushed to it."""
+        self._model = model
+
+    def bind_to_model(self, model=None):
+        """
+        Push the last plan's head map into the model.
+        Returns segment_to_idx for mask construction.
+        """
+        target = model if model is not None else self._model
+        if target is None or self._last_plan is None:
+            return {}
+        try:
+            seg_to_idx = _apply_binding_to_model(target, self._last_plan)
+            self._last_seg_to_idx = seg_to_idx
+            return seg_to_idx
+        except Exception:
+            return {}
+
+    def last_head_map(self) -> list:
+        return list(self._last_head_map)
+
+    def last_segment_to_idx(self) -> dict:
+        return dict(self._last_seg_to_idx)
 
     def _trace(self, action: str, payload: dict) -> None:
         if self.tracer is None:

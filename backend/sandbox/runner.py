@@ -222,12 +222,19 @@ class SandboxRunner:
     # -----------------------------------------------------------------
 
     def _write_files(self, tmp, source, filename, extra_files):
-        with open(os.path.join(tmp, filename), "w", encoding="utf-8") as f:
+        # PRIMARY-MKDIR FIX: ensure parent dir of the primary file exists
+        primary_path = os.path.join(tmp, filename)
+        primary_dir = os.path.dirname(primary_path)
+        if primary_dir:
+            os.makedirs(primary_dir, exist_ok=True)
+        with open(primary_path, "w", encoding="utf-8") as f:
             f.write(source or "")
         for name, body in (extra_files or {}).items():
             safe = name.replace("..", "_").lstrip("/")
             path = os.path.join(tmp, safe)
-            os.makedirs(os.path.dirname(path), exist_ok=True) if os.path.dirname(path) else None
+            parent = os.path.dirname(path)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
             with open(path, "w", encoding="utf-8") as f:
                 f.write(body or "")
 

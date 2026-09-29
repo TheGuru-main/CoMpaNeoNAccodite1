@@ -395,4 +395,84 @@ def build_registry(
             "findings": findings,
         }
 
+    # ---------------------------------------------------------------
+    # PAIR 6: test.run / sandbox.verify
+    # ---------------------------------------------------------------
+
+    @reg.tool(
+        name="test.run",
+        category="test",
+        description="Run a workspace file as a test target in the sandbox.",
+        mutating=False,
+    )
+    def test_run(
+        path: str,
+        lang: str = "python",
+        timeout_s: int = 20,
+    ) -> Dict[str, Any]:
+        from sandbox.runner import SandboxRunner
+        p = ctx["guard"].resolve(path)
+        if not p.exists() or not p.is_file():
+            raise FileNotFoundError(f"no such file: {path}")
+
+        rel = str(p.relative_to(ctx["guard"].root))
+        source = p.read_text(encoding="utf-8", errors="replace")
+
+        runner = ctx.get("sandbox")
+        if runner is None:
+            runner = SandboxRunner(prefer="subprocess", timeout_s=timeout_s)
+            ctx["sandbox"] = runner
+
+        res = runner.run_code(source=source, filename=rel, lang=lang)
+        return {
+            "path": rel,
+            "lang": lang,
+            "ok": res.ok,
+            "exit_code": res.exit_code,
+            "stdout": res.stdout[-4000:],
+            "stderr": res.stderr[-4000:],
+            "duration_s": res.duration_s,
+            "timed_out": res.timed_out,
+        }
+
+    @reg.tool(
+        name="sandbox.verify",
+        category="sandbox",
+        description="Run the 6-stage verification pipeline on a file.",
+        mutating=False,
+    )
+    def sandbox_verify(
+        path: str,
+        lang: str = "python",
+        run_tests: bool = True,
+        run_security: bool = True,
+    ) -> Dict[str, Any]:
+        from verification.pipeline import VerificationPipeline
+        p = ctx["guard"].resolve(path)
+        if not p.exists() or not p.is_file():
+            raise FileNotFoundError(f"no such file: {path}")
+
+        rel = str(p.relative_to(ctx["guard"].root))
+        source = p.read_text(encoding="utf-8", errors="replace")
+
+        pipe = ctx.get("pipeline")
+        if pipe is None:
+            pipe = VerificationPipeline(
+                root=str(ctx["guard"].root),
+                stop_on_first_failure=True,
+            )
+            ctx["pipeline"] = pipe
+
+        report = pipe.verify(
+            path=rel, source=source, lang=lang,
+            run_tests=run_tests, run_security=run_security,
+        )
+        return {
+            "path": rel,
+            "lang": lang,
+            "ok": report.ok,
+            "stopped_at": report.stopped_at,
+            "stages": [s.as_dict() for s in report.stages],
+        }
+
     return reg

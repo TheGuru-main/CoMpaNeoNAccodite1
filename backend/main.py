@@ -53,6 +53,7 @@ from message import send_message, get_conversations, get_messages_between, Direc
 
 # ACCD-INTEGRATION
 from integration import (
+    run_job as _run_job,
     bootstrap as accd_bootstrap,
     handle_message as accd_handle_message,
     verify_and_frame as accd_verify_and_frame,
@@ -666,6 +667,66 @@ async def generate_in_workspace(
             print(f"[ACCD-MODE] {_accd_mode} conf={_decision.confidence:.2f}")
         except Exception as e:
             print(f"[ACCD-MODE] classify skipped: {type(e).__name__}: {e}")
+
+        # JOB-BRANCH: end-to-end pipeline (plan -> per-step generate+verify+retry)
+        # tools available to each step via registry from integration state
+        if _accd_mode == "job":
+            try:
+                from integration import get_state as _accd_state
+                _reg = _accd_state().get("registry")
+
+                def _gen(p: str) -> str:
+                    return generate_from_prompt(p, req.max_len, req.temperature)
+
+                accd_frames = list(_run_job(
+                    workspace_id=str(ws.id),
+                    user_id=str(user.id),
+                    prompt=req.prompt,
+                    generate_fn=_gen,
+                    max_steps=8,
+                    max_iterations=(_accd_policy or {}).get("max_iterations", 5),
+                    code_mode=True,
+                    verify_each_step=True,
+                    registry=_reg,
+                    enable_tools=True,
+                    max_tool_rounds=5,
+                ))
+                accd_summary = {
+                    "mode": "job",
+                    "frames": len(accd_frames),
+                    "tools_available": len(_reg._tools) if _reg is not None else 0,
+                }
+            except Exception as e:
+                accd_frames = [f"#error#run_job: {type(e).__name__}: {e}"]
+                accd_summary = {"error": str(e)}
+
+            _job_msg = Message(
+                workspace_id=ws.id,
+                user_id=user.id,
+                role="assistant",
+                content="[job streamed]",
+                detected_domain="code",
+                keywords=extract_keywords(req.prompt),
+                grid_cv=build_project_grid_cv(extract_keywords(req.prompt)),
+                temporal_context=temporal_context,
+            )
+            db.add(_job_msg)
+            db.commit()
+
+            return {
+                "generated": "[job streamed]",
+                "mode": _accd_mode,
+                "mode_policy": _accd_policy,
+                "frames": accd_frames,
+                "verification": accd_summary,
+                "workspace": {
+                    "id": str(ws.id),
+                    "project_name": ws.project_name,
+                    "domain": ws.project_domain,
+                    "keywords": ws.project_keywords,
+                    "temporal_context": temporal_context,
+                },
+            }
 
         generated = generate_from_prompt(
             prompt,

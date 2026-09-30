@@ -646,6 +646,27 @@ async def generate_in_workspace(
             temperament=user.temperament
         )
 
+        # MODE-WIRE: classify request before generation
+        _accd_mode = None
+        _accd_policy = None
+        try:
+            from cognition.control import CognitionControl
+            from agent.mode_classifier import classify as _classify_mode, policy_for as _policy_for
+            _decision = _classify_mode(text=req.prompt)
+            _policy = _policy_for(_decision.mode)
+            _accd_mode = _decision.mode.value
+            _accd_policy = {
+                "code_mode": _policy.code_mode,
+                "verification_level": _policy.verification_level,
+                "max_iterations": _policy.max_iterations,
+                "allow_mutations": _policy.allow_mutations,
+                "read_only": _policy.read_only,
+                "emit_planning_status": _policy.emit_planning_status,
+            }
+            print(f"[ACCD-MODE] {_accd_mode} conf={_decision.confidence:.2f}")
+        except Exception as e:
+            print(f"[ACCD-MODE] classify skipped: {type(e).__name__}: {e}")
+
         generated = generate_from_prompt(
             prompt,
             req.max_len,
@@ -655,9 +676,20 @@ async def generate_in_workspace(
         if not enforce_rules(generated, user.temperament):
             generated = "I apologize, I cannot provide that answer."
 
-        # ACCD-INTEGRATION: verify every code block before it reaches the client
+        # MODE-AWARE: verify code blocks only when code_mode is on
         try:
-            accd_frames, accd_summary = accd_verify_and_frame(generated)
+            if _accd_policy and not _accd_policy.get("code_mode", True):
+                # chat / plan / research — stream as prose
+                accd_frames = [f"#prose#{generated}"] if generated else []
+                accd_summary = {
+                    "blocks": 0, "verified": 0, "rejected": 0, "iterations": 0,
+                    "mode_skipped_verification": _accd_mode or "chat",
+                }
+            else:
+                accd_frames, accd_summary = accd_verify_and_frame(
+                    generated,
+                    max_iterations=(_accd_policy or {}).get("max_iterations", 3),
+                )
         except Exception as e:
             accd_frames = [f"#error#integration: {type(e).__name__}: {e}"]
             accd_summary = {"error": str(e)}
@@ -680,6 +712,8 @@ async def generate_in_workspace(
 
         return {
             "generated": generated,
+            "mode": _accd_mode,
+            "mode_policy": _accd_policy,
             "frames": accd_frames,
             "verification": accd_summary,
             "workspace": {

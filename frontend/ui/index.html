@@ -23,9 +23,30 @@
                     <button id="btnLogin" class="primary-btn">Login</button>
                 </div>
                 <div id="signupForm" class="auth-form">
+                    <div class="signup-mode-tabs">
+                        <button type="button" class="signup-mode active" data-mode="solo">Regular User</button>
+                        <button type="button" class="signup-mode" data-mode="org-create">Create Org</button>
+                        <button type="button" class="signup-mode" data-mode="org-join">Join Org</button>
+                    </div>
                     <input type="text" id="signupFullName" placeholder="Full Name" maxlength="200" />
                     <input type="text" id="signupPhone" placeholder="Phone (e.g. +234...)" maxlength="200" />
                     <input type="password" id="signupPassword" placeholder="Password" maxlength="200" />
+
+                    <!-- ORG CREATE (hidden by default) -->
+                    <div id="orgCreateFields" style="display:none;">
+                        <input type="text" id="orgName" placeholder="Organization Name" maxlength="255" />
+                        <input type="text" id="orgSlug" placeholder="Org slug (short id, e.g. acme-health)" maxlength="255" />
+                        <input type="text" id="orgEmail" placeholder="Org contact email (optional)" maxlength="255" />
+                        <input type="text" id="orgCountry" placeholder="Country" maxlength="100" value="Nigeria" />
+                    </div>
+
+                    <!-- ORG JOIN (hidden by default) -->
+                    <div id="orgJoinFields" style="display:none;">
+                        <input type="text" id="workerCred" placeholder="Worker credential (orgname:phone:workerid)" maxlength="255" />
+                        <input type="text" id="joinDept" placeholder="Department (e.g. Engineering)" maxlength="100" />
+                        <input type="text" id="joinRole" placeholder="Role (member, reviewer, manager)" maxlength="50" value="member" />
+                        <input type="text" id="joinTitle" placeholder="Job title (optional)" maxlength="100" />
+                    </div>
                     <select id="signupCountry">
                         <optgroup label="Africa">
                             <option value="Nigeria">Nigeria (+234)</option>
@@ -128,6 +149,30 @@
         </div>
     </div>
 
-   <script src="js/app.js"></script>
+           <div id="trainingModal" class="modal" style="display:none;">
+            <div class="modal-content">
+                <h3 style="margin-bottom:1rem;">🧠 Model Training</h3>
+                <p id="trainingStatusText" style="opacity:0.7; margin-bottom:1rem;">Checking runtime readiness…</p>
+                <div class="training-row">
+                    <label>Epochs</label>
+                    <input type="number" id="trainEpochs" value="1" min="1" max="100" />
+                </div>
+                <div class="training-row">
+                    <label>Batch size</label>
+                    <input type="number" id="trainBatch" value="8" min="1" max="128" />
+                </div>
+                <div class="training-row">
+                    <label>Max texts</label>
+                    <input type="number" id="trainMaxTexts" value="500" min="10" max="100000" />
+                </div>
+                <div id="trainingResult" style="margin-top:1rem; font-size:0.85rem; opacity:0.85;"></div>
+                <div style="display:flex; gap:0.5rem; margin-top:1rem;">
+                    <button id="btnStartTraining" class="primary-btn" style="flex:1;">Start</button>
+                    <button id="btnCloseTraining" class="primary-btn secondary-btn" style="flex:1;">Close</button>
+                </div>
+            </div>
+        </div>
+
+<script src="js/app.js"></script>
 </body>
 </html>

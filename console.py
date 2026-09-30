@@ -138,6 +138,9 @@ def main():
             break
         if not line:
             continue
+        # tolerate pasted "accd>" prefixes
+        if line.startswith("accd>"):
+            line = line[len("accd>"):].strip()
         if line in (":quit", ":q", "quit", "exit"):
             break
         if line.startswith(":"):

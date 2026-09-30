@@ -36,6 +36,9 @@ _STATE: Dict[str, Any] = {
     "ltm": None,           # LTMGate
     "detector": None,      # PatternDetector
     "brain": None,         # AccoditeBrain (optional)
+    "grid": None,          # MemoryGrid (optional)
+    "partition": None,     # MemoryPartition (optional)
+    "data_filter": None,   # DataFilter (optional)
 }
 
 
@@ -107,6 +110,38 @@ def bootstrap(*, root: Optional[str] = None) -> Dict[str, Any]:
         _STATE["ltm"] = LTMGate(cache=None, membership_lookup=lambda u, o: None)
     except Exception as e:
         _STATE["ltm_error"] = f"{type(e).__name__}: {e}"
+
+    # optional: grid + partition + data filter for pstm promotion
+    try:
+        from memory_grid import MemoryGrid
+        grid = MemoryGrid()
+        _STATE["grid"] = grid
+    except Exception as e:
+        _STATE["grid_error"] = f"{type(e).__name__}: {e}"
+
+    try:
+        from memory_partition import create_memory_partition
+        if _STATE.get("grid") is not None:
+            try:
+                _STATE["partition"] = create_memory_partition(_STATE["grid"])
+            except Exception:
+                try:
+                    _STATE["partition"] = create_memory_partition(
+                        memory_grid=_STATE["grid"])
+                except Exception:
+                    _STATE["partition"] = None
+    except Exception as e:
+        _STATE["partition_error"] = f"{type(e).__name__}: {e}"
+
+    try:
+        from data_filter import DataFilter
+        _STATE["data_filter"] = DataFilter()
+    except Exception:
+        try:
+            from data.filter import DataFilter
+            _STATE["data_filter"] = DataFilter()
+        except Exception:
+            _STATE["data_filter"] = None
 
     _STATE["ready"] = True
     return _STATE
@@ -403,9 +438,11 @@ def handle_message(
         ref_is_ai=ref_is_ai,
     )
 
-    # PST: cache the incoming message draft (per user, per room)
+    # PST: promote the user's draft into the grid + partition, then clear.
+    # PROMOTE-DRAFT
     # IDENTITY: phone-first — resolve user_id -> phone when possible.
     pstm = _STATE.get("pstm")
+    promotion: Dict[str, Any] = {}
     if pstm is not None:
         try:
             from memory.pstm import pstm_id_from_user
@@ -417,16 +454,31 @@ def handle_message(
                 user_obj = None
             if user_obj is not None:
                 actor_identity = pstm_id_from_user(user_obj) or user_id
-            pstm.set_draft(workspace_id, actor_identity, text or "")
-        except Exception:
+
+            # ensure draft reflects the sent text before promoting
             try:
-                pstm.set_draft(workspace_id, user_id, text or "")
+                pstm.set_draft(workspace_id, actor_identity, text or "")
             except Exception:
                 pass
+
+            try:
+                promotion = pstm.promote_draft(
+                    workspace_id,
+                    actor_identity,
+                    grid=_STATE.get("grid"),
+                    partition=_STATE.get("partition"),
+                    project_id=workspace_id,
+                    data_filter=_STATE.get("data_filter"),
+                ) or {}
+            except Exception as e:
+                promotion = {"error": f"{type(e).__name__}: {e}"}
+        except Exception:
+            pass
 
     return {
         "invoked": trigger is not None,
         "trigger": trigger.kind.value if trigger else None,
+        "promotion": promotion,
     }
 
 

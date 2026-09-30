@@ -192,3 +192,102 @@ select option {
     background: #0f172a;
     color: #ffffff;
 }
+
+/* ============================================================ */
+/* ACCD additions: signup tabs, code blocks, training modal    */
+/* ============================================================ */
+
+.signup-mode-tabs {
+    display: flex;
+    gap: 0.35rem;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid var(--border, #333);
+    padding-bottom: 0.5rem;
+}
+.signup-mode {
+    flex: 1;
+    background: transparent;
+    border: 1px solid transparent;
+    color: inherit;
+    opacity: 0.6;
+    padding: 0.4rem 0.6rem;
+    border-radius: 0.4rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+.signup-mode.active {
+    opacity: 1;
+    border-color: var(--border, #333);
+    background: rgba(255,255,255,0.04);
+}
+
+#orgCreateFields input,
+#orgJoinFields input {
+    display: block;
+    width: 100%;
+    margin-bottom: 0.6rem;
+}
+
+.frame-prose {
+    white-space: pre-wrap;
+    margin-bottom: 0.5rem;
+}
+
+.code-block {
+    background: #0d1117;
+    border: 1px solid #1f2937;
+    border-radius: 0.5rem;
+    padding: 0.8rem;
+    margin: 0.5rem 0;
+    overflow-x: auto;
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    font-size: 0.85rem;
+    line-height: 1.4;
+}
+.code-block code { white-space: pre; }
+
+.code-keyword    { color: #ff7b72; font-weight: 600; }
+.code-builtin    { color: #79c0ff; }
+.code-func_def   { color: #d2a8ff; }
+.code-func_call  { color: #a5d6ff; }
+.code-class_def  { color: #ffa657; }
+.code-string     { color: #a5d6ff; }
+.code-number     { color: #79c0ff; }
+.code-operator   { color: #ff7b72; }
+.code-punct      { color: #c9d1d9; }
+.code-type_annot { color: #7ee787; }
+.code-ident_var  { color: #c9d1d9; }
+
+.frame-error {
+    background: rgba(239, 68, 68, 0.12);
+    border-left: 3px solid #ef4444;
+    padding: 0.5rem 0.7rem;
+    border-radius: 0.35rem;
+    color: #fca5a5;
+    font-size: 0.85rem;
+    margin: 0.4rem 0;
+}
+
+.training-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 0.5rem;
+}
+.training-row label {
+    flex: 0 0 100px;
+    font-size: 0.85rem;
+    opacity: 0.75;
+}
+.training-row input {
+    flex: 1;
+    padding: 0.4rem 0.6rem;
+    border-radius: 0.4rem;
+    border: 1px solid var(--border, #333);
+    background: transparent;
+    color: inherit;
+}
+#btnStartTraining:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}

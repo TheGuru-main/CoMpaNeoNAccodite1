@@ -1,0 +1,40 @@
+
+    ___                 _ _ _
+   / _ \               | (_) |
+  / /_\ \ ___ ___   __| |_| |_ ___
+  |  _  |/ __/ _ \ / _` | | __/ _ \
+  | | | | (_| (_) | (_| | | ||  __/
+  \_| |_/\___\___/ \__,_|_|\__\___|
+  Accodite Console
+  type :help for commands
+
+accd> 16 tools registered:
+  archive.zip.create       archive    (mutating)
+  build.compile            build      
+  build.lint               build      
+  doc.pdf.create           doc        (mutating)
+  fs.glob                  fs         
+  fs.list_dir              fs         
+  fs.read_file             fs         
+  fs.write_file            fs         (mutating)
+  lsp.diagnostics          lsp        
+  lsp.symbols              lsp        
+  sandbox.verify           sandbox    
+  test.run                 test       
+  ts.parse                 ts         
+  ts.symbols               ts         
+  web.http.get             web        
+  web.http.post            web        
+accd> (ask not yet wired — pending main.py integration)
+input: chmod +x ~/CoMpaNeoNAccodite1/bin/accd
+accd> (ask not yet wired — pending main.py integration)
+input: chmod +x ~/CoMpaNeoNAccodite1/console.py
+accd> (ask not yet wired — pending main.py integration)
+input: chmod +x ~/CoMpaNeoNAccodite1/scripts/*.py
+accd> accd> accd> (ask not yet wired — pending main.py integration)
+input: ~/CoMpaNeoNAccodite1/bin/accd --check
+accd> accd> accd> (ask not yet wired — pending main.py integration)
+input: ~/CoMpaNeoNAccodite1/bin/accd scripts/smoke.py
+accd> accd> (ask not yet wired — pending main.py integration)
+input: ~/CoMpaNeoNAccodite1/bin/accd
+accd> 

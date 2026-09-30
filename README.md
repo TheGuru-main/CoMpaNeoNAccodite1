@@ -1,10 +1,12 @@
-# CoMpaNeoNAccodite1
+---
+title: Accodite
+emoji: 🧠
+colorFrom: indigo
+colorTo: purple
+sdk: docker
+pinned: false
+---
 
-Fork of [CoMpaNeoN-AI](https://github.com/TheGuru-main/CoMpaNeoN-AI) →
-end-to-end coding agent with org-aware rooms, personal dialect, verified
-code stream, and per-instance training.
+# Accodite
 
-Baseline tag: `pre-fork-baseline`
-AI coding agent
-
- origin/main
+Fork of CoMpaNeoN-AI → end-to-end coding agent.

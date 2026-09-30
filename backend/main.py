@@ -256,6 +256,156 @@ async def signup(req: SignupRequest):
     finally:
         db.close()
 
+# ACCD-ORG: org create + join
+class OrgCreateRequest(BaseModel):
+    full_name: str = Field(..., min_length=2, max_length=255)
+    phone: str = Field(..., min_length=5, max_length=32)
+    password: str = Field(..., min_length=6, max_length=200)
+    org_name: str = Field(..., min_length=2, max_length=255)
+    org_slug: str = Field(..., min_length=2, max_length=255)
+    org_email: Optional[str] = None
+    org_country: str = "Nigeria"
+    language: str = "en"
+
+
+class OrgJoinRequest(BaseModel):
+    full_name: str = Field(..., min_length=2, max_length=255)
+    phone: str = Field(..., min_length=5, max_length=32)
+    password: str = Field(..., min_length=6, max_length=200)
+    worker_credential: str = Field(..., min_length=3, max_length=255)
+    department: str = Field(..., min_length=1, max_length=100)
+    role: str = "member"
+    title: Optional[str] = None
+    language: str = "en"
+
+
+@app.post("/auth/org/create")
+async def org_create(req: OrgCreateRequest):
+    """Create an org, an admin user, and return a worker credential."""
+    import uuid as _uuid
+    import secrets as _secrets
+    from db_models import User, Organization
+    from org.roles import ROLE_CEO
+
+    db = SessionLocal()
+    try:
+        if db.query(User).filter(User.phone == req.phone).first():
+            raise HTTPException(400, "phone already registered")
+        if db.query(Organization).filter(Organization.slug == req.org_slug).first():
+            raise HTTPException(400, "org slug already taken")
+
+        user = User(
+            id=_uuid.uuid4(),
+            full_name=req.full_name,
+            phone=req.phone,
+            password_hash=hash_password(req.password),
+            country=req.org_country,
+            language=req.language,
+        )
+        db.add(user)
+        db.flush()
+
+        org_uid = f"org-{req.org_slug}"
+        org = Organization(
+            id=_uuid.uuid4(),
+            name=req.org_name,
+            slug=req.org_slug,
+            email=req.org_email,
+            country=req.org_country,
+            language=req.language,
+            ai_uid=org_uid,
+            start_row=1,
+            start_col=0,
+        )
+        db.add(org)
+        db.flush()
+
+        # worker credential: orgslug:phonelast4:randomsuffix
+        credential = f"{req.org_slug}:{req.phone[-4:]}:{_secrets.token_hex(4)}"
+
+        try:
+            from db.models_org import WorkspaceMember
+            from org.departments import create_department_room
+            create_department_room(
+                session=db,
+                organization_id=str(org.id),
+                department_name="Administration",
+                created_by=str(user.id),
+            )
+        except Exception as e:
+            print(f"[ACCD-ORG] dept setup skipped: {e}")
+
+        db.commit()
+        token = create_access_token({"sub": str(user.id), "phone": user.phone})
+        return {
+            "access_token": token,
+            "user": {"id": str(user.id), "phone": user.phone,
+                     "full_name": user.full_name, "role": ROLE_CEO},
+            "org": {"id": str(org.id), "name": org.name, "slug": org.slug,
+                    "ai_uid": org.ai_uid},
+            "worker_credential": credential,
+        }
+    finally:
+        db.close()
+
+
+@app.post("/auth/org/join")
+async def org_join(req: OrgJoinRequest):
+    """Worker signup: validate credential, create pending membership."""
+    import uuid as _uuid
+    from db_models import User, Organization, OrganizationMembership
+
+    db = SessionLocal()
+    try:
+        parts = req.worker_credential.split(":")
+        if len(parts) < 3:
+            raise HTTPException(400, "invalid worker credential format")
+
+        slug = parts[0]
+        org = db.query(Organization).filter(Organization.slug == slug).first()
+        if not org:
+            raise HTTPException(404, "org not found for that credential")
+
+        if db.query(User).filter(User.phone == req.phone).first():
+            raise HTTPException(400, "phone already registered")
+
+        user = User(
+            id=_uuid.uuid4(),
+            full_name=req.full_name,
+            phone=req.phone,
+            password_hash=hash_password(req.password),
+            country=org.country,
+            language=req.language,
+        )
+        db.add(user)
+        db.flush()
+
+        credential_hash = hashlib.sha256(
+            req.worker_credential.encode("utf-8")
+        ).hexdigest()
+
+        membership = OrganizationMembership(
+            id=_uuid.uuid4(),
+            user_id=user.id,
+            organization_id=org.id,
+            role=req.role or "member",
+            department=req.department,
+            title=req.title,
+            credential_hash=credential_hash,
+            credential_active=False,  # pending admin approval
+        )
+        db.add(membership)
+        db.commit()
+        return {
+            "pending": True,
+            "user_id": str(user.id),
+            "org_slug": org.slug,
+            "message": "signup submitted; wait for admin approval",
+        }
+    finally:
+        db.close()
+
+
 @app.post("/auth/login")
 async def login(req: LoginRequest):
     db = SessionLocal()

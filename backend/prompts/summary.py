@@ -20,8 +20,20 @@ from __future__ import annotations
 import os
 import json
 
-import torch
-import torch.nn.functional as F
+# TORCH-STUB: guarded import — summary generation needs torch; module still loads.
+try:
+    import torch  # type: ignore
+    import torch.nn.functional as F  # type: ignore
+    TORCH_AVAILABLE = True
+except ImportError:
+    try:
+        from _torch_stub import TORCH_STUB as torch  # type: ignore
+        from _torch_stub import TORCH_STUB_FUNCTIONAL as F  # type: ignore
+        TORCH_AVAILABLE = False
+    except ImportError:
+        torch = None
+        F = None
+        TORCH_AVAILABLE = False
 
 from ai_model import MiniCompanionAI
 from tokenizer import tokenize, normalize_lang

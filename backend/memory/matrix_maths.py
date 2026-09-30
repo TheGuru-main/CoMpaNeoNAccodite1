@@ -125,7 +125,18 @@ from typing import (
     Tuple,
 )
 
-import torch
+# TORCH-STUB: guard so this module imports without torch installed.
+# Actual tensor ops raise a clear error only when invoked.
+try:
+    import torch  # type: ignore
+    TORCH_AVAILABLE = True
+except ImportError:
+    try:
+        from _torch_stub import TORCH_STUB as torch  # type: ignore
+        TORCH_AVAILABLE = False
+    except ImportError:
+        torch = None
+        TORCH_AVAILABLE = False
 
 
 # ============================================================================

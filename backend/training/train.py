@@ -6,10 +6,23 @@ import random
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from langdetect import detect, LangDetectException
+# ACCD-TORCH-GUARD: training requires torch; module imports without it.
+try:
+    import torch
+    import torch.nn as nn
+    import torch.optim as optim
+    TORCH_AVAILABLE = True
+except ImportError:
+    torch = None
+    nn = None
+    optim = None
+    TORCH_AVAILABLE = False
+
+try:
+    from langdetect import detect, LangDetectException
+except ImportError:
+    def detect(_): return "en"
+    class LangDetectException(Exception): pass
 
 from ai_model import MiniCompanionAI
 from tokenizer import tokenize, normalize_lang
@@ -594,6 +607,12 @@ def train(
     save_vocab: str = "tokenizer_vocab.json",
     device=None,
 ):
+    if not TORCH_AVAILABLE:
+        raise RuntimeError(
+            "torch is required for training. Install it on the runtime "
+            "(pip install torch) before calling train()."
+        )
+
     """
     Train MiniCompanionAI from MemoryGrid knowledge.
 

@@ -19,9 +19,36 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List, Optional, Tuple
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+# ACCD-TORCH-GUARD: model classes need torch; module imports without it.
+try:
+    import torch
+    import torch.nn as nn
+    import torch.nn.functional as F
+    TORCH_AVAILABLE = True
+except ImportError:
+    torch = None
+    F = None
+
+    class _StubModule:
+        """Placeholder for nn.Module so class bodies still execute."""
+        def __init__(self, *a, **k):
+            pass
+        def __call__(self, *a, **k):
+            raise RuntimeError(
+                "torch is required to instantiate model classes"
+            )
+
+    class _StubNN:
+        Module = _StubModule
+        Linear = _StubModule
+        Embedding = _StubModule
+        LayerNorm = _StubModule
+        Dropout = _StubModule
+        Sequential = _StubModule
+        ModuleList = _StubModule
+
+    nn = _StubNN()
+    TORCH_AVAILABLE = False
 
 from model.head_router import TOTAL_HEADS, BASE_HEADS, SPECIAL_HEADS, PAIRS
 
@@ -41,7 +68,17 @@ DEFAULT_N_LANGS  = 64
 # HEAD MAP
 # ============================================================================
 
-def build_default_head_segment_map() -> torch.Tensor:
+def build_default_head_segment_map():
+    """Return a length-TOTAL_HEADS map: pair idx for base heads, -1 for specials.
+
+    Returns a torch.LongTensor when torch is available, else a plain list.
+    """
+    if not TORCH_AVAILABLE:
+        m = [-1] * TOTAL_HEADS
+        for pair_idx in range(PAIRS):
+            m[pair_idx * 2] = pair_idx
+            m[pair_idx * 2 + 1] = pair_idx
+        return m
     m = torch.full((TOTAL_HEADS,), -1, dtype=torch.long)
     for pair_idx in range(PAIRS):
         m[pair_idx * 2] = pair_idx

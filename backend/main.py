@@ -182,8 +182,11 @@ class CrawlRequest(BaseModel):
     url: str
 
 class TrainRequest(BaseModel):
-    epochs: int = 30
+    epochs: int = 1           # manual trigger default; pass more for a long run
     batch_size: int = 8
+    max_texts: int = 500      # cap on grid documents pulled per run
+    lr: float = 3e-4
+    label: str = "manual"     # free-form tag for trace logging
 
 class PredictRequest(BaseModel):
     text: str
@@ -616,10 +619,66 @@ async def crawl_web(req: CrawlRequest):
 # Train
 @app.post("/train")
 async def train(req: TrainRequest):
-    from train import train as do_train
-    await asyncio.to_thread(do_train, epochs=req.epochs, batch_size=req.batch_size)
-    load_model_if_exists()
-    return {"message": "Training completed"}
+    # ACCD-TRAIN: report torch availability, pass through params, keep model reload
+    try:
+        from training.train import train as do_train, TORCH_AVAILABLE as _TR
+    except Exception:
+        try:
+            from train import train as do_train, TORCH_AVAILABLE as _TR
+        except Exception:
+            from train import train as do_train
+            _TR = True
+
+    if not _TR:
+        return {
+            "ok": False,
+            "reason": "torch not installed on this runtime",
+            "hint": "pip install torch (or deploy via the HF Spaces Docker image)",
+            "label": req.label,
+        }
+
+    try:
+        kwargs = {
+            "epochs": req.epochs,
+            "batch_size": req.batch_size,
+        }
+        # pass extended params only if the signature accepts them
+        import inspect
+        sig = inspect.signature(do_train)
+        if "max_texts" in sig.parameters:
+            kwargs["max_texts"] = req.max_texts
+        if "lr" in sig.parameters:
+            kwargs["lr"] = req.lr
+
+        report = await asyncio.to_thread(do_train, **kwargs)
+        load_model_if_exists()
+        return {
+            "ok": True,
+            "label": req.label,
+            "params": kwargs,
+            "report": report if isinstance(report, dict) else str(report),
+        }
+    except Exception as e:
+        return {
+            "ok": False,
+            "reason": f"{type(e).__name__}: {e}",
+            "label": req.label,
+        }
+
+
+@app.get("/train/status")
+async def train_status(user: User = Depends(get_current_user)):
+    try:
+        from training.train import TORCH_AVAILABLE as _TR
+    except Exception:
+        try:
+            from train import TORCH_AVAILABLE as _TR
+        except Exception:
+            _TR = True
+    return {
+        "torch_available": _TR,
+        "ready": _TR,
+    }
 
 # Summary
 @app.post("/summary")
@@ -711,6 +770,18 @@ async def startup_event():
     
     # Line 2: Offload the machine learning loop onto a non-blocking background thread
     asyncio.create_task(asyncio.to_thread(start_background_training))
+
+    # ACCD-STARTUP: build pipeline singletons (grid, partition, gate, trigger, pstm)
+    try:
+        from integration import bootstrap as _accd_boot
+        st = _accd_boot(root=os.path.dirname(os.path.abspath(__file__)) + "/..")
+        print(f"[ACCD] bootstrap ready={st.get('ready')}")
+        print(f"[ACCD] grid={type(st.get('grid')).__name__} "
+              f"partition={type(st.get('partition')).__name__} "
+              f"trigger={type(st.get('trigger')).__name__} "
+              f"pstm={type(st.get('pstm')).__name__}")
+    except Exception as e:
+        print(f"[ACCD] startup error: {type(e).__name__}: {e}")
 
 
 # ================================================

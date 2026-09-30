@@ -28,6 +28,11 @@ try:
 except Exception:
     ProgressChannel = None
 
+try:
+    from agent.tool_loop import tool_loop as _tool_loop
+except Exception:
+    _tool_loop = None
+
 
 # ============================================================================
 # STATE
@@ -608,6 +613,9 @@ def run_job(
     max_iterations: int = 5,
     code_mode: bool = True,
     verify_each_step: bool = True,
+    registry=None,
+    enable_tools: bool = True,
+    max_tool_rounds: int = 5,
 ):
     """
     Generator. Runs a Mode.JOB request end to end.
@@ -689,7 +697,29 @@ def run_job(
                 yield progress.retry(attempt, max_iterations, last_hint[:80])
 
             try:
-                step_out = generate_fn(step_prompt) or ""
+                if enable_tools and _tool_loop is not None and registry is not None:
+                    # each step gets the full tool surface
+                    tool_result = _tool_loop(
+                        prompt=step_prompt,
+                        generate_fn=generate_fn,
+                        registry=registry,
+                        actor_id=user_id,
+                        organization_id=None,
+                        workspace_id=workspace_id,
+                        max_rounds=max_tool_rounds,
+                        progress=progress,
+                    )
+                    # stream the tool_loop frames as they happen
+                    for f in tool_result.get("frames", []):
+                        yield f
+                    step_out = tool_result.get("final", "") or ""
+                    step_summary_tools = {
+                        "tool_calls": len(tool_result.get("calls", [])),
+                        "tool_rounds": tool_result.get("rounds", 0),
+                    }
+                else:
+                    step_out = generate_fn(step_prompt) or ""
+                    step_summary_tools = {}
             except Exception as e:
                 last_hint = f"generator failed: {type(e).__name__}: {e}"
                 continue
@@ -715,6 +745,8 @@ def run_job(
 
         step_summary["attempts"] = attempt
         step_summary["ok"] = step_ok
+        if 'step_summary_tools' in dir() and step_summary_tools:
+            step_summary.update(step_summary_tools)
         all_summaries.append(step_summary)
 
         for f in step_frames:

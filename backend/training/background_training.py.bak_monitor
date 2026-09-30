@@ -844,60 +844,153 @@ def train_model(
 # BACKGROUND MONITOR
 # ============================================================================
 
-# MONITOR-V2
 async def auto_train_monitor():
     """
-    Three-cadence background monitor:
+    Continuously monitor MemoryGrid for newly indexed lexical knowledge.
 
-        60s  — grid growth check -> retrain (existing behaviour)
-        5min — crawler queue tick -> run_scheduled
-        10min— finetuner consolidation -> run_consolidation_cycle
+    When MemoryGrid grows, the model is retrained from the current
+    MemoryGrid knowledge set.
     """
-    last_count = get_unique_words_count()
-    print(f"[monitor] started. Initial unique words: {last_count}")
 
-    # lazy singletons so we don't rebuild them each tick
-    _crawler = None
-    ticks = 0
+    last_count = (
+        get_unique_words_count()
+    )
+
+    print(
+        "Auto-train monitor started."
+    )
+
+    print(
+        f"Initial MemoryGrid unique words: "
+        f"{last_count}"
+    )
 
     while True:
-        await asyncio.sleep(60)
-        ticks += 1
 
-        # --- 1) crawl queue tick (every 5 minutes) ---
-        if ticks % 5 == 0:
-            try:
-                if _crawler is None:
-                    from web_crawler import WebCrawler
-                    _crawler = WebCrawler()
-                result = _crawler.run_scheduled(limit=10)
-                if result:
-                    print(f"[monitor] crawler processed {len(result)} item(s)")
-            except Exception as e:
-                print(f"[monitor] crawl tick failed: {type(e).__name__}: {e}")
+        await asyncio.sleep(
+            60
+        )
 
-        # --- 2) finetuner consolidation (every 10 minutes) ---
-        if ticks % 10 == 0:
-            try:
-                report = run_consolidation_cycle()
-                print(f"[monitor] consolidation: {report}")
-            except Exception as e:
-                print(f"[monitor] consolidation failed: {type(e).__name__}: {e}")
-
-        # --- 3) full retrain on grid growth (every 60s) ---
-        try:
-            current_count = get_unique_words_count()
-        except Exception as e:
-            print(f"[monitor] count failed: {type(e).__name__}: {e}")
-            continue
+        current_count = (
+            get_unique_words_count()
+        )
 
         if current_count > last_count:
-            print(f"[monitor] grid grew: {last_count} -> {current_count}")
-            try:
-                await asyncio.to_thread(train_model)
-                last_count = current_count
-            except Exception as e:
-                print(f"[monitor] retrain failed: {type(e).__name__}: {e}")
+
+            print(
+                "New MemoryGrid knowledge "
+                "detected."
+            )
+
+            print(
+                f"Unique words: "
+                f"{last_count} -> "
+                f"{current_count}"
+            )
+
+            await asyncio.to_thread(
+                train_model
+            )
+
+            last_count = current_count
+
+        else:
+
+            last_count = current_count
+
+
+# ============================================================================
+# START BACKGROUND TRAINING
+# ============================================================================
+
+def run_consolidation_cycle(
+    grid: "MemoryGrid" = None,
+    top_k: int = 200,
+) -> Dict[str, Any]:
+    """
+    Consolidation pass:
+        1. collect MemoryGrid texts (existing helper)
+        2. filter via data.filter.DataFilter.is_training_worthy
+        3. feed survivors to FineTunerAndWeightScalar.process
+        4. return counters
+
+    Safe to call from the background daemon alongside train_model().
+    """
+    report = {
+        "collected": 0,
+        "kept": 0,
+        "rejected": 0,
+        "processed": 0,
+        "errors": 0,
+    }
+
+    try:
+        texts = collect_memorygrid_texts()
+    except Exception:
+        texts = []
+
+    report["collected"] = len(texts)
+    if not texts:
+        return report
+
+    # --- filter ---
+    try:
+        from data.filter import DataFilter
+        dfilter = DataFilter()
+    except Exception:
+        dfilter = None
+
+    kept = []
+    for t in texts[:top_k]:
+        if dfilter is None:
+            kept.append(t)
+            continue
+        try:
+            ok = dfilter.is_training_worthy(t) if hasattr(dfilter, "is_training_worthy") else True
+        except Exception:
+            ok = True
+        if ok:
+            kept.append(t)
+        else:
+            report["rejected"] += 1
+
+    report["kept"] = len(kept)
+    if not kept:
+        return report
+
+    # --- fine tuner ---
+    try:
+        from training.finetuner import FineTunerAndWeightScalar
+    except Exception:
+        try:
+            from finetuner import FineTunerAndWeightScalar
+        except Exception:
+            return report
+
+    try:
+        ft = FineTunerAndWeightScalar()
+    except Exception:
+        try:
+            ft = FineTunerAndWeightScalar.__new__(FineTunerAndWeightScalar)
+        except Exception:
+            return report
+
+    for t in kept:
+        try:
+            if hasattr(ft, "process"):
+                ft.process(t)
+            elif hasattr(ft, "process_user_input"):
+                ft.process_user_input(t)
+            report["processed"] += 1
+        except Exception:
+            report["errors"] += 1
+
+    try:
+        print(f"[consolidation] {report}")
+    except Exception:
+        pass
+
+    return report
 
 
 def start_background_training():

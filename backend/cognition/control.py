@@ -28,6 +28,12 @@ from typing import Any, Dict, List, Optional, Set
 from model.head_router import HeadAllocator, Segment
 from cognition.pattern_detector import PatternDetector
 
+from agent.mode_classifier import (
+    classify as _classify_mode,
+    policy_for as _policy_for,
+    Mode as _Mode,
+)
+
 from model.head_wire import (
     plan_to_head_map as _plan_to_head_map,
     apply_binding_to_model as _apply_binding_to_model,
@@ -67,6 +73,10 @@ class CognitionControl:
 
         # user/workspace preference memory (optional)
         self.preference_store = None
+
+        # cognition routing (optional analyze hook)
+        self._analyze = None
+        self._current_mode = None
 
         # detector is optional until write/route callbacks are provided
         self.detector: Optional[PatternDetector] = None
@@ -112,6 +122,27 @@ class CognitionControl:
         Build segments -> bind head pairs -> compose prompt bundle.
         Returns {segments, binding_plan, bundle}.
         """
+        # ---- mode classification ----
+        try:
+            _decision = _classify_mode(
+                text=query,
+                analyze=getattr(self, "_analyze", None),
+                domain=(intent or {}).get("domain") if isinstance(intent, dict) else None,
+            )
+            _policy = _policy_for(_decision.mode)
+            self._current_mode = _decision
+            # apply policy to the live cfg (advisory; caller may override)
+            self.cfg.code_mode = _policy.code_mode
+            self.cfg.verification_level = _policy.verification_level
+            self.cfg.max_iterations = _policy.max_iterations
+            self.cfg.allow_mutations = _policy.allow_mutations
+            if _policy.prompt_domain:
+                self.cfg.domain_pack = _policy.prompt_domain
+        except Exception as _e:
+            _decision = None
+            _policy = None
+        # ---- /mode ----
+
         segments: List[Segment] = []
 
         if user_id:
@@ -166,12 +197,29 @@ class CognitionControl:
             "verification_level": self.cfg.verification_level,
         })
 
+        try:
+            bundle["mode"] = _decision.mode.value if _decision else None
+            bundle["mode_confidence"] = _decision.confidence if _decision else None
+            if _policy:
+                bundle["mode_policy"] = {
+                    "code_mode": _policy.code_mode,
+                    "verification_level": _policy.verification_level,
+                    "max_iterations": _policy.max_iterations,
+                    "allow_mutations": _policy.allow_mutations,
+                    "read_only": _policy.read_only,
+                    "emit_planning_status": _policy.emit_planning_status,
+                }
+        except Exception:
+            pass
+
         return {
             "segments": segments,
             "binding_plan": binding_plan,
             "bundle": bundle,
             "head_map": _head_map,
             "segment_to_idx": _seg_to_idx,
+            "mode": _decision.mode.value if _decision else None,
+            "mode_policy": _policy.__dict__ if _policy else None,
         }
 
     def _compose_bundle(
@@ -308,6 +356,13 @@ class CognitionControl:
     def set_preference_store(self, store) -> None:
         """Attach a UserWorkspacePreferenceStore for prompt injection."""
         self.preference_store = store
+
+    def set_analyze(self, analyze) -> None:
+        """Attach a cognition.analyze.Analyze instance for mode refinement."""
+        self._analyze = analyze
+
+    def last_mode(self):
+        return self._current_mode
 
     def _trace(self, action: str, payload: dict) -> None:
         if self.tracer is None:

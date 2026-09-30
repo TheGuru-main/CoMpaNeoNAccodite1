@@ -1053,6 +1053,19 @@ async def startup_event():
 # ================================================
 # SERVE FRONTEND (
 #=====================================================
-app.mount("/app", StaticFiles(directory="../frontend/ui", html=True), name="frontend")
+# FRONTEND-PATH: resolve relative to this file, not CWD
+_frontend_candidates = [
+    os.environ.get("ACCD_FRONTEND_DIR", ""),
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend", "ui"),
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend", "ui"),
+    "../frontend/ui",
+    "frontend/ui",
+]
+_frontend_dir = next((d for d in _frontend_candidates if d and os.path.isdir(d)), None)
+if _frontend_dir:
+    app.mount("/app", StaticFiles(directory=_frontend_dir, html=True), name="frontend")
+    print(f"[ACCD] frontend mounted at /app from {_frontend_dir}")
+else:
+    print("[ACCD] frontend directory not found — /app will 404")
 
 

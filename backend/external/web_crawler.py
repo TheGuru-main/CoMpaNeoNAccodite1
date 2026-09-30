@@ -590,10 +590,11 @@ class WebCrawler:
         lang: str = "en",
     ) -> Any:
         self.scheduled_jobs += 1
+        # LANG-META: CrawlerScheduler has no `lang` param; carry it in metadata.
         return self.scheduler.schedule(
             url=url,
             source_type=source_type,
-            lang=self._resolve_language(lang),
+            metadata={"lang": self._resolve_language(lang)},
         )
 
     def schedule_many(

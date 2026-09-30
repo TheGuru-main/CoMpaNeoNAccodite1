@@ -702,4 +702,54 @@ def build_registry(
         except Exception as e:
             raise RuntimeError(f"{type(e).__name__}: {e}")
 
+    # ---------------------------------------------------------------
+    # PAIR 9: external.dictionary / external.datamuse
+    # ---------------------------------------------------------------
+
+    @reg.tool(
+        name="external.dictionary",
+        category="ext",
+        description="Look up a word in the free Dictionary API (keyless).",
+        mutating=False,
+    )
+    def external_dictionary(
+        word: str,
+        lang: str = "en",
+        max_results: int = 3,
+    ) -> Dict[str, Any]:
+        try:
+            from external.external import fetch_dictionary  # type: ignore
+        except Exception:
+            from external import fetch_dictionary  # type: ignore
+        # tolerate multiple signatures
+        try:
+            res = fetch_dictionary(word, lang=lang, max_results=max_results)
+        except TypeError:
+            try:
+                res = fetch_dictionary(word, lang)
+            except TypeError:
+                res = fetch_dictionary(word)
+        if isinstance(res, dict):
+            return {"word": word, "lang": lang, "ok": True, "data": res}
+        if isinstance(res, list):
+            return {"word": word, "lang": lang, "ok": True, "entries": res[:max_results]}
+        return {"word": word, "lang": lang, "ok": True, "raw": str(res)[:4000]}
+
+    @reg.tool(
+        name="external.datamuse",
+        category="ext",
+        description="Datamuse word relations (ml/rel_syn/rel_ant/sp/sl/sug). Keyless.",
+        mutating=False,
+    )
+    def external_datamuse(
+        query: str,
+        op: str = "ml",
+        max_results: int = 10,
+    ) -> Dict[str, Any]:
+        try:
+            from external.datamuse import fetch_datamuse
+        except Exception:
+            from datamuse import fetch_datamuse  # fallback
+        return fetch_datamuse(query, op=op, max_results=max_results)
+
     return reg

@@ -168,12 +168,14 @@ class WebCrawler:
     def __init__(
         self,
         memory_grid: Any,
+        data_mixer: Optional[Any] = None,
         timeout: float = 15.0,
         user_agent: str = "CoMpaNeoN-WebCrawler/1.0",
         scheduler: Optional[CrawlerScheduler] = None,
     ) -> None:
 
         self.memory = memory_grid
+        self.data_mixer = data_mixer
         self.page_cache = PageCache()
 
         self.scheduler = (
@@ -383,6 +385,34 @@ class WebCrawler:
         source_label = str(source_type)
         if url:
             source_label = f"{source_label}:{url}"
+
+        # MIX-EXTERNAL: route external text through DataMixer before grid write
+        if getattr(self, "data_mixer", None) is not None:
+            try:
+                mixed = self.data_mixer.mix_external(
+                    {
+                        "text": text,
+                        "url": url,
+                        "language": lang,
+                        "source": source_label,
+                        "metadata": metadata or {},
+                    },
+                    source=source_label,
+                    lang=lang,
+                )
+                if isinstance(mixed, dict):
+                    if mixed.get("accepted") is False:
+                        return {"indexed": False,
+                                "reason": mixed.get("reason", "rejected_by_mixer")}
+                    text = (mixed.get("text")
+                            or mixed.get("normalized_text")
+                            or text)
+                    merged_meta = mixed.get("metadata")
+                    if isinstance(merged_meta, dict):
+                        metadata = {**(metadata or {}), **merged_meta}
+            except Exception as e:
+                print(f"[web_crawler] mixer failed: {type(e).__name__}: {e}")
+
 
         try:
             doc_id = self.memory.add_document(

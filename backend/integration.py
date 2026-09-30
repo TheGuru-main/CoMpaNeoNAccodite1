@@ -21,6 +21,11 @@ import os
 import re
 from typing import Any, Dict, Generator, List, Optional, Tuple
 
+try:
+    from agent.progress import ProgressChannel
+except Exception:
+    ProgressChannel = None
+
 
 # ============================================================================
 # STATE
@@ -232,6 +237,7 @@ def verify_and_frame(
     ai_text: str,
     *,
     max_iterations: int = 3,
+    progress=None,
 ) -> Tuple[List[str], Dict[str, Any]]:
     """
     Walk fenced code blocks in `ai_text`; run each through StreamGate.
@@ -289,8 +295,15 @@ def verify_and_frame(
         last_error = ""
         stream_frames: List[str] = []
 
+        if progress is not None:
+            try: frames.append(progress.verifying(f"code block {b['index'] + 1}"))
+            except Exception: pass
+
         while attempt < max_iterations:
             attempt += 1
+            if progress is not None and attempt > 1:
+                try: frames.append(progress.retry(attempt, max_iterations, last_error[:80]))
+                except Exception: pass
             stream_frames = []
             errored = False
             for f in gate.stream(path=path, source=body):
@@ -306,6 +319,10 @@ def verify_and_frame(
             break
 
         summary["iterations"] += attempt
+
+        if progress is not None:
+            try: frames.append(progress.verify_result(f"code block {b['index'] + 1}", decision_ok, 0 if decision_ok else 1))
+            except Exception: pass
 
         if decision_ok:
             frames.append(f"#code-begin#{lang}#{b['index']}")
@@ -341,6 +358,8 @@ def handle_generate(
     ref_is_ai: bool = False,
     generate_fn=None,
     stream: bool = False,
+    mode: Optional[str] = None,
+    mode_policy: Optional[dict] = None,
 ):
     """
     Full pipeline for a generate request.
@@ -372,8 +391,38 @@ def handle_generate(
     if generate_fn is None:
         raise RuntimeError("handle_generate requires generate_fn(prompt)->str")
 
+    # MODE-AWARE: skip code verification entirely for chat/plan/research
+    policy = mode_policy or {}
+    code_mode = bool(policy.get("code_mode", True))
+    emit_planning = bool(policy.get("emit_planning_status", False))
+
+    progress = ProgressChannel() if ProgressChannel is not None else None
+    if progress is not None:
+        try:
+            if emit_planning:
+                progress.planning("Thinking through this…")
+            progress.generating("Generating response…")
+        except Exception:
+            pass
+
     ai_text = generate_fn(prompt) or ""
-    frames, summary = verify_and_frame(ai_text)
+
+    if code_mode:
+        frames, summary = verify_and_frame(ai_text, progress=progress)
+    else:
+        # chat / plan / research: stream as prose, no code gate
+        frames = [f"#prose#{ai_text}"] if ai_text else []
+        summary = {"blocks": 0, "verified": 0, "rejected": 0, "iterations": 0,
+                   "mode_skipped_verification": mode or "chat"}
+
+    if progress is not None:
+        try:
+            if emit_planning:
+                progress.done(f"plan complete ({mode or 'plan'})")
+            else:
+                progress.done(f"verified {summary.get('verified', 0)} block(s)")
+        except Exception:
+            pass
 
     # PST memory: record draft, suggestions, etc. (best-effort)
     # GEN-IDENTITY: phone-first identity for PSTM keying
@@ -404,6 +453,8 @@ def handle_generate(
     return {
         "ai_invoked": True,
         "trigger": trigger.kind.value if trigger else None,
+        "mode": mode,
+        "code_mode": code_mode,
         "frames": frames,
         "summary": summary,
         "raw": ai_text,

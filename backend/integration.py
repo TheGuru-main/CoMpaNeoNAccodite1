@@ -17,6 +17,8 @@ Design:
     - prose           -> streamed raw
 """
 from __future__ import annotations
+import json
+import re
 import os
 import re
 from typing import Any, Dict, Generator, List, Optional, Tuple
@@ -548,3 +550,184 @@ def status() -> Dict[str, Any]:
     s.pop("detector", None)
     s.pop("brain", None)
     return s
+
+
+# ============================================================================
+# JOB PIPELINE (Mode.JOB)
+# ============================================================================
+
+# JOB-HARDEN
+_STEP_RX = re.compile(
+    r"^\s*(?:\d+[.)]|[-*•])\s+(.+?)\s*$",
+    re.MULTILINE,
+)
+
+
+def _normalize_plan_text(text: str) -> str:
+    """
+    Some models emit plans with literal '\n' escape sequences instead of
+    real newlines. Convert those (and '\t') so the step parser can match.
+    """
+    if not text:
+        return ""
+
+    # convert literal \\n to real newline
+    if "\\n" in text and "\n" not in text:
+        text = text.replace("\\n", "\n")
+
+    # convert literal \\t to real tab
+    if "\\t" in text and "\t" not in text:
+        text = text.replace("\\t", "\t")
+
+    return text
+
+def _parse_steps(plan_text: str, *, max_steps: int = 8) -> List[str]:
+    """Extract numbered/bulleted steps from a plan text."""
+    steps: List[str] = []
+    for m in _STEP_RX.finditer(plan_text or ""):
+        line = (m.group(1) or "").strip()
+        if not line:
+            continue
+        # skip nested list items that are part of a step's detail
+        if line.startswith(("Note:", "note:")):
+            continue
+        steps.append(line)
+        if len(steps) >= max_steps:
+            break
+    return steps
+
+
+def run_job(
+    *,
+    workspace_id: str,
+    user_id: str,
+    prompt: str,
+    generate_fn,
+    plan_fn=None,
+    max_steps: int = 8,
+    max_iterations: int = 5,
+    code_mode: bool = True,
+    verify_each_step: bool = True,
+):
+    """
+    Generator. Runs a Mode.JOB request end to end.
+
+    Yields frames:
+        #status#{"kind":"planning",...}
+        #status#{"kind":"plan",...}          with the parsed step count
+        #status#{"kind":"step","msg":"1/3","description":"..."}
+        #status#{"kind":"verifying",...}
+        #status#{"kind":"verify_result",...}
+        #status#{"kind":"retry",...}
+        #code-begin# / #token#* / #code-end#   per verified step
+        #prose#<step plan prose>
+        #status#{"kind":"done",...}
+        #error#<hint>                        when the job aborts
+    """
+    progress = ProgressChannel() if ProgressChannel is not None else None
+    planner = plan_fn or generate_fn
+
+    # --- Phase 1: planning ---
+    if progress is not None:
+        yield progress.planning("Drafting plan…")
+
+    plan_prompt = (
+        "Produce a numbered plan for the following request. "
+        "Each step should be a single sentence. "
+        "Do not produce code yet — plan only.\n\n"
+        f"REQUEST:\n{prompt}"
+    )
+    try:
+        plan_text = planner(plan_prompt) or ""
+    except Exception as e:
+        yield f"#error#planner failed: {type(e).__name__}: {e}"
+        return
+
+    plan_text_normalized = _normalize_plan_text(plan_text)
+    if plan_text_normalized != plan_text:
+        plan_text = plan_text_normalized
+        # re-emit the normalized plan to the client
+        # (the earlier #prose# frame carried the raw version)
+    steps = _parse_steps(plan_text, max_steps=max_steps)
+    if not steps:
+        # fall back to a single-step job: treat the whole request as one step
+        steps = [prompt]
+
+    if progress is not None:
+        yield progress._emit("plan", f"{len(steps)} step(s)",
+                             steps=len(steps))
+
+    yield f"#prose#{plan_text}"
+
+    # --- Phase 2: execute ---
+    total = len(steps)
+    all_summaries: List[Dict[str, Any]] = []
+    failures = 0
+
+    for idx, step in enumerate(steps, start=1):
+        if progress is not None:
+            yield progress._emit("step", f"{idx}/{total}", description=step[:140])
+
+        step_prompt = (
+            f"You are executing step {idx} of {total} of a larger plan.\n"
+            f"Overall request:\n{prompt}\n\n"
+            f"Current step:\n{step}\n\n"
+            "Produce only the code needed for this step. If the step is not "
+            "a coding step, produce a short prose answer instead."
+        )
+
+        # per-step retry loop
+        attempt = 0
+        step_ok = False
+        last_hint = ""
+        step_frames: List[str] = []
+        step_summary: Dict[str, Any] = {"step": idx, "description": step}
+
+        while attempt < max_iterations:
+            attempt += 1
+            if attempt > 1 and progress is not None:
+                yield progress.retry(attempt, max_iterations, last_hint[:80])
+
+            try:
+                step_out = generate_fn(step_prompt) or ""
+            except Exception as e:
+                last_hint = f"generator failed: {type(e).__name__}: {e}"
+                continue
+
+            if not verify_each_step or not code_mode:
+                step_frames = [f"#prose#{step_out}"]
+                step_summary["verified"] = 0
+                step_summary["skipped_verification"] = True
+                step_ok = True
+                break
+
+            frames_i, summary_i = verify_and_frame(step_out, progress=progress)
+            step_frames = frames_i
+            step_summary.update(summary_i)
+
+            if summary_i.get("rejected", 0) == 0 and summary_i.get("blocks", 0) >= 0:
+                # ok if nothing was rejected (even zero blocks is fine — prose step)
+                step_ok = True
+                break
+            last_hint = (
+                f"step {idx}: {summary_i.get('rejected', 0)} block(s) rejected"
+            )
+
+        step_summary["attempts"] = attempt
+        step_summary["ok"] = step_ok
+        all_summaries.append(step_summary)
+
+        for f in step_frames:
+            yield f
+
+        if not step_ok:
+            failures += 1
+            yield f"#error#step {idx} failed after {attempt} attempt(s): {last_hint}"
+
+    # --- Phase 3: wrap ---
+    if progress is not None:
+        yield progress.done(
+            f"job complete — {total - failures}/{total} step(s) ok"
+        )
+
+    yield f"#meta#{json.dumps({'steps': total, 'failures': failures, 'summaries': all_summaries})}"

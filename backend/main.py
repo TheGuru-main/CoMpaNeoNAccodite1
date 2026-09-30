@@ -79,8 +79,12 @@ tokenizer_vocab: Optional[Dict[str, int]] = None
 reverse_vocab: Optional[Dict[int, str]] = None
 
 memory = MemoryGrid()
-web_crawler = WebCrawler()
 mixer = DataMixer()
+try:
+    web_crawler = WebCrawler(memory, data_mixer=mixer)
+except TypeError:
+    # older signature; still works without mixer
+    web_crawler = WebCrawler(memory)
 search_cache = SearchCache(ttl_seconds=300)
 memory_cache = MemoryCache()
 word_understanding = WordUnderstanding(memory)

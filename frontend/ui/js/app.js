@@ -270,6 +270,48 @@ function renderCodeTokens(tokens, lang) {
     return `<pre class="code-block" data-lang="${lang || ''}"><code>${parts.join('')}</code></pre>`;
 }
 
+function renderStatusFrame(container, jsonPayload) {
+    let payload;
+    try { payload = JSON.parse(jsonPayload); }
+    catch (_) { return; }
+    const kind = payload.kind || 'status';
+    const msg = payload.msg || '';
+
+    // find or create the "thinking" tray at the top of this message body
+    let tray = container.querySelector('.status-tray');
+    if (!tray) {
+        tray = document.createElement('div');
+        tray.className = 'status-tray';
+        container.appendChild(tray);
+    }
+
+    // collapse trailing "thinking/generating" pills when a new status arrives
+    if (kind === 'done' || kind === 'error' || kind === 'verify_result' || kind === 'tool_result') {
+        tray.querySelectorAll('.status-pill.pending').forEach(el => el.classList.remove('pending'));
+    }
+
+    const pill = document.createElement('div');
+    pill.className = 'status-pill';
+
+    if (kind === 'thinking' || kind === 'planning' || kind === 'generating' || kind === 'waiting') {
+        pill.classList.add('pending');
+    }
+    if (kind === 'error') pill.classList.add('err');
+    if (kind === 'verify_result' || kind === 'tool_result') {
+        pill.classList.add(payload.ok ? 'ok' : 'err');
+    }
+    if (kind === 'done') pill.classList.add('ok');
+
+    const icon = {
+        thinking:    '🧠', planning: '📋', generating: '✍️', waiting: '⏳',
+        tool_call:   '🔧', tool_result: '✅', verifying: '🔍',
+        verify_result: '🛡️', retry: '🔁', error: '⚠️', done: '🎉',
+    }[kind] || '•';
+
+    pill.innerHTML = `<span class="status-icon">${icon}</span><span class="status-text">${kind}${msg ? ' · ' + msg : ''}</span>`;
+    tray.appendChild(pill);
+}
+
 function renderFrames(container, frames) {
     if (!Array.isArray(frames) || frames.length === 0) return false;
 
@@ -291,6 +333,12 @@ function renderFrames(container, frames) {
 
     for (const frame of frames) {
         if (frame.startsWith('#begin#') || frame.startsWith('#end#') || frame.startsWith('#meta#')) {
+            continue;
+        }
+        if (frame.startsWith('#status#')) {
+            flushProse();
+            try { renderStatusFrame(container, frame.slice(8)); }
+            catch (_) {}
             continue;
         }
 

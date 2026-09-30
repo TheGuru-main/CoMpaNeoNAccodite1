@@ -49,9 +49,15 @@ class ToolRegistry:
         return wrap
 
     def dispatch(self, call):
+        # ACCD-PROGRESS-DISPATCH
+        import time as _t
         spec = self._tools.get(call.name)
         if spec is None:
             return ToolResult(ok=False, error=f"unknown tool: {call.name}")
+        t0 = _t.time()
+        if getattr(self, "_on_event", None):
+            try: self._on_event("begin", call.name, True, 0.0)
+            except Exception: pass
         self._trace(call, phase="call")
         try:
             value = spec.fn(**call.args)
@@ -62,6 +68,9 @@ class ToolRegistry:
         except Exception as e:
             result = ToolResult(ok=False, error=f"{type(e).__name__}: {e}")
         self._trace(call, phase="result", result=result)
+        if getattr(self, "_on_event", None):
+            try: self._on_event("end", call.name, result.ok, (_t.time() - t0) * 1000)
+            except Exception: pass
         return result
 
     def _trace(self, call, phase, result=None):

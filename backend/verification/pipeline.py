@@ -79,11 +79,14 @@ class VerificationPipeline:
         lsp: Optional[LSPManager] = None,
         runner: Optional[SandboxRunner] = None,
         stop_on_first_failure: bool = True,
+        on_event=None,
     ):
         self.root = root
         self.lsp = lsp or LSPManager()
         self.runner = runner or SandboxRunner(prefer="subprocess", timeout_s=15)
         self.stop_on_first_failure = stop_on_first_failure
+        # ACCD-PROGRESS: optional callback(event, stage, ok, findings)
+        self._on_event = on_event
 
     # -----------------------------------------------------------------
 
@@ -110,12 +113,18 @@ class VerificationPipeline:
             stages.append(("security", lambda: self._stage_security(source, lang)))
 
         for name, fn in stages:
+            if self._on_event:
+                try: self._on_event("begin", name, True, 0)
+                except Exception: pass
             try:
                 res = fn()
             except Exception as e:
                 res = StageResult(name=name, ok=False,
                                   error=f"{type(e).__name__}: {e}")
             report.stages.append(res)
+            if self._on_event:
+                try: self._on_event("end", name, res.ok, len(res.findings))
+                except Exception: pass
             if not res.ok and self.stop_on_first_failure:
                 report.ok = False
                 report.stopped_at = name

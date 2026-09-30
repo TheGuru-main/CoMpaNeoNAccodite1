@@ -45,7 +45,7 @@ from search_cache import SearchCache
 from memory_cache import MemoryCache
 from background_training import start_background_training 
 from rules import enforce_rules
-from bubblejumbo_rules import BubbleJumboRules
+# BUBBLE-REMOVED: module not present in Accodite fork
 from word_understanding import WordUnderstanding
 from summary import generate_summary as generate_ai_summary
 from follow_up import generate_follow_ups
@@ -83,7 +83,6 @@ web_crawler = WebCrawler()
 mixer = DataMixer()
 search_cache = SearchCache(ttl_seconds=300)
 memory_cache = MemoryCache()
-bubble_rules = BubbleJumboRules()
 word_understanding = WordUnderstanding(memory)
 
 # Load model if exists

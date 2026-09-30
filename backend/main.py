@@ -61,6 +61,14 @@ from integration import (
 
 app = FastAPI(title="CoMpaNeoN AI", version="1.0.0")
 
+# WEIGHTS-RELAY
+try:
+    from weights_relay import router as _weights_router
+    app.include_router(_weights_router)
+    print("[ACCD] weights relay mounted at /weights/*")
+except Exception as _e:
+    print(f"[ACCD] weights relay not mounted: {_e}")
+
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 device = (torch.device("cuda" if torch.cuda.is_available() else "cpu") if TORCH_AVAILABLE else "cpu")
@@ -96,6 +104,16 @@ def load_model_if_exists():
         model.eval()
     else:
         model = None
+
+def reload_model_if_exists():
+    """Reload the model from disk. Called by the weights relay."""
+    global model, tokenizer_vocab, reverse_vocab
+    try:
+        load_model_if_exists()
+        return {"ok": True, "model": type(model).__name__ if model else None}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
 
 load_model_if_exists()
 

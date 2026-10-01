@@ -29,16 +29,22 @@ async function api(path, method='GET', body=null, isForm=false) {
     
     const res = await fetch(API_BASE + path, options);
     if (!res.ok) {
+        // API-FIX: read the body once, then try to parse as JSON.
+        const rawText = await res.text();
         let errorMsg = 'An unexpected server error occurred.';
-        try {
-            const errData = await res.json();
-            errorMsg = errData.detail || errorMsg;
-        } catch (_) {
-            errorMsg = await res.text();
+        if (rawText) {
+            try {
+                const errData = JSON.parse(rawText);
+                errorMsg = errData.detail || errData.message || errData.error || errorMsg;
+            } catch (_) {
+                errorMsg = rawText;
+            }
         }
-        throw new Error(errorMsg);
+        throw new Error(`${res.status} ${errorMsg}`);
     }
-    return res.json();
+    // 204 No Content or empty body
+    const text = await res.text();
+    return text ? JSON.parse(text) : {};
 }
 
 // ========== User Registration Logic ==========
@@ -719,3 +725,56 @@ try {
     bindAuthButtons();
     showAuthView('authLanding');
 } catch (_) {}
+
+
+// ========== Particle Bubble Canvas ==========
+function initBubbleCanvas() {
+    const canvas = document.getElementById('bubbleCanvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    let W = 0, H = 0;
+    function resize() {
+        W = canvas.width  = window.innerWidth;
+        H = canvas.height = window.innerHeight;
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    const COUNT = Math.max(18, Math.min(45, Math.floor(W * H / 42000)));
+    const bubbles = Array.from({ length: COUNT }, () => ({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        r: 6 + Math.random() * 34,
+        dx: (Math.random() - 0.5) * 0.45,
+        dy: -0.15 - Math.random() * 0.55,
+        a: 0.035 + Math.random() * 0.09,
+        hue: [220, 340, 172][Math.floor(Math.random() * 3)],  // neon blue, burgundy, aqua
+    }));
+
+    function frame() {
+        ctx.clearRect(0, 0, W, H);
+        for (const b of bubbles) {
+            ctx.beginPath();
+            ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+            ctx.fillStyle = `hsla(${b.hue}, 80%, 60%, ${b.a})`;
+            ctx.fill();
+            ctx.strokeStyle = `hsla(${b.hue}, 80%, 75%, ${b.a * 0.7})`;
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            b.x += b.dx;
+            b.y += b.dy;
+            if (b.y + b.r < -10) {
+                b.y = H + b.r;
+                b.x = Math.random() * W;
+            }
+            if (b.x < -b.r) b.x = W + b.r;
+            if (b.x > W + b.r) b.x = -b.r;
+        }
+        requestAnimationFrame(frame);
+    }
+    frame();
+}
+
+// boot the canvas once
+try { initBubbleCanvas(); } catch (_) {}

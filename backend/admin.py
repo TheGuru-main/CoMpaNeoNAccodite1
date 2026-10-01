@@ -1,0 +1,288 @@
+"""
+Accodite Admin
+==============
+Org-scoped admin actions:
+
+    GET    /admin/pending                 list pending worker signups
+    POST   /admin/approve/{membership_id} approve + provision worker
+    POST   /admin/reject/{membership_id}  reject + delete membership
+    GET    /admin/members                 full roster of the org
+    POST   /admin/role                    change a member's role
+
+Access:  CEO, HR, or the caller's own role == ROLE_DEPT_HEAD for their dept.
+The caller's organization is inferred from their membership.
+"""
+from __future__ import annotations
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+
+from database import SessionLocal
+from db_models import User, Organization, OrganizationMembership
+from auth import get_current_user
+from org.roles import (
+    ROLE_CEO, ROLE_C_SUITE, ROLE_HR, ROLE_DEPT_HEAD,
+    ROLE_MANAGER, ROLE_MEMBER, ROLE_REVIEWER, ROLE_VIEWER,
+    can_read_ltm,
+)
+
+router = APIRouter(prefix="/admin", tags=["admin"])
+
+ADMIN_ROLES = {ROLE_CEO, ROLE_C_SUITE, ROLE_HR}
+VALID_ROLES = {
+    ROLE_CEO, ROLE_C_SUITE, ROLE_HR, ROLE_DEPT_HEAD,
+    ROLE_MANAGER, ROLE_MEMBER, ROLE_REVIEWER, ROLE_VIEWER,
+}
+
+
+class ChangeRoleReq(BaseModel):
+    membership_id: str = Field(..., min_length=6)
+    new_role: str = Field(..., min_length=2, max_length=50)
+
+
+# ============================================================================
+# HELPERS
+# ============================================================================
+
+def _org_memberships_for_user(db, user_id):
+    return db.query(OrganizationMembership).filter(
+        OrganizationMembership.user_id == user_id
+    ).all()
+
+
+def _pick_admin_membership(db, user, requested_org_id: Optional[str] = None):
+    """
+    Return the caller's admin membership.
+    If requested_org_id is given, use it. Otherwise pick the first
+    membership whose role grants admin access.
+    """
+    rows = _org_memberships_for_user(db, user.id)
+    if requested_org_id:
+        for m in rows:
+            if str(m.organization_id) == str(requested_org_id):
+                if m.role in ADMIN_ROLES or m.role == ROLE_DEPT_HEAD:
+                    return m
+        return None
+    for m in rows:
+        if m.role in ADMIN_ROLES or m.role == ROLE_DEPT_HEAD:
+            return m
+    return None
+
+
+def _serialize_membership(db, m: OrganizationMembership) -> Dict[str, Any]:
+    user = db.query(User).filter(User.id == m.user_id).first()
+    return {
+        "membership_id": str(m.id),
+        "user_id": str(m.user_id),
+        "phone": user.phone if user else None,
+        "full_name": user.full_name if user else None,
+        "country": user.country if user else None,
+        "role": m.role,
+        "department": getattr(m, "department", None),
+        "title": getattr(m, "title", None),
+        "credential_active": bool(getattr(m, "credential_active", False)),
+        "created_at": m.created_at.isoformat() if getattr(m, "created_at", None) else None,
+    }
+
+
+def _assert_can_admin(m: OrganizationMembership) -> None:
+    if m.role in ADMIN_ROLES:
+        return
+    if m.role == ROLE_DEPT_HEAD:
+        return
+    raise HTTPException(403, "insufficient role to perform admin actions")
+
+
+# ============================================================================
+# ROUTES
+# ============================================================================
+
+@router.get("/pending")
+async def list_pending(
+    org_id: Optional[str] = None,
+    user: User = Depends(get_current_user),
+):
+    db = SessionLocal()
+    try:
+        me = _pick_admin_membership(db, user, org_id)
+        if me is None:
+            raise HTTPException(403, "not an admin in any org")
+        _assert_can_admin(me)
+
+        q = db.query(OrganizationMembership).filter(
+            OrganizationMembership.organization_id == me.organization_id,
+            OrganizationMembership.credential_active.is_(False),
+        )
+        # dept_head scopes to their own department only
+        if me.role == ROLE_DEPT_HEAD and getattr(me, "department", None):
+            q = q.filter(OrganizationMembership.department == me.department)
+
+        return [_serialize_membership(db, m) for m in q.all()]
+    finally:
+        db.close()
+
+
+@router.get("/members")
+async def list_members(
+    org_id: Optional[str] = None,
+    include_pending: bool = False,
+    user: User = Depends(get_current_user),
+):
+    db = SessionLocal()
+    try:
+        me = _pick_admin_membership(db, user, org_id)
+        if me is None:
+            raise HTTPException(403, "not an admin in any org")
+        _assert_can_admin(me)
+
+        q = db.query(OrganizationMembership).filter(
+            OrganizationMembership.organization_id == me.organization_id,
+        )
+        if not include_pending:
+            q = q.filter(OrganizationMembership.credential_active.is_(True))
+        if me.role == ROLE_DEPT_HEAD and getattr(me, "department", None):
+            q = q.filter(OrganizationMembership.department == me.department)
+
+        return [_serialize_membership(db, m) for m in q.all()]
+    finally:
+        db.close()
+
+
+@router.post("/approve/{membership_id}")
+async def approve_member(
+    membership_id: str,
+    user: User = Depends(get_current_user),
+):
+    db = SessionLocal()
+    try:
+        target = db.query(OrganizationMembership).filter(
+            OrganizationMembership.id == membership_id
+        ).first()
+        if target is None:
+            raise HTTPException(404, "membership not found")
+
+        me = _pick_admin_membership(db, user, str(target.organization_id))
+        if me is None:
+            raise HTTPException(403, "not an admin for that org")
+        _assert_can_admin(me)
+        if me.role == ROLE_DEPT_HEAD and getattr(me, "department", None):
+            if target.department != me.department:
+                raise HTTPException(403, "not your department")
+
+        if target.credential_active:
+            return {"ok": True, "already_active": True}
+
+        target.credential_active = True
+        target.updated_at = datetime.utcnow()
+        db.commit()
+
+        # provision worker rooms — brainstorm + dept membership
+        provision_report: Dict[str, Any] = {}
+        try:
+            from org.worker_bootstrap import provision_org_worker
+            target_user = db.query(User).filter(User.id == target.user_id).first()
+            if target_user is not None:
+                report = provision_org_worker(
+                    session=db,
+                    user_id=str(target_user.id),
+                    organization_id=str(target.organization_id),
+                    department=target.department or "General",
+                    display_name=target_user.full_name or "Worker",
+                    role=target.role,
+                    added_by=str(me.user_id),
+                )
+                provision_report = report
+                db.commit()
+        except Exception as e:
+            provision_report = {"error": f"{type(e).__name__}: {e}"}
+            print(f"[admin] provision error: {provision_report['error']}")
+
+        return {
+            "ok": True,
+            "membership_id": str(target.id),
+            "phone": _serialize_membership(db, target).get("phone"),
+            "provisioned": provision_report,
+        }
+    finally:
+        db.close()
+
+
+@router.post("/reject/{membership_id}")
+async def reject_member(
+    membership_id: str,
+    user: User = Depends(get_current_user),
+):
+    db = SessionLocal()
+    try:
+        target = db.query(OrganizationMembership).filter(
+            OrganizationMembership.id == membership_id
+        ).first()
+        if target is None:
+            raise HTTPException(404, "membership not found")
+
+        me = _pick_admin_membership(db, user, str(target.organization_id))
+        if me is None:
+            raise HTTPException(403, "not an admin for that org")
+        _assert_can_admin(me)
+        if me.role == ROLE_DEPT_HEAD and getattr(me, "department", None):
+            if target.department != me.department:
+                raise HTTPException(403, "not your department")
+
+        if target.credential_active:
+            raise HTTPException(400, "cannot reject an already-active member")
+
+        phone = None
+        u = db.query(User).filter(User.id == target.user_id).first()
+        if u is not None:
+            phone = u.phone
+
+        db.delete(target)
+        db.commit()
+        return {"ok": True, "rejected_membership_id": membership_id, "phone": phone}
+    finally:
+        db.close()
+
+
+@router.post("/role")
+async def change_role(
+    req: ChangeRoleReq,
+    user: User = Depends(get_current_user),
+):
+    db = SessionLocal()
+    try:
+        if req.new_role not in VALID_ROLES:
+            raise HTTPException(400, f"invalid role: {req.new_role}")
+
+        target = db.query(OrganizationMembership).filter(
+            OrganizationMembership.id == req.membership_id
+        ).first()
+        if target is None:
+            raise HTTPException(404, "membership not found")
+
+        me = _pick_admin_membership(db, user, str(target.organization_id))
+        if me is None:
+            raise HTTPException(403, "not an admin for that org")
+        if me.role not in ADMIN_ROLES:
+            raise HTTPException(403, "only CEO/HR can change roles")
+
+        # a CEO cannot be demoted by themselves to avoid lockout
+        if (target.role == ROLE_CEO and req.new_role != ROLE_CEO
+                and target.user_id == user.id):
+            raise HTTPException(400, "cannot demote your own CEO role")
+
+        old_role = target.role
+        target.role = req.new_role
+        target.updated_at = datetime.utcnow()
+        db.commit()
+
+        return {
+            "ok": True,
+            "membership_id": str(target.id),
+            "old_role": old_role,
+            "new_role": req.new_role,
+            "ltm_access": can_read_ltm(req.new_role),
+        }
+    finally:
+        db.close()

@@ -69,6 +69,13 @@ try:
 except Exception as _e:
     print(f"[ACCD] rooms router not mounted: {_e}")
 
+try:
+    from admin import router as _admin_router
+    app.include_router(_admin_router)
+    print("[ACCD] admin router mounted at /admin/*")
+except Exception as _e:
+    print(f"[ACCD] admin router not mounted: {_e}")
+
 # WEIGHTS-RELAY
 try:
     from weights_relay import router as _weights_router

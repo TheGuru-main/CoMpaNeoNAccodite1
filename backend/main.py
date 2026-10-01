@@ -174,6 +174,13 @@ def generate_from_prompt(prompt: str, max_len: int, temperature: float) -> str:
             "Once a training run finishes on a host with torch and the "
             "weights are loaded, this space will hold the model's response.]"
         )
+    # MODEL-NONE-FALLBACK
+    if model is None or tokenizer_vocab is None:
+        return (
+            "[Accodite is not yet trained on this instance. "
+            "Once a model has been trained and the weights loaded, "
+            "this space will hold the model's response.]"
+        )
     if model is not None and tokenizer_vocab is not None:
         input_ids = torch.tensor([encode_text(prompt)], dtype=torch.long).to(device)
         output_ids = []

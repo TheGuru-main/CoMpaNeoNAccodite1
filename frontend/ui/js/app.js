@@ -1514,3 +1514,114 @@ function showHome() {
         });
     });
 })();
+
+
+// ============================================================================
+// INPUT + CHIP VISIBILITY
+// ============================================================================
+
+function updateInputVisibility() {
+    // # INPUT-VISIBILITY
+    const inputArea = document.getElementById('inputArea');
+    const chips = document.getElementById('roomChips');
+    const room = roomList.find(r => r.id === currentRoomId);
+
+    if (!currentRoomId || !room) {
+        if (inputArea) inputArea.style.display = 'none';
+        if (chips) chips.style.display = 'none';
+        return;
+    }
+
+    if (inputArea) inputArea.style.display = '';
+    if (chips) {
+        const isPrivate = room.workspace_type === 'personal_brainstorm';
+        chips.style.display = isPrivate ? 'none' : '';
+        const cnt = document.getElementById('chipMemberCount');
+        if (cnt) cnt.textContent = String(room.member_count || 1);
+    }
+}
+
+// ============================================================================
+// DM: start conversation from phone
+// ============================================================================
+
+function dmNormalizePhone() {
+    const cc = document.getElementById('dmCountryCode').value;
+    let raw = (document.getElementById('dmNewPhone').value || '').replace(/\D/g, '');
+    if (!raw) return '';
+    if (raw.startsWith('0')) raw = raw.slice(1);
+    return `+${cc}${raw}`;
+}
+
+async function dmStartConversation() {
+    const phone = dmNormalizePhone();
+    if (!phone || phone.length < 8) {
+        alert('Enter a valid phone number.');
+        return;
+    }
+    // Verify the user exists by trying to open the thread
+    document.getElementById('dmThread').style.display = 'block';
+    document.getElementById('dmList').style.display = 'none';
+    document.getElementById('dmNewPhone').value = '';
+    dmPartner = phone;
+    await openDMThread(phone);
+}
+
+// ============================================================================
+// INLINE INVITE CHIP
+// ============================================================================
+
+function wireRoomChips() {
+    const inv = document.getElementById('chipInvite');
+    if (inv) inv.addEventListener('click', openInviteModal);
+    const mem = document.getElementById('chipMembers');
+    if (mem) mem.addEventListener('click', listRoomMembers);
+}
+
+async function listRoomMembers() {
+    if (!currentRoomId) return;
+    try {
+        const members = await api(`/rooms/${currentRoomId}/members`);
+        const list = members.map(m => `  • ${m.full_name} (${m.phone}) — ${m.role}`).join('\n');
+        alert(`Room members (${members.length}):\n${list || '  none'}`);
+    } catch (e) {
+        alert(`Could not load members: ${e.message}`);
+    }
+}
+
+// ============================================================================
+// BOOT WIRING
+// ============================================================================
+
+(function wireInputAndChips() {
+    wireRoomChips();
+    const btnDmStart = document.getElementById('btnDmStart');
+    if (btnDmStart) btnDmStart.addEventListener('click', dmStartConversation);
+    const inp = document.getElementById('dmNewPhone');
+    if (inp) inp.addEventListener('keydown', e => { if (e.key === 'Enter') dmStartConversation(); });
+
+    // Ensure the input is hidden on first paint
+    updateInputVisibility();
+})();
+
+// Hook into openRoom to update visibility
+const _origOpenRoom = openRoom;
+openRoom = async function(id) {
+    await _origOpenRoom(id);
+    updateInputVisibility();
+};
+
+// Hide input when logging out
+const _origLogout = logout;
+logout = function() {
+    currentRoomId = null;
+    updateInputVisibility();
+    _origLogout();
+};
+
+// Reload messages for the current room when tabs return (visibilitychange)
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && currentRoomId) {
+        openRoom(currentRoomId).catch(() => {});
+    }
+});

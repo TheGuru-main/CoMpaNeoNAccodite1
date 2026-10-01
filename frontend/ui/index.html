@@ -195,7 +195,15 @@
                 <div id="researchResults" class="research-results"></div>
             </div>
 
-            <footer class="input-area">
+            <div id="roomChips" class="room-chips" style="display:none;">
+                <button id="chipInvite" class="room-chip">
+                    <i class="fa-solid fa-user-plus"></i> Add member
+                </button>
+                <button id="chipMembers" class="room-chip">
+                    <i class="fa-solid fa-users"></i> <span id="chipMemberCount">0</span>
+                </button>
+            </div>
+            <footer class="input-area" id="inputArea" style="display:none;">
                 <input type="text" id="promptInput" placeholder="Start a chat with CoMpaNeoN!!" />
                 <button id="btnSend" class="send-btn"><i class="fa-solid fa-paper-plane"></i></button>
             </footer>
@@ -228,6 +236,29 @@
             <div class="research-header">
                 <h3><i class="fa-solid fa-comments"></i> Direct messages</h3>
                 <button id="btnCloseDM" class="icon-btn"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="dm-compose">
+                <label style="font-size:0.78rem; opacity:0.65; display:block; margin-bottom:0.35rem;">
+                    Start a new conversation
+                </label>
+                <div class="dm-compose-row">
+                    <select id="dmCountryCode">
+                        <option value="234">+234 (NG)</option>
+                        <option value="233">+233 (GH)</option>
+                        <option value="254">+254 (KE)</option>
+                        <option value="27">+27 (ZA)</option>
+                        <option value="1">+1 (US/CA)</option>
+                        <option value="44">+44 (UK)</option>
+                        <option value="91">+91 (IN)</option>
+                        <option value="49">+49 (DE)</option>
+                        <option value="33">+33 (FR)</option>
+                        <option value="971">+971 (AE)</option>
+                    </select>
+                    <input type="tel" id="dmNewPhone" placeholder="8012345678" />
+                    <button id="btnDmStart" class="send-btn">
+                        <i class="fa-solid fa-arrow-right"></i>
+                    </button>
+                </div>
             </div>
             <div id="dmList" class="dm-list"></div>
             <div id="dmThread" class="dm-thread" style="display:none;">

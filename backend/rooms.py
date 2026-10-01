@@ -23,6 +23,11 @@ from sqlalchemy import or_
 
 from database import SessionLocal
 from db_models import User, Workspace, Message
+try:
+    from phone_util import normalize_phone, variants
+except ImportError:
+    def normalize_phone(p, default_country='NG'): return p
+    def variants(p): return [p] if p else []
 from auth import get_current_user
 from org.roles import (
     ROLE_OWNER, ROLE_CEO, ROLE_HR, ROLE_DEPT_HEAD, ROLE_MANAGER,
@@ -92,15 +97,18 @@ def _is_member(db, ws, user_id) -> bool:
 
 
 def _member_count(db, ws) -> int:
-    n = 0
+    # MEMBER-DEDUP: the owner may also be a WorkspaceMember row.
+    # Count unique user_ids, not rows.
+    ids = set()
     if ws.user_id is not None:
-        n += 1
+        ids.add(str(ws.user_id))
     if WorkspaceMember is not None:
-        n += db.query(WorkspaceMember).filter(
+        for r in db.query(WorkspaceMember).filter(
             WorkspaceMember.workspace_id == ws.id,
             WorkspaceMember.removed_at.is_(None),
-        ).count()
-    return max(n, 1)
+        ).all():
+            ids.add(str(r.user_id))
+    return max(len(ids), 1)
 
 
 def _can_create(db, user, wtype, org_id) -> bool:
@@ -306,7 +314,9 @@ async def invite_member(room_id: str, req: InviteMemberReq, user: User = Depends
             raise HTTPException(400, "personal brainstorm is private; create a group instead")
         if WorkspaceMember is None:
             raise HTTPException(500, "membership table not available")
-        target = db.query(User).filter(User.phone == req.phone).first()
+        # PHONE-NORM
+        candidates = variants(req.phone) or [req.phone]
+        target = db.query(User).filter(User.phone.in_(candidates)).first()
         if target is None:
             raise HTTPException(404, "no user with that phone")
         existing = db.query(WorkspaceMember).filter(
@@ -410,15 +420,26 @@ async def send_message_to_room(
         if not content:
             raise HTTPException(400, "content is required")
 
+        # MSG-PERSIST
+        import uuid as _uuid
+        try:
+            ws_uuid = _uuid.UUID(str(ws.id)) if not isinstance(ws.id, _uuid.UUID) else ws.id
+            usr_uuid = _uuid.UUID(str(user.id)) if not isinstance(user.id, _uuid.UUID) else user.id
+        except Exception as e:
+            print(f"[rooms] uuid parse error: {e}")
+            ws_uuid = ws.id
+            usr_uuid = user.id
+
         msg = Message(
-            workspace_id=ws.id,
-            user_id=user.id,
+            workspace_id=ws_uuid,
+            user_id=usr_uuid,
             role="user",
             content=content,
         )
         db.add(msg)
         db.commit()
         db.refresh(msg)
+        print(f"[rooms] stored message {msg.id} in room {ws_uuid}")
 
         member_count = _member_count(db, ws)
         ai_invoked = False
@@ -453,5 +474,121 @@ async def send_message_to_room(
             "ai_invoked": ai_invoked,
             "frames": frames,
         }
+    finally:
+        db.close()
+
+
+# ============================================================================
+# CONTACT MATCH (phone book lookup)
+# ============================================================================
+
+contacts_router = APIRouter(prefix="/contacts", tags=["contacts"])
+
+
+class MatchContactsReq(BaseModel):
+    phones: List[str] = Field(default_factory=list)
+
+
+@contacts_router.post("/match")
+async def match_contacts(
+    req: MatchContactsReq,
+    user: User = Depends(get_current_user),
+):
+    """
+    Given a list of phone numbers (from the client's contact list),
+    return the subset that exist as Accodite users.
+
+    Normalizes both directions so +234... and 0... forms match.
+    """
+    from phone_util import normalize_phone, variants
+    db = SessionLocal()
+    try:
+        wanted = {}
+        for raw in (req.phones or [])[:1000]:
+            canon = normalize_phone(raw)
+            if not canon:
+                continue
+            wanted[canon] = raw
+
+        if not wanted:
+            return {"matched": [], "count": 0}
+
+        # gather all candidate forms and query once
+        all_forms = set()
+        for canon in wanted.keys():
+            for v in variants(canon):
+                all_forms.add(v)
+
+        rows = db.query(User).filter(User.phone.in_(list(all_forms))).all()
+
+        matched = []
+        for row in rows:
+            canon = normalize_phone(row.phone)
+            matched.append({
+                "phone": row.phone,
+                "canonical": canon,
+                "full_name": row.full_name,
+                "user_id": str(row.id),
+            })
+
+        return {"matched": matched, "count": len(matched)}
+    finally:
+        db.close()
+
+
+# ============================================================================
+# CONTACT MATCH (phone book lookup)
+# ============================================================================
+
+contacts_router = APIRouter(prefix="/contacts", tags=["contacts"])
+
+
+class MatchContactsReq(BaseModel):
+    phones: List[str] = Field(default_factory=list)
+
+
+@contacts_router.post("/match")
+async def match_contacts(
+    req: MatchContactsReq,
+    user: User = Depends(get_current_user),
+):
+    """
+    Given a list of phone numbers (from the client's contact list),
+    return the subset that exist as Accodite users.
+
+    Normalizes both directions so +234... and 0... forms match.
+    """
+    from phone_util import normalize_phone, variants
+    db = SessionLocal()
+    try:
+        wanted = {}
+        for raw in (req.phones or [])[:1000]:
+            canon = normalize_phone(raw)
+            if not canon:
+                continue
+            wanted[canon] = raw
+
+        if not wanted:
+            return {"matched": [], "count": 0}
+
+        # gather all candidate forms and query once
+        all_forms = set()
+        for canon in wanted.keys():
+            for v in variants(canon):
+                all_forms.add(v)
+
+        rows = db.query(User).filter(User.phone.in_(list(all_forms))).all()
+
+        matched = []
+        for row in rows:
+            canon = normalize_phone(row.phone)
+            matched.append({
+                "phone": row.phone,
+                "canonical": canon,
+                "full_name": row.full_name,
+                "user_id": str(row.id),
+            })
+
+        return {"matched": matched, "count": len(matched)}
     finally:
         db.close()

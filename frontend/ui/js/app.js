@@ -142,24 +142,29 @@ async function signupSolo() {
 
 // Signup — Create Organization
 async function signupOrgCreate() {
-    // # ORG-NOSLUG
-    const full_name = document.getElementById('orgFullName').value.trim();
-    const phone = document.getElementById('orgAdminPhone').value.trim();
+    // # ORG-EXTRAS-JS
+    const phone = document.getElementById('orgPhone').value.trim();
     const password = document.getElementById('orgPassword').value;
     const org_name = document.getElementById('orgName').value.trim();
     const org_email = (document.getElementById('orgEmail') || {}).value || '';
-    const org_country = (document.getElementById('orgCountry') || {}).value || 'Nigeria';
-    if (!full_name || !phone || !password || !org_name) {
-        alert('Name, phone, password, and organization name are required.');
+    const country = (document.getElementById('orgCountry') || {}).value || 'Nigeria';
+    const org_type = (document.getElementById('orgType') || {}).value || 'software';
+    const goals = (document.getElementById('orgGoals') || {}).value || '';
+    const ai_temperament = (document.getElementById('orgTemperament') || {}).value || 'sanguine';
+
+    if (!phone || !password || !org_name) {
+        alert('Phone, password, and organization name are required.');
         return;
     }
     try {
         const data = await api('/auth/org/create', 'POST', {
-            full_name, phone, password,
+            phone, password,
             org_name,
             org_email: org_email || null,
-            org_country: org_country || 'Nigeria',
-            language: 'en',
+            country,
+            org_type,
+            goals,
+            ai_temperament,
         });
         handleAuthSuccess(data);
     } catch (e) {

@@ -116,12 +116,57 @@
             <button type="button" class="auth-back" data-view="signupChoice">← Back</button>
             <h1>Create organization</h1>
             <p class="auth-sub">You'll be the admin. Invite workers after.</p>
-            <input type="text" id="orgFullName" placeholder="Your Full Name" maxlength="200" />
-            <input type="text" id="orgAdminPhone" placeholder="Your Phone (admin)" maxlength="200" />
+
+            <input type="text" id="orgPhone" placeholder="Admin phone (e.g. +234...)" maxlength="32" />
             <input type="password" id="orgPassword" placeholder="Password" maxlength="200" />
-            <input type="text" id="orgName" placeholder="Organization Name" maxlength="255" />
-            <input type="text" id="orgEmail" placeholder="Org contact email (optional)" maxlength="255" />
-            <input type="text" id="orgCountry" placeholder="Country" maxlength="100" value="Nigeria" />
+            <input type="text" id="orgName" placeholder="Organization name" maxlength="255" />
+            <input type="text" id="orgEmail" placeholder="Organization email (optional)" maxlength="255" />
+
+            <select id="orgCountry">
+                <option value="Nigeria">Country — Nigeria</option>
+                <option value="Ghana">Ghana</option>
+                <option value="Kenya">Kenya</option>
+                <option value="South Africa">South Africa</option>
+                <option value="Egypt">Egypt</option>
+                <option value="Ethiopia">Ethiopia</option>
+                <option value="Morocco">Morocco</option>
+                <option value="Cameroon">Cameroon</option>
+                <option value="Ivory Coast">Ivory Coast</option>
+                <option value="Uganda">Uganda</option>
+                <option value="United States">United States</option>
+                <option value="United Kingdom">United Kingdom</option>
+                <option value="India">India</option>
+                <option value="Canada">Canada</option>
+                <option value="Australia">Australia</option>
+                <option value="Germany">Germany</option>
+                <option value="France">France</option>
+                <option value="China">China</option>
+                <option value="Brazil">Brazil</option>
+                <option value="United Arab Emirates">United Arab Emirates</option>
+            </select>
+
+            <select id="orgType">
+                <option value="software">Type — Software / Engineering</option>
+                <option value="healthcare">Healthcare</option>
+                <option value="school">School / Education</option>
+                <option value="finance">Finance / Fintech</option>
+                <option value="legal">Legal</option>
+                <option value="government">Government / Public sector</option>
+                <option value="ngo">NGO / Non-profit</option>
+                <option value="research">Research</option>
+                <option value="retail">Retail / Commerce</option>
+                <option value="other">Other</option>
+            </select>
+
+            <input type="text" id="orgGoals" placeholder="Organization goals (e.g. ship v1 in 3 months)" maxlength="500" />
+
+            <select id="orgTemperament">
+                <option value="sanguine">AI temperament — Sanguine</option>
+                <option value="melancholy">Melancholy</option>
+                <option value="phlegmatic">Phlegmatic</option>
+                <option value="choleric">Choleric</option>
+            </select>
+
             <button id="btnSignupOrgCreate" class="primary-btn">Create Organization</button>
         </div>
 

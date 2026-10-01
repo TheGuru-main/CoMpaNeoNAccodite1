@@ -323,13 +323,15 @@ async def signup(req: SignupRequest):
 
 # ACCD-ORG: org create + join
 class OrgCreateRequest(BaseModel):
-    full_name: str = Field(..., min_length=2, max_length=255)
+    # ORG-EXTRAS
     phone: str = Field(..., min_length=5, max_length=32)
     password: str = Field(..., min_length=6, max_length=200)
     org_name: str = Field(..., min_length=2, max_length=255)
-    org_slug: Optional[str] = None           # auto-generated if omitted
     org_email: Optional[str] = None
-    org_country: str = "Nigeria"
+    country: str = "Nigeria"
+    org_type: str = "software"          # software | healthcare | school | other
+    goals: str = ""                     # free text
+    ai_temperament: str = "sanguine"    # AI personality for the org brain
     language: str = "en"
 
 
@@ -371,25 +373,35 @@ async def org_create(req: OrgCreateRequest):
             slug = f"{base_slug}-{n}"
         req.org_slug = slug
 
+        # ORG-MINIMAL: no separate full_name for the org admin;
+        # fall back to the org name as the display name.
+        admin_display_name = req.org_name
         user = User(
             id=_uuid.uuid4(),
-            full_name=req.full_name,
+            full_name=admin_display_name,
             phone=req.phone,
             password_hash=hash_password(req.password),
-            country=req.org_country,
+            country=req.country,
             language=req.language,
+            temperament=req.ai_temperament,
         )
         db.add(user)
         db.flush()
 
         org_uid = f"org-{req.org_slug}"
+        settings_blob = {
+            "org_type": req.org_type,
+            "goals": req.goals,
+            "ai_temperament": req.ai_temperament,
+        }
         org = Organization(
             id=_uuid.uuid4(),
             name=req.org_name,
             slug=req.org_slug,
             email=req.org_email,
-            country=req.org_country,
+            country=req.country,
             language=req.language,
+            settings=settings_blob,
             ai_uid=org_uid,
             start_row=1,
             start_col=0,

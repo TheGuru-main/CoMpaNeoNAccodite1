@@ -26,6 +26,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
+from phone_util import normalize_phone, variants
 from database import engine, SessionLocal, Base
 from db_models import User, Workspace, Message, APIKey
 from ai_model import MiniCompanionAI
@@ -75,6 +76,13 @@ try:
     print("[ACCD] admin router mounted at /admin/*")
 except Exception as _e:
     print(f"[ACCD] admin router not mounted: {_e}")
+
+try:
+    from rooms import contacts_router as _contacts_router
+    app.include_router(_contacts_router)
+    print("[ACCD] contacts router mounted at /contacts/*")
+except Exception as _e:
+    print(f"[ACCD] contacts router not mounted: {_e}")
 
 # WEIGHTS-RELAY
 try:
@@ -159,7 +167,13 @@ def get_context_from_memory(query: str) -> str:
 
 def generate_from_prompt(prompt: str, max_len: int, temperature: float) -> str:
     if not TORCH_AVAILABLE:
-        return prompt
+        # FALLBACK-MSG: clear placeholder so the UI doesn't look like
+        # the AI is echoing the user's input back
+        return (
+            "[Accodite is not yet trained on this instance. "
+            "Once a training run finishes on a host with torch and the "
+            "weights are loaded, this space will hold the model's response.]"
+        )
     if model is not None and tokenizer_vocab is not None:
         input_ids = torch.tensor([encode_text(prompt)], dtype=torch.long).to(device)
         output_ids = []
@@ -268,6 +282,8 @@ async def signup(req: SignupRequest):
         if not validate_phone(req.phone, country_code):
             raise HTTPException(400, "Invalid phone number.")
             
+        # PHONE-NORM: canonicalize before duplicate check + insert
+        req.phone = normalize_phone(req.phone, default_country="NG") or req.phone
         existing = db.query(User).filter(User.phone == req.phone).first()
         if existing:
             raise HTTPException(400, "Phone already registered")
@@ -331,6 +347,8 @@ async def org_create(req: OrgCreateRequest):
 
     db = SessionLocal()
     try:
+        # PHONE-NORM
+        req.phone = normalize_phone(req.phone, default_country="NG") or req.phone
         if db.query(User).filter(User.phone == req.phone).first():
             raise HTTPException(400, "phone already registered")
         if db.query(Organization).filter(Organization.slug == req.org_slug).first():
@@ -472,7 +490,9 @@ async def login(req: LoginRequest):
     db = SessionLocal()
     try:
         # PENDING-BLOCK: refuse duplicate rows for the same phone (defensive)
-        users = db.query(User).filter(User.phone == req.phone).all()
+        # PHONE-NORM: try every plausible stored form
+        candidates = variants(req.phone) or [req.phone]
+        users = db.query(User).filter(User.phone.in_(candidates)).all()
         if len(users) > 1:
             raise HTTPException(
                 409,

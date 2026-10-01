@@ -131,3 +131,83 @@ def sync_schema(engine: Engine) -> List[str]:
     if not added:
         print("[schema-sync] schema is current")
     return added
+
+
+# ============================================================================
+# UNIQUE CONSTRAINTS
+# ============================================================================
+
+# (table, [columns], constraint_name)
+_REQUIRED_UNIQUES = [
+    ("users", ["phone"], "uq_users_phone"),
+    ("organization_memberships", ["user_id", "organization_id"],
+     "uq_user_organization_membership"),
+    ("organizations", ["slug"], "uq_organizations_slug"),
+    ("organizations", ["ai_uid"], "uq_organizations_ai_uid"),
+    ("ai_brains", ["ai_uid"], "uq_ai_brains_ai_uid"),
+]
+
+
+def ensure_unique_constraints(engine) -> List[str]:
+    """
+    Ensure required unique constraints exist on the target tables.
+
+    Idempotent. Refuses to add a constraint if the table already contains
+    duplicate values in that column set — logs the offending rows instead
+    so you can clean them up first.
+    """
+    added: List[str] = []
+    inspector = inspect(engine)
+    db_tables = set(inspector.get_table_names())
+
+    for table, cols, cname in _REQUIRED_UNIQUES:
+        if table not in db_tables:
+            continue
+
+        # 1) already present?
+        try:
+            existing_constraints = inspector.get_unique_constraints(table)
+        except Exception:
+            existing_constraints = []
+        if any(c.get("name") == cname for c in existing_constraints):
+            continue
+        # also check by column set (some DBs return unnamed constraints)
+        cols_set = set(cols)
+        if any(set(c.get("column_names") or []) == cols_set
+               for c in existing_constraints):
+            continue
+
+        # 2) any duplicates?
+        col_list = ", ".join(f'"{c}"' for c in cols)
+        try:
+            with engine.begin() as conn:
+                rows = conn.execute(text(
+                    f'SELECT {col_list}, COUNT(*) AS n FROM "{table}" '
+                    f'GROUP BY {col_list} HAVING COUNT(*) > 1 LIMIT 5'
+                )).fetchall()
+        except Exception as e:
+            print(f"[unique] {table}.{cols} check failed: "
+                  f"{type(e).__name__}: {e}")
+            continue
+
+        if rows:
+            print(f"[unique] {table}({cols}) has duplicate rows, "
+                  f"constraint not added:")
+            for r in rows:
+                print(f"          {dict(r._mapping)}")
+            continue
+
+        # 3) add the constraint
+        stmt = (
+            f'ALTER TABLE "{table}" '
+            f'ADD CONSTRAINT "{cname}" UNIQUE ({col_list})'
+        )
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(stmt))
+            added.append(cname)
+            print(f"[unique] added {cname} on {table}({cols})")
+        except Exception as e:
+            print(f"[unique] FAILED {cname}: {type(e).__name__}: {e}")
+
+    return added

@@ -1064,6 +1064,17 @@ async def startup_event():
     except Exception as _e:
         print(f"[ACCD] schema-sync skipped: {type(_e).__name__}: {_e}")
 
+    # UNIQUE-CONSTRAINTS: phone identity must be enforced at DB level
+    try:
+        from db.sync_schema import ensure_unique_constraints as _accd_uniq
+        added_uniq = _accd_uniq(engine)
+        if added_uniq:
+            print(f"[ACCD] unique constraints added: {added_uniq}")
+        else:
+            print("[ACCD] unique constraints: all present")
+    except Exception as _e:
+        print(f"[ACCD] unique-constraints skipped: {type(_e).__name__}: {_e}")
+
     # ACCD-STARTUP: build pipeline singletons (grid, partition, gate, trigger, pstm)
     try:
         from integration import bootstrap as _accd_boot

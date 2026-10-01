@@ -944,3 +944,35 @@ input, textarea, select, [contenteditable] {
 .cred-box .mini-btn {
     flex: 0 0 auto;
 }
+
+/* ============================================================
+   HEADER NAV (moved from bottom)
+   ============================================================ */
+
+.header-nav {
+    display: flex;
+    justify-content: center;
+    gap: 0.35rem;
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid var(--border);
+    background: rgba(12, 12, 16, 0.6);
+    backdrop-filter: blur(10px);
+}
+.header-nav .nav-link {
+    color: var(--text-faint);
+    font-size: 1.05rem;
+    padding: 0.45rem 1rem;
+    border-radius: 0.55rem;
+    text-decoration: none;
+    transition: all 0.14s ease;
+}
+.header-nav .nav-link:hover { color: var(--text-dim); }
+.header-nav .nav-link.active {
+    color: var(--aqua-bright);
+    background: linear-gradient(275deg,
+        rgba(124, 30, 63, 0.28) 0%,
+        rgba(79, 140, 255, 0.22) 100%);
+}
+
+/* keep the old .bottom-nav rule harmless in case it lingers */
+.bottom-nav { display: none; }

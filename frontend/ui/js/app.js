@@ -509,36 +509,6 @@ function appendMessage(role, text, followUps = []) {
     chatBox.scrollTop = chatBox.scrollHeight;
 }
 
-async function sendMessage(text, isFirst=false) {
-    if (!text.trim()) return;
-    if (!isFirst) appendMessage('user', text);
-    
-    try {
-        let data;
-        const payload = {
-            prompt: text,
-            temperament: currentUser?.temperament || 'sanguine',
-            workspace_name: '',
-            conversation_history: ''
-        };
-
-        if (currentWorkspaceId) {
-            // Hit the workspace-scoped context endpoint as defined in backend/main.py
-            data = await api(`/workspace/${currentWorkspaceId}/generate`, 'POST', payload);
-        } else {
-            // Fallback generation path if a root state collision occurs
-            data = await api('/generate', 'POST', payload);
-        }
-        
-        if (data.frames && data.frames.length > 0) {
-            appendFrameMessage('ai', data.frames, data.follow_ups || []);
-        } else {
-            appendMessage('ai', data.generated, data.follow_ups || []);
-        }
-    } catch (e) {
-        appendMessage('ai', `System Matrix Sync Failure: ${e.message}`);
-    }
-}
 
 // ========== Research Engine Aggregators ==========
 async function openResearch() {
@@ -1213,4 +1183,34 @@ async function copyOrgCredential() {
         const btnCopy = document.getElementById('btnCopyCred');
         if (btnCopy) btnCopy.addEventListener('click', copyOrgCredential);
     });
+})();
+
+
+// ============================================================================
+// SEND BINDING (btnSend + Enter)
+// ============================================================================
+
+(function bindSendButton() {
+    // # SEND-BIND
+    const btn = document.getElementById('btnSend');
+    const input = document.getElementById('promptInput');
+    if (!btn) {
+        console.warn('[acd] btnSend not found — messages cannot be sent');
+        return;
+    }
+    btn.addEventListener('click', () => {
+        const v = (input && input.value) || '';
+        if (!v.trim()) return;
+        if (input) input.value = '';
+        sendMessage(v);
+    });
+    if (input) {
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                btn.click();
+            }
+        });
+    }
+    console.log('[acd] send button wired');
 })();

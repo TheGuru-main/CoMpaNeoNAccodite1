@@ -1053,6 +1053,17 @@ async def startup_event():
     except Exception as _e:
         print(f"[ACCD] monitor scheduling skipped: {type(_e).__name__}: {_e}")
 
+    # SCHEMA-SYNC: add missing columns to existing tables (create_all can't)
+    try:
+        from db.sync_schema import sync_schema as _accd_sync
+        added = _accd_sync(engine)
+        if added:
+            print(f"[ACCD] schema-sync added {len(added)} column(s)")
+        else:
+            print("[ACCD] schema-sync: no changes")
+    except Exception as _e:
+        print(f"[ACCD] schema-sync skipped: {type(_e).__name__}: {_e}")
+
     # ACCD-STARTUP: build pipeline singletons (grid, partition, gate, trigger, pstm)
     try:
         from integration import bootstrap as _accd_boot

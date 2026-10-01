@@ -17,6 +17,11 @@ from sqlalchemy import and_, or_, func
 
 from database import SessionLocal
 from db_models import User, DirectMessage
+try:
+    from phone_util import normalize_phone, variants
+except ImportError:
+    def normalize_phone(p, default_country='NG'): return p
+    def variants(p): return [p] if p else []
 
 
 def generate_id() -> str:
@@ -39,6 +44,10 @@ def send_message(
     content = (content or "").strip()
     if not content:
         raise ValueError("Message content is required")
+
+    # PHONE-NORM
+    sender_phone = normalize_phone(sender_phone)
+    recipient_phone = normalize_phone(recipient_phone)
 
     db = SessionLocal()
     try:

@@ -229,20 +229,10 @@ function logout() {
 
 // ========== Dynamic Workspace Ribbon Controllers ==========
 async function loadWorkspaces() {
-    try {
-        const workspaces = await api('/workspaces');
-        workspaceList = workspaces;
-        renderWorkspaceTabs();
-        
-        // Auto-select the first workspace if none is active and items exist
-        if (workspaceList.length > 0 && !currentWorkspaceId) {
-            currentWorkspaceId = workspaceList[0].id;
-            renderWorkspaceTabs();
-            await loadWorkspaceMessages(currentWorkspaceId);
-        }
-    } catch (e) { 
-        console.error(`Failed to refresh threads: ${e.message}`); 
-    }
+    // # LOADWS-ALIAS
+    // Legacy name. The room system replaced /workspaces with /rooms.
+    // Keep the call site working by delegating to loadRooms().
+    return loadRooms();
 }
 
 function renderWorkspaceTabs() {

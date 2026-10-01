@@ -142,30 +142,25 @@ async function signupSolo() {
 
 // Signup — Create Organization
 async function signupOrgCreate() {
+    // # ORG-NOSLUG
     const full_name = document.getElementById('orgFullName').value.trim();
     const phone = document.getElementById('orgAdminPhone').value.trim();
     const password = document.getElementById('orgPassword').value;
     const org_name = document.getElementById('orgName').value.trim();
-    const org_slug = document.getElementById('orgSlug').value.trim();
-    const org_email = document.getElementById('orgEmail').value.trim();
-    const org_country = document.getElementById('orgCountry').value.trim() || 'Nigeria';
-    if (!full_name || !phone || !password || !org_name || !org_slug) {
-        alert('All fields except org email are required.');
+    const org_email = (document.getElementById('orgEmail') || {}).value || '';
+    const org_country = (document.getElementById('orgCountry') || {}).value || 'Nigeria';
+    if (!full_name || !phone || !password || !org_name) {
+        alert('Name, phone, password, and organization name are required.');
         return;
     }
     try {
         const data = await api('/auth/org/create', 'POST', {
             full_name, phone, password,
-            org_name, org_slug,
+            org_name,
             org_email: org_email || null,
-            org_country,
+            org_country: org_country || 'Nigeria',
             language: 'en',
         });
-        if (data && data.worker_credential) {
-            alert('Organization created.\n\nWorker credential (share with your team):\n\n'
-                + data.worker_credential
-                + '\n\nSave this \u2014 you will need it to onboard workers.');
-        }
         handleAuthSuccess(data);
     } catch (e) {
         alert(`Org creation failed: ${e.message}`);

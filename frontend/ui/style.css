@@ -1176,43 +1176,50 @@ input, textarea, select, [contenteditable] {
    STATIC LAYOUT — header stays, only content scrolls
    ============================================================ */
 
+/* static layout — cleaned up */
 html, body {
     height: 100%;
-    overflow: hidden;
+    margin: 0;
+    padding: 0;
 }
 .app {
-    height: 100vh;
-    min-height: 0;
-    overflow: hidden;
-}
-.screen.active {
-    height: 100vh;
-    min-height: 0;
-    overflow: hidden;
-}
-#mainScreen.active {
+    min-height: 100vh;
     display: flex;
     flex-direction: column;
 }
-.top-header {
-    position: sticky;
-    top: 0;
-    z-index: 40;
+.screen.active {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    flex: 1 1 auto;
+}
+#mainScreen.active {
+    height: 100vh;
+    overflow: hidden;
+}
+#mainScreen > .top-header,
+#mainScreen > .header-nav,
+#mainScreen > .room-chips {
     flex: 0 0 auto;
 }
-.header-nav {
-    position: sticky;
-    top: 60px;
-    z-index: 39;
-    flex: 0 0 auto;
-}
-.chat-box {
+#mainScreen > .chat-box {
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
 }
-.input-area {
+#mainScreen > .input-area {
     flex: 0 0 auto;
+}
+/* make sure hidden panels don't take space */
+.research-panel,
+.docs-results {
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+}
+[style*="display:none"] {
+    /* ensure inline hidden always wins over any flex we added */
 }
 
 /* ============================================================

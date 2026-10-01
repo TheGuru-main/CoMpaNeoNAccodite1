@@ -327,7 +327,7 @@ class OrgCreateRequest(BaseModel):
     phone: str = Field(..., min_length=5, max_length=32)
     password: str = Field(..., min_length=6, max_length=200)
     org_name: str = Field(..., min_length=2, max_length=255)
-    org_slug: str = Field(..., min_length=2, max_length=255)
+    org_slug: Optional[str] = None           # auto-generated if omitted
     org_email: Optional[str] = None
     org_country: str = "Nigeria"
     language: str = "en"
@@ -356,10 +356,20 @@ async def org_create(req: OrgCreateRequest):
     try:
         # PHONE-NORM
         req.phone = normalize_phone(req.phone, default_country="NG") or req.phone
+        import re as _re
         if db.query(User).filter(User.phone == req.phone).first():
             raise HTTPException(400, "phone already registered")
-        if db.query(Organization).filter(Organization.slug == req.org_slug).first():
-            raise HTTPException(400, "org slug already taken")
+
+        # auto-generate slug from org_name if not provided
+        base_slug = (req.org_slug or req.org_name or "org").strip().lower()
+        base_slug = _re.sub(r"[^a-z0-9]+", "-", base_slug).strip("-") or "org"
+        base_slug = base_slug[:60]
+        slug = base_slug
+        n = 1
+        while db.query(Organization).filter(Organization.slug == slug).first():
+            n += 1
+            slug = f"{base_slug}-{n}"
+        req.org_slug = slug
 
         user = User(
             id=_uuid.uuid4(),
@@ -416,7 +426,6 @@ async def org_create(req: OrgCreateRequest):
                      "full_name": user.full_name, "role": ROLE_CEO},
             "org": {"id": str(org.id), "name": org.name, "slug": org.slug,
                     "ai_uid": org.ai_uid},
-            "worker_credential": credential,
         }
     finally:
         db.close()

@@ -441,7 +441,10 @@ async def send_message_to_room(
         db.refresh(msg)
         print(f"[rooms] stored message {msg.id} in room {ws_uuid}")
 
-        member_count = _member_count(db, ws)
+        # TYPE-TRIGGER: personal_brainstorm = solo (always fire)
+        # every other type (group/department/team/meeting/organization)
+        # always requires @AI, regardless of how many members there are
+        member_count = 1 if ws.workspace_type == "personal_brainstorm" else 2
         ai_invoked = False
         frames: List[str] = []
         try:

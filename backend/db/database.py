@@ -18,7 +18,7 @@ from db.neon import (
     session_scope,
     async_session_scope,
     ping_sync,
-    ping_async,
+    ping_async,    ASYNC_AVAILABLE,
 )
 
 

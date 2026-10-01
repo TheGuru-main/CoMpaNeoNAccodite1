@@ -900,17 +900,26 @@ async def auto_train_monitor():
                 print(f"[monitor] retrain failed: {type(e).__name__}: {e}")
 
 
-def start_background_training():
+def start_background_training(loop=None):
     """
-    Start the asynchronous MemoryGrid training monitor
-    in the current event loop.
+    Start the asynchronous MemoryGrid training monitor.
+
+    Safe to call from an async context (uses running loop) or from a
+    thread with an explicit `loop` argument.
+
+    # LOOP-FIX
     """
+    if loop is None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                print("[monitor] no event loop available — skipping")
+                return None
 
-    loop = asyncio.get_event_loop()
-
-    loop.create_task(
-        auto_train_monitor()
-    )
+    return loop.create_task(auto_train_monitor())
 
 
 # ============================================================================

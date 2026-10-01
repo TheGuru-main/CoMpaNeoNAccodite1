@@ -1029,13 +1029,29 @@ async def public_train(req: TrainRequest, api_key: str = Depends(verify_api_key)
 # ==============================================================================
 # APPLICATION LIFECYCLE
 # ==============================================================================
+from fastapi.responses import RedirectResponse as _AccdRedirect
+
+@app.get("/")
+async def _accd_root():
+    return _AccdRedirect(url="/app")
+
+@app.get("/health")
+async def _accd_health():
+    return {"ok": True, "service": "accodite"}
+
 @app.on_event("startup")
 async def startup_event():
     # Line 1: Build structural database tables safely on launch
     Base.metadata.create_all(bind=engine) 
     
     # Line 2: Offload the machine learning loop onto a non-blocking background thread
-    asyncio.create_task(asyncio.to_thread(start_background_training))
+    # STARTUP-FIX: run the monitor task directly on the app's loop
+    try:
+        from training.background_training import auto_train_monitor as _accd_monitor
+        asyncio.create_task(_accd_monitor())
+        print("[ACCD] background monitor scheduled")
+    except Exception as _e:
+        print(f"[ACCD] monitor scheduling skipped: {type(_e).__name__}: {_e}")
 
     # ACCD-STARTUP: build pipeline singletons (grid, partition, gate, trigger, pstm)
     try:

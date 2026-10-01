@@ -53,7 +53,7 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
-html, body { height: 100%; }
+html, body { min-height: 100%; margin: 0; padding: 0; overflow-x: hidden; }
 
 body {
     background: var(--bg);
@@ -504,6 +504,9 @@ input, textarea, select, [contenteditable] {
     padding: 1rem;
 }
 .modal-content {
+    overscroll-behavior: contain;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
     background: var(--panel-solid);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
@@ -827,6 +830,8 @@ input, textarea, select, [contenteditable] {
     display: flex;
     flex-direction: column;
     height: calc(100vh - 140px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
 }
 .dm-messages {
     flex: 1;
@@ -1178,9 +1183,11 @@ input, textarea, select, [contenteditable] {
 
 /* static layout — cleaned up */
 html, body {
-    height: 100%;
+    min-height: 100%;
     margin: 0;
     padding: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
 }
 .app {
     min-height: 100vh;
@@ -1192,25 +1199,48 @@ html, body {
     flex-direction: column;
     min-height: 100vh;
     flex: 1 1 auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
 }
+/* main screen is a flex column at least 100vh tall. The chat box
+   scrolls internally when its content is long, but the whole screen
+   scrolls too if the header/chips/input overflow on small devices. */
 #mainScreen.active {
-    height: 100vh;
-    overflow: hidden;
+    min-height: 100vh;
+    overflow: visible;
 }
 #mainScreen > .top-header,
 #mainScreen > .header-nav,
 #mainScreen > .room-chips {
     flex: 0 0 auto;
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    background: rgba(12, 12, 16, 0.92);
+    backdrop-filter: blur(10px);
+}
+#mainScreen > .header-nav {
+    top: 58px; /* below header */
+    z-index: 29;
+}
+#mainScreen > .room-chips {
+    top: 108px; /* below header + nav */
+    z-index: 28;
 }
 #mainScreen > .chat-box {
     flex: 1 1 auto;
-    min-height: 0;
+    min-height: 40vh;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     touch-action: pan-y;
 }
 #mainScreen > .input-area {
     flex: 0 0 auto;
+    position: sticky;
+    bottom: 0;
+    z-index: 27;
+    background: rgba(12, 12, 16, 0.92);
+    backdrop-filter: blur(10px);
 }
 /* make sure hidden panels don't take space */
 .research-panel,

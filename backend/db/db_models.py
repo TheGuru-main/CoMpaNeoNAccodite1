@@ -5,14 +5,15 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     Column,
-    String,
-    Integer,
-    Text,
     DateTime,
     ForeignKey,
-    Boolean,
+    Index,
+    Integer,
     JSON,
+    String,
+    Text,
     UniqueConstraint,
 )
 
@@ -929,4 +930,49 @@ class APIKey(Base):
     created_at = Column(
         DateTime,
         default=utcnow,
+    )
+
+# =====================================================================
+# DIRECT MESSAGE (peer-to-peer, phone-keyed)
+# =====================================================================
+
+class DirectMessage(Base):
+    """
+    Peer-to-peer direct message between two users.
+
+    Keyed by phone on both sides (no AI, no room, no grid).
+    """
+    __tablename__ = "direct_messages"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    sender_phone = Column(
+        String(32),
+        nullable=False,
+        index=True,
+    )
+    recipient_phone = Column(
+        String(32),
+        nullable=False,
+        index=True,
+    )
+    content = Column(
+        Text,
+        nullable=False,
+    )
+    created_at = Column(
+        DateTime,
+        default=utcnow,
+        index=True,
+    )
+    read_at = Column(
+        DateTime,
+        nullable=True,
+    )
+
+    __table_args__ = (
+        Index("ix_dm_pair", "sender_phone", "recipient_phone", "created_at"),
     )

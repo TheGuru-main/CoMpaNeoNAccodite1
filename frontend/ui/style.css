@@ -917,3 +917,30 @@ input, textarea, select, [contenteditable] {
     border-color: rgba(168, 54, 92, 0.5);
     color: #f3a9c1;
 }
+
+/* ============================================================
+   WORKER CREDENTIAL BOX
+   ============================================================ */
+
+.cred-box {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.7rem 0.9rem;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(125, 211, 208, 0.35);
+    border-radius: 0.6rem;
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+}
+.cred-box code {
+    flex: 1;
+    word-break: break-all;
+    color: var(--aqua-bright);
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    line-height: 1.35;
+}
+.cred-box .mini-btn {
+    flex: 0 0 auto;
+}

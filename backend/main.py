@@ -358,7 +358,13 @@ async def org_create(req: OrgCreateRequest):
         db.flush()
 
         # worker credential: orgslug:phonelast4:randomsuffix
+        # CRED-STORE
         credential = f"{req.org_slug}:{req.phone[-4:]}:{_secrets.token_hex(4)}"
+        org.worker_credential = credential
+        org.worker_credential_hash = hashlib.sha256(
+            credential.encode("utf-8")
+        ).hexdigest()
+        org.worker_credential_rotated_at = datetime.utcnow()
 
         try:
             from db.models_org import WorkspaceMember
@@ -394,6 +400,7 @@ async def org_join(req: OrgJoinRequest):
 
     db = SessionLocal()
     try:
+        # CRED-STORE: validate the FULL credential, not just the slug
         parts = req.worker_credential.split(":")
         if len(parts) < 3:
             raise HTTPException(400, "invalid worker credential format")
@@ -402,6 +409,18 @@ async def org_join(req: OrgJoinRequest):
         org = db.query(Organization).filter(Organization.slug == slug).first()
         if not org:
             raise HTTPException(404, "org not found for that credential")
+
+        stored_hash = getattr(org, "worker_credential_hash", None)
+        if stored_hash:
+            presented = hashlib.sha256(
+                req.worker_credential.encode("utf-8")
+            ).hexdigest()
+            if presented != stored_hash:
+                raise HTTPException(403, "invalid worker credential")
+        else:
+            # legacy org with no stored credential — accept slug-only for now,
+            # the admin can rotate to enforce validation
+            print(f"[org-join] org {slug} has no stored credential hash")
 
         if db.query(User).filter(User.phone == req.phone).first():
             raise HTTPException(400, "phone already registered")

@@ -1139,3 +1139,78 @@ handleAuthSuccess = async function(data) {
         await loadRooms();
     } catch (_) {}
 };
+
+
+// ============================================================================
+// WORKER CREDENTIAL (admin)
+// ============================================================================
+
+async function loadOrgCredential() {
+    const box = document.getElementById('adminCredential');
+    if (!box) return;
+    box.style.display = 'block';
+    const code = document.getElementById('credValue');
+    code.textContent = 'Loading…';
+    try {
+        const data = await api('/admin/credential');
+        code.textContent = data.worker_credential || '—';
+        const when = document.getElementById('credRotatedAt');
+        if (when && data.rotated_at) {
+            when.textContent = `last rotated ${new Date(data.rotated_at).toLocaleString()}`;
+        }
+    } catch (e) {
+        code.textContent = `error: ${e.message}`;
+    }
+}
+
+async function rotateOrgCredential() {
+    if (!confirm('Rotate the worker credential? The old code will stop working immediately.')) return;
+    const code = document.getElementById('credValue');
+    code.textContent = 'Rotating…';
+    try {
+        const data = await api('/admin/credential/rotate', 'POST');
+        code.textContent = data.worker_credential || '—';
+        const when = document.getElementById('credRotatedAt');
+        if (when && data.rotated_at) {
+            when.textContent = `last rotated ${new Date(data.rotated_at).toLocaleString()}`;
+        }
+        alert('Credential rotated. Share the new code with your workers.');
+    } catch (e) {
+        code.textContent = `error: ${e.message}`;
+        alert(`Rotate failed: ${e.message}`);
+    }
+}
+
+async function copyOrgCredential() {
+    const code = document.getElementById('credValue');
+    if (!code || !code.textContent) return;
+    try {
+        await navigator.clipboard.writeText(code.textContent);
+        const btn = document.getElementById('btnCopyCred');
+        if (btn) {
+            const original = btn.innerHTML;
+            btn.innerHTML = '<i class="fa-solid fa-check"></i>';
+            setTimeout(() => { btn.innerHTML = original; }, 1400);
+        }
+    } catch (_) {
+        alert('Copy failed — select the text manually.');
+    }
+}
+
+// extend the settings-open hook to load the credential for admins
+(function() {
+    const btnSettings = document.getElementById('btnSettings');
+    if (!btnSettings) return;
+    btnSettings.addEventListener('click', () => {
+        if (!isAdmin) return;
+        // only CEO / c_suite / HR can view credential; backend enforces anyway
+        const role = (currentUser && currentUser.role) || currentUserRole;
+        if (role === 'ceo' || role === 'c_suite' || role === 'hr') {
+            loadOrgCredential();
+        }
+        const btnRotate = document.getElementById('btnRotateCred');
+        if (btnRotate) btnRotate.addEventListener('click', rotateOrgCredential);
+        const btnCopy = document.getElementById('btnCopyCred');
+        if (btnCopy) btnCopy.addEventListener('click', copyOrgCredential);
+    });
+})();

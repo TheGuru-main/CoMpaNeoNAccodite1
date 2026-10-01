@@ -315,6 +315,26 @@ class Organization(Base):
     # RELATIONSHIPS
     # ---------------------------------------------------------------
 
+    # ---------------------------------------------------------------
+    # WORKER CREDENTIAL (single shared credential per org)
+    # ---------------------------------------------------------------
+
+    worker_credential = Column(
+        String(255),
+        nullable=True,
+    )
+
+    worker_credential_hash = Column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    worker_credential_rotated_at = Column(
+        DateTime,
+        nullable=True,
+    )
+
     members = relationship(
         "OrganizationMembership",
         back_populates="organization",

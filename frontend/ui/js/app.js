@@ -1,3 +1,4 @@
+// # PENDING-UI patch applied
 const API_BASE = '';  // Stays empty to dynamically evaluate your Render URL paths
 let authToken = localStorage.getItem('coMpaNeoN_token') || '';
 let currentUser = null;
@@ -57,6 +58,15 @@ async function login() {
     }
     try {
         const data = await api('/auth/login', 'POST', { phone, password });
+        // PENDING-UI: workers awaiting admin approval get no token
+        if (data && data.pending) {
+            alert(data.message || 'Your signup is awaiting admin approval.');
+            return;
+        }
+        if (typeof handleAuthSuccess === 'function') {
+            handleAuthSuccess(data);
+            return;
+        }
         authToken = data.access_token;
         currentUser = data.user;
         localStorage.setItem('coMpaNeoN_token', authToken);

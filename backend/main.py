@@ -432,11 +432,40 @@ async def org_join(req: OrgJoinRequest):
 async def login(req: LoginRequest):
     db = SessionLocal()
     try:
-        user = db.query(User).filter(User.phone == req.phone).first()
+        # PENDING-BLOCK: refuse duplicate rows for the same phone (defensive)
+        users = db.query(User).filter(User.phone == req.phone).all()
+        if len(users) > 1:
+            raise HTTPException(
+                409,
+                "multiple accounts exist for this phone — contact support",
+            )
+        user = users[0] if users else None
         if not user or not verify_password(req.password, user.password_hash):
             raise HTTPException(401, "Invalid credentials")
+
+        # PENDING-BLOCK: worker signups awaiting admin approval cannot log in
+        try:
+            from db_models import OrganizationMembership as _OM
+            memberships = db.query(_OM).filter(_OM.user_id == user.id).all()
+            if memberships and not any(getattr(m, "credential_active", False)
+                                       for m in memberships):
+                return {
+                    "pending": True,
+                    "message": "Your signup is awaiting admin approval.",
+                    "user": {"id": str(user.id), "full_name": user.full_name},
+                }
+        except Exception:
+            pass
+
         token = create_access_token(str(user.id))
-        return {"access_token": token, "user": {"id": str(user.id), "full_name": user.full_name, "start_row": user.start_row}}
+        return {
+            "access_token": token,
+            "user": {
+                "id": str(user.id),
+                "full_name": user.full_name,
+                "start_row": user.start_row,
+            },
+        }
     finally:
         db.close()
 

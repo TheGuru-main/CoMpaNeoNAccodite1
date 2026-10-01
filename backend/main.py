@@ -489,6 +489,47 @@ async def login(req: LoginRequest):
 # WORKSPACE ENDPOINTS (Complete & Corrected)
 # ==============================================================================
 
+@app.get("/auth/me")
+async def me(user: User = Depends(get_current_user)):
+    """Return the current user's identity, orgs, roles, and admin flag."""
+    db = SessionLocal()
+    try:
+        from db_models import OrganizationMembership, Organization
+        memberships = db.query(OrganizationMembership).filter(
+            OrganizationMembership.user_id == user.id
+        ).all()
+        orgs = []
+        for m in memberships:
+            org = db.query(Organization).filter(Organization.id == m.organization_id).first()
+            orgs.append({
+                "org_id": str(m.organization_id),
+                "org_name": org.name if org else None,
+                "org_slug": org.slug if org else None,
+                "role": m.role,
+                "department": getattr(m, "department", None),
+                "title": getattr(m, "title", None),
+                "credential_active": bool(getattr(m, "credential_active", False)),
+            })
+        active = [o for o in orgs if o["credential_active"]]
+        primary_role = active[0]["role"] if active else ("owner" if not orgs else (orgs[0]["role"] or "member"))
+        return {
+            "user": {
+                "id": str(user.id),
+                "phone": user.phone,
+                "full_name": user.full_name,
+                "country": user.country,
+                "temperament": user.temperament,
+                "start_row": user.start_row,
+            },
+            "orgs": orgs,
+            "primary_role": primary_role,
+            "is_admin": primary_role in ("ceo", "c_suite", "hr", "dept_head"),
+            "has_org": len(active) > 0,
+        }
+    finally:
+        db.close()
+
+
 @app.post("/workspace")
 async def create_workspace(
     req: WorkspaceCreate,

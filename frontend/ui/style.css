@@ -677,3 +677,243 @@ input, textarea, select, [contenteditable] {
     border-color: var(--neon-blue);
     box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.16);
 }
+
+/* ============================================================
+   ROOM BAR (replaces horizontal workspace tabs)
+   ============================================================ */
+
+.room-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.55rem 0.9rem;
+    border-bottom: 1px solid var(--border);
+    background: rgba(12, 12, 16, 0.6);
+    backdrop-filter: blur(10px);
+    overflow: hidden;
+}
+.room-list {
+    display: flex;
+    gap: 0.4rem;
+    flex: 1;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+.room-list::-webkit-scrollbar { display: none; }
+
+.room-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.45rem 0.85rem;
+    border-radius: 0.6rem;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid transparent;
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.14s ease;
+}
+.room-item i { font-size: 0.8rem; color: var(--aqua-bright); }
+.room-item:hover {
+    color: var(--text);
+    border-color: rgba(125, 211, 208, 0.32);
+}
+.room-item.active {
+    background: linear-gradient(275deg,
+        rgba(124, 30, 63, 0.32) 0%,
+        rgba(79, 140, 255, 0.24) 100%);
+    border-color: rgba(125, 211, 208, 0.45);
+    color: var(--text);
+}
+.room-item .room-name {
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.room-add {
+    flex: 0 0 auto;
+    width: 34px;
+    height: 34px;
+    border-radius: 0.6rem;
+    background: linear-gradient(275deg,
+        rgba(124, 30, 63, 0.32) 0%,
+        rgba(125, 211, 208, 0.24) 100%);
+    border: 1px solid rgba(125, 211, 208, 0.35);
+    color: var(--aqua-bright);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    transition: all 0.14s ease;
+}
+.room-add:hover {
+    filter: brightness(1.15);
+    transform: translateY(-1px);
+}
+
+/* ============================================================
+   NEW ROOM MODAL
+   ============================================================ */
+
+.modal-content .field-label {
+    display: block;
+    font-size: 0.82rem;
+    color: var(--text-dim);
+    margin: 0.75rem 0 0.3rem;
+}
+.modal-content select,
+.modal-content input[type="text"] {
+    display: block;
+    width: 100%;
+    padding: 0.75rem 0.9rem;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--border);
+    border-radius: 0.6rem;
+    color: var(--text);
+    outline: none;
+    font-family: var(--font-sans);
+}
+.modal-content select:focus,
+.modal-content input[type="text"]:focus {
+    border-color: var(--neon-blue);
+    box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.16);
+}
+
+/* ============================================================
+   DIRECT MESSAGES
+   ============================================================ */
+
+.dm-list { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.5rem 0; }
+.dm-item {
+    display: block;
+    text-align: left;
+    padding: 0.85rem 1rem;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border);
+    border-radius: 0.6rem;
+    color: inherit;
+    font-family: var(--font-mono);
+    cursor: pointer;
+    transition: all 0.14s ease;
+    position: relative;
+}
+.dm-item:hover {
+    background: linear-gradient(275deg,
+        rgba(124, 30, 63, 0.20) 0%,
+        rgba(79, 140, 255, 0.16) 100%);
+    border-color: rgba(125, 211, 208, 0.35);
+}
+.dm-phone { font-weight: 600; margin-bottom: 0.2rem; }
+.dm-last { font-size: 0.78rem; opacity: 0.62; }
+.dm-unread {
+    position: absolute;
+    top: 0.6rem;
+    right: 0.6rem;
+    background: var(--burgundy-bright);
+    color: #fff;
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 0.15rem 0.45rem;
+    border-radius: 999px;
+    min-width: 1.3rem;
+    text-align: center;
+}
+
+.dm-thread {
+    padding-top: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 140px);
+}
+.dm-messages {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    padding: 0.6rem 0;
+}
+.dm-bubble {
+    max-width: 78%;
+    padding: 0.65rem 0.9rem;
+    border-radius: 0.75rem;
+    line-height: 1.45;
+    word-wrap: break-word;
+}
+.dm-mine {
+    align-self: flex-end;
+    background: linear-gradient(275deg,
+        var(--burgundy) 0%,
+        var(--burgundy-bright) 100%);
+    border: 1px solid rgba(168, 54, 92, 0.5);
+    color: #fdf2f6;
+}
+.dm-theirs {
+    align-self: flex-start;
+    background: var(--charcoal);
+    border: 1px solid var(--border);
+    border-left: 2px solid var(--aqua);
+}
+.dm-input-row {
+    display: flex;
+    gap: 0.5rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border);
+}
+.dm-input-row input {
+    flex: 1;
+    padding: 0.75rem 0.95rem;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--border);
+    border-radius: 0.6rem;
+    color: var(--text);
+    outline: none;
+    font-family: var(--font-sans);
+}
+.dm-input-row input:focus {
+    border-color: var(--neon-blue);
+    box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.16);
+}
+
+/* ============================================================
+   ADMIN SECTION
+   ============================================================ */
+
+.admin-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.7rem 0.85rem;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border);
+    border-radius: 0.6rem;
+    margin-bottom: 0.5rem;
+}
+.admin-actions { display: flex; gap: 0.35rem; }
+.mini-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 0.5rem;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-dim);
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    font-size: 0.85rem;
+    transition: all 0.14s ease;
+}
+.mini-btn.ok:hover {
+    background: rgba(34, 197, 94, 0.18);
+    border-color: rgba(34, 197, 94, 0.4);
+    color: #86efac;
+}
+.mini-btn.err:hover {
+    background: rgba(168, 54, 92, 0.22);
+    border-color: rgba(168, 54, 92, 0.5);
+    color: #f3a9c1;
+}

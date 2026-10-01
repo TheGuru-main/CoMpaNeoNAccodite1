@@ -788,3 +788,354 @@ function initBubbleCanvas() {
 
 // boot the canvas once
 try { initBubbleCanvas(); } catch (_) {}
+
+
+// ============================================================================
+// ROOMS (workspace CRUD + room chat)
+// ============================================================================
+
+let roomList = [];
+let currentRoomId = null;
+let currentUserRole = 'owner';
+let isAdmin = false;
+let hasOrg = false;
+let dmPartner = null;
+
+async function loadMe() {
+    try {
+        const me = await api('/auth/me');
+        currentUserRole = me.primary_role || 'owner';
+        isAdmin = !!me.is_admin;
+        hasOrg = !!me.has_org;
+        currentUser = Object.assign({}, currentUser || {}, me.user, {
+            role: currentUserRole,
+        });
+        localStorage.setItem('coMpaNeoN_user', JSON.stringify(currentUser));
+    } catch (e) {
+        console.warn('loadMe failed:', e.message);
+    }
+}
+
+async function loadRooms() {
+    try {
+        roomList = await api('/rooms');
+    } catch (e) {
+        console.warn('loadRooms failed:', e.message);
+        roomList = [];
+    }
+    renderRoomBar();
+    if (!currentRoomId && roomList.length > 0) {
+        await openRoom(roomList[0].id);
+    }
+}
+
+function renderRoomBar() {
+    const bar = document.getElementById('roomList');
+    if (!bar) return;
+    if (!roomList.length) {
+        bar.innerHTML = '<span style="opacity:.5;padding:.5rem;">No workspaces yet — tap + to create one.</span>';
+        return;
+    }
+    const sorted = [...roomList].sort((a, b) => {
+        // personal brainstorms first, then others; newest first within each
+        const order = { personal_brainstorm: 0, group: 1, meeting: 2, team: 3, department: 4, organization: 5 };
+        const da = order[a.workspace_type] ?? 9;
+        const db = order[b.workspace_type] ?? 9;
+        if (da !== db) return da - db;
+        return (b.updated_at || '').localeCompare(a.updated_at || '');
+    });
+    bar.innerHTML = sorted.map(r => {
+        const active = r.id === currentRoomId ? ' active' : '';
+        const icon = {
+            personal_brainstorm: 'fa-brain',
+            group: 'fa-users',
+            department: 'fa-building',
+            team: 'fa-people-group',
+            meeting: 'fa-handshake',
+            organization: 'fa-sitemap',
+        }[r.workspace_type] || 'fa-comments';
+        return `<button class="room-item${active}" data-room="${r.id}">
+            <i class="fa-solid ${icon}"></i>
+            <span class="room-name">${escapeHtml(r.project_name || 'Untitled')}</span>
+        </button>`;
+    }).join('');
+    bar.querySelectorAll('.room-item').forEach(el => {
+        el.addEventListener('click', () => openRoom(el.dataset.room));
+    });
+}
+
+function escapeHtml(s) {
+    return String(s || '').replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[c]));
+}
+
+async function openRoom(id) {
+    currentRoomId = id;
+    renderRoomBar();
+    const chatBox = document.getElementById('chatBox');
+    chatBox.innerHTML = '';
+    try {
+        const msgs = await api(`/rooms/${id}/messages`);
+        if (!msgs.length) {
+            appendMessage('ai', 'Workspace ready. Say something to begin.');
+        } else {
+            msgs.forEach(m => {
+                const mine = m.user_id && currentUser && m.user_id === currentUser.id;
+                appendMessage(m.role === 'ai' || m.role === 'assistant' ? 'ai' : (mine ? 'user' : 'ai'), m.content);
+            });
+        }
+    } catch (e) {
+        appendMessage('ai', `Could not load room: ${e.message}`);
+    }
+}
+
+async function createRoom() {
+    const type = document.getElementById('newRoomType').value;
+    const name = document.getElementById('newRoomName').value.trim();
+    if (!name) { alert('Give the workspace a name.'); return; }
+    try {
+        const room = await api('/rooms', 'POST', {
+            workspace_type: type,
+            project_name: name,
+        });
+        document.getElementById('newRoomModal').style.display = 'none';
+        document.getElementById('newRoomName').value = '';
+        await loadRooms();
+        await openRoom(room.id);
+    } catch (e) {
+        alert(`Could not create workspace: ${e.message}`);
+    }
+}
+
+function openNewRoomModal() {
+    const modal = document.getElementById('newRoomModal');
+    if (!modal) return;
+    // hide org-only options when user has no org
+    modal.querySelectorAll('option[data-org-only]').forEach(opt => {
+        opt.style.display = hasOrg ? '' : 'none';
+    });
+    modal.style.display = 'flex';
+}
+
+// ============================================================================
+// DIRECT MESSAGES (peer-to-peer)
+// ============================================================================
+
+async function openDMPanel() {
+    const panel = document.getElementById('dmPanel');
+    if (!panel) return;
+    panel.style.display = 'block';
+    document.getElementById('dmThread').style.display = 'none';
+    document.getElementById('dmList').style.display = 'block';
+    await loadDMConversations();
+}
+
+async function loadDMConversations() {
+    const list = document.getElementById('dmList');
+    list.innerHTML = '<p style="opacity:.6;">Loading…</p>';
+    try {
+        const convos = await api('/api/messages/conversations');
+        if (!convos.length) {
+            list.innerHTML = '<p style="opacity:.6;">No conversations yet. Send a message by phone number.</p>';
+            return;
+        }
+        list.innerHTML = convos.map(c => `
+            <button class="dm-item" data-phone="${escapeHtml(c.phone)}">
+                <div class="dm-phone">${escapeHtml(c.phone)}</div>
+                <div class="dm-last">${escapeHtml((c.last_message || '').slice(0, 60))}</div>
+                ${c.unread ? `<span class="dm-unread">${c.unread}</span>` : ''}
+            </button>
+        `).join('');
+        list.querySelectorAll('.dm-item').forEach(el => {
+            el.addEventListener('click', () => openDMThread(el.dataset.phone));
+        });
+    } catch (e) {
+        list.innerHTML = `<p style="color:#f3a9c1;">Could not load conversations: ${escapeHtml(e.message)}</p>`;
+    }
+}
+
+async function openDMThread(phone) {
+    dmPartner = phone;
+    document.getElementById('dmList').style.display = 'none';
+    document.getElementById('dmThread').style.display = 'block';
+    const box = document.getElementById('dmMessages');
+    box.innerHTML = '<p style="opacity:.6;">Loading…</p>';
+    try {
+        const msgs = await api(`/api/messages/with/${encodeURIComponent(phone)}`);
+        box.innerHTML = '';
+        if (!msgs.length) {
+            box.innerHTML = '<p style="opacity:.5;padding:.75rem;">No messages yet.</p>';
+        } else {
+            msgs.forEach(m => {
+                const mine = m.sender_phone === (currentUser && currentUser.phone);
+                const d = document.createElement('div');
+                d.className = `dm-bubble ${mine ? 'dm-mine' : 'dm-theirs'}`;
+                d.textContent = m.content;
+                box.appendChild(d);
+            });
+        }
+        box.scrollTop = box.scrollHeight;
+    } catch (e) {
+        box.innerHTML = `<p style="color:#f3a9c1;">${escapeHtml(e.message)}</p>`;
+    }
+}
+
+async function sendDM() {
+    const input = document.getElementById('dmInput');
+    const content = input.value.trim();
+    if (!content || !dmPartner) return;
+    input.value = '';
+    try {
+        await api('/api/messages/send', 'POST', {
+            recipient_phone: dmPartner,
+            content,
+        });
+        await openDMThread(dmPartner);
+    } catch (e) {
+        alert(`Could not send: ${e.message}`);
+    }
+}
+
+// ============================================================================
+// ADMIN (pending workers)
+// ============================================================================
+
+async function loadAdminPending() {
+    if (!isAdmin) return;
+    const section = document.getElementById('adminSection');
+    const list = document.getElementById('adminPendingList');
+    if (!section || !list) return;
+    section.style.display = 'block';
+    list.innerHTML = '<p style="opacity:.6;">Loading…</p>';
+    try {
+        const pending = await api('/admin/pending');
+        if (!pending.length) {
+            list.innerHTML = '<p style="opacity:.5;">No pending signups.</p>';
+            return;
+        }
+        list.innerHTML = pending.map(p => `
+            <div class="admin-row">
+                <div>
+                    <strong>${escapeHtml(p.full_name || '')}</strong>
+                    <div style="opacity:.6;font-size:.78rem;">${escapeHtml(p.phone || '')} · ${escapeHtml(p.department || '')}</div>
+                </div>
+                <div class="admin-actions">
+                    <button class="mini-btn ok" data-approve="${p.membership_id}">
+                        <i class="fa-solid fa-check"></i>
+                    </button>
+                    <button class="mini-btn err" data-reject="${p.membership_id}">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+            </div>
+        `).join('');
+        list.querySelectorAll('[data-approve]').forEach(el => {
+            el.addEventListener('click', () => adminApprove(el.dataset.approve));
+        });
+        list.querySelectorAll('[data-reject]').forEach(el => {
+            el.addEventListener('click', () => adminReject(el.dataset.reject));
+        });
+    } catch (e) {
+        list.innerHTML = `<p style="color:#f3a9c1;">${escapeHtml(e.message)}</p>`;
+    }
+}
+
+async function adminApprove(id) {
+    try {
+        await api(`/admin/approve/${id}`, 'POST');
+        await loadAdminPending();
+    } catch (e) { alert(`Approve failed: ${e.message}`); }
+}
+
+async function adminReject(id) {
+    if (!confirm('Reject this signup?')) return;
+    try {
+        await api(`/admin/reject/${id}`, 'POST');
+        await loadAdminPending();
+    } catch (e) { alert(`Reject failed: ${e.message}`); }
+}
+
+// ============================================================================
+// BOOT WIRING (added to existing init via listeners below)
+// ============================================================================
+
+function wireRoomUI() {
+    const btnNew = document.getElementById('btnNewRoom');
+    if (btnNew) btnNew.addEventListener('click', openNewRoomModal);
+    const btnCreate = document.getElementById('btnCreateRoom');
+    if (btnCreate) btnCreate.addEventListener('click', createRoom);
+    const btnCloseNew = document.getElementById('btnCloseNewRoom');
+    if (btnCloseNew) btnCloseNew.addEventListener('click', () => {
+        document.getElementById('newRoomModal').style.display = 'none';
+    });
+    const btnCloseDM = document.getElementById('btnCloseDM');
+    if (btnCloseDM) btnCloseDM.addEventListener('click', () => {
+        document.getElementById('dmPanel').style.display = 'none';
+    });
+    const btnDmBack = document.getElementById('btnDmBack');
+    if (btnDmBack) btnDmBack.addEventListener('click', () => {
+        document.getElementById('dmThread').style.display = 'none';
+        document.getElementById('dmList').style.display = 'block';
+        loadDMConversations();
+    });
+    const btnSendDM = document.getElementById('btnSendDM');
+    if (btnSendDM) btnSendDM.addEventListener('click', sendDM);
+    const dmInput = document.getElementById('dmInput');
+    if (dmInput) dmInput.addEventListener('keydown', e => {
+        if (e.key === 'Enter') sendDM();
+    });
+    // hook the bottom nav "messages" icon
+    document.querySelectorAll('.nav-link').forEach(link => {
+        if (link.dataset.action === 'messages') {
+            link.addEventListener('click', openDMPanel);
+        }
+    });
+    // hook settings open → admin section
+    const btnSettings = document.getElementById('btnSettings');
+    if (btnSettings) {
+        btnSettings.addEventListener('click', () => {
+            if (isAdmin) loadAdminPending();
+        });
+    }
+}
+
+try { wireRoomUI(); } catch (_) {}
+
+// Override sendMessage so room input posts to the room chat endpoint.
+async function sendMessage(text, isFirst=false) {
+    if (!text.trim()) return;
+    if (!isFirst) appendMessage('user', text);
+    try {
+        let data;
+        if (currentRoomId) {
+            data = await api(`/rooms/${currentRoomId}/messages`, 'POST', { content: text });
+        } else {
+            // no active room — fall back to a personal brainstorm
+            const room = await api('/rooms', 'POST', {
+                workspace_type: 'personal_brainstorm',
+                project_name: text.slice(0, 60) || 'Quick chat',
+            });
+            currentRoomId = room.id;
+            await loadRooms();
+            data = await api(`/rooms/${currentRoomId}/messages`, 'POST', { content: text });
+        }
+        if (data && data.frames && data.frames.length > 0) {
+            appendFrameMessage('ai', data.frames, []);
+        } else if (data && data.content) {
+            appendMessage('ai', data.content);
+        }
+    } catch (e) {
+        appendMessage('ai', `System Matrix Sync Failure: ${e.message}`);
+    }
+}
+
+// Make sure login/signup boot the room pipeline.
+const _origHandleAuthSuccess = handleAuthSuccess;
+handleAuthSuccess = async function(data) {
+    _origHandleAuthSuccess(data);
+    try {
+        await loadMe();
+        await loadRooms();
+    } catch (_) {}
+};

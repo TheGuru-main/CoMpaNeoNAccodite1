@@ -4,9 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>CoMpaNeoN AI</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+          integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA=="
+          crossorigin="anonymous" referrerpolicy="no-referrer" />
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <canvas id="bubbleCanvas"></canvas>
     <div class="app">
         <!-- Auth Screen -->
         <div id="authScreen" class="screen active">
@@ -14,16 +18,16 @@
 
         <!-- View: Landing -->
         <div id="authLanding" class="auth-view active">
-            <h1>🤖 CoMpaNeoN AI</h1>
+            <h1><i class="fa-solid fa-brain"></i> CoMpaNeoN AI</h1>
             <p class="auth-sub">Your personal AI, trained on your own data.</p>
             <div class="auth-choices">
                 <button type="button" class="auth-choice" data-view="login">
-                    <span class="auth-choice-icon">🔐</span>
+                    <span class="auth-choice-icon"><i class="fa-solid fa-lock"></i></span>
                     <span class="auth-choice-label">Log In</span>
                     <span class="auth-choice-sub">Already have an account</span>
                 </button>
                 <button type="button" class="auth-choice" data-view="signupChoice">
-                    <span class="auth-choice-icon">✨</span>
+                    <span class="auth-choice-icon"><i class="fa-solid fa-user-plus"></i></span>
                     <span class="auth-choice-label">Sign Up</span>
                     <span class="auth-choice-sub">Create a new brain</span>
                 </button>
@@ -47,17 +51,17 @@
             <p class="auth-sub">What kind of account?</p>
             <div class="auth-choices">
                 <button type="button" class="auth-choice" data-view="signupSolo">
-                    <span class="auth-choice-icon">👤</span>
+                    <span class="auth-choice-icon"><i class="fa-solid fa-user"></i></span>
                     <span class="auth-choice-label">Regular User</span>
                     <span class="auth-choice-sub">Personal brain for yourself</span>
                 </button>
                 <button type="button" class="auth-choice" data-view="signupOrgCreate">
-                    <span class="auth-choice-icon">🏢</span>
+                    <span class="auth-choice-icon"><i class="fa-solid fa-building"></i></span>
                     <span class="auth-choice-label">Create Organization</span>
                     <span class="auth-choice-sub">Start an org, invite workers</span>
                 </button>
                 <button type="button" class="auth-choice" data-view="signupOrgJoin">
-                    <span class="auth-choice-icon">🎫</span>
+                    <span class="auth-choice-icon"><i class="fa-solid fa-id-card"></i></span>
                     <span class="auth-choice-label">Join Organization</span>
                     <span class="auth-choice-sub">I have a worker credential</span>
                 </button>
@@ -142,13 +146,16 @@
 
 <div id="mainScreen" class="screen">
             <header class="top-header">
-                <button id="btnSettings" class="icon-btn">⚙️</button>
+                <button id="btnSettings" class="icon-btn"><i class="fa-solid fa-gear"></i></button>
                 <h1>CoMpaNeoN AI</h1>
-                <button id="btnLogout" class="icon-btn">⎋</button>
+                <button id="btnLogout" class="icon-btn"><i class="fa-solid fa-right-from-bracket"></i></button>
             </header>
 
-            <div class="workspace-tabs" id="workspaceTabs">
-                <!-- Workspace tabs appear here dynamically via JS -->
+            <div class="room-bar">
+                <div class="room-list" id="roomList"></div>
+                <button id="btnNewRoom" class="room-add" title="New workspace">
+                    <i class="fa-solid fa-plus"></i>
+                </button>
             </div>
 
             <main class="chat-box" id="chatBox">
@@ -159,22 +166,64 @@
             <div class="research-panel" id="researchPanel" style="display:none;">
                 <div class="research-header">
                     <h3>🔍 Research Summary Engine</h3>
-                    <button id="btnCloseResearch" class="icon-btn">✕</button>
+                    <button id="btnCloseResearch" class="icon-btn"><i class="fa-solid fa-xmark"></i></button>
                 </div>
                 <div id="researchResults" class="research-results"></div>
             </div>
 
             <footer class="input-area">
                 <input type="text" id="promptInput" placeholder="Start a chat with CoMpaNeoN!!" />
-                <button id="btnSend" class="send-btn">➤</button>
+                <button id="btnSend" class="send-btn"><i class="fa-solid fa-paper-plane"></i></button>
             </footer>
 
             <nav class="bottom-nav">
-                <a href="#" data-action="home" class="nav-link active">🏠</a>
-                <a href="#" data-action="research" class="nav-link">🔍</a>
-                <a href="#" data-action="workspace" class="nav-link">📁</a>
-                <a href="#" data-action="train" class="nav-link">🪄</a>
+                <a href="#" data-action="home" class="nav-link active"><i class="fa-solid fa-house"></i></a>
+                <a href="#" data-action="research" class="nav-link"><i class="fa-solid fa-magnifying-glass"></i></a>
+                <a href="#" data-action="workspace" class="nav-link"><i class="fa-solid fa-folder"></i></a>
+                <a href="#" data-action="messages" class="nav-link"><i class="fa-solid fa-comments"></i></a>
+                <a href="#" data-action="train" class="nav-link"><i class="fa-solid fa-wand-magic-sparkles"></i></a>
             </nav>
+        </div>
+
+        <!-- New Room Modal -->
+        <div id="newRoomModal" class="modal" style="display:none;">
+            <div class="modal-content">
+                <h3><i class="fa-solid fa-plus"></i> New workspace</h3>
+                <label class="field-label">Type</label>
+                <select id="newRoomType">
+                    <option value="personal_brainstorm">Personal brainstorm</option>
+                    <option value="group">Group chat</option>
+                    <option value="department" data-org-only="1">Department room</option>
+                    <option value="team" data-org-only="1">Team room</option>
+                    <option value="meeting" data-org-only="1">Meeting room</option>
+                    <option value="organization" data-org-only="1">Organization room</option>
+                </select>
+                <label class="field-label">Name</label>
+                <input type="text" id="newRoomName" placeholder="e.g. Backend refactor" maxlength="255" />
+                <div style="display:flex; gap:0.5rem; margin-top:0.75rem;">
+                    <button id="btnCreateRoom" class="primary-btn" style="flex:1;">Create</button>
+                    <button id="btnCloseNewRoom" class="primary-btn secondary-btn" style="flex:1;">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Direct Messages Panel -->
+        <div id="dmPanel" class="research-panel" style="display:none;">
+            <div class="research-header">
+                <h3><i class="fa-solid fa-comments"></i> Direct messages</h3>
+                <button id="btnCloseDM" class="icon-btn"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div id="dmList" class="dm-list"></div>
+            <div id="dmThread" class="dm-thread" style="display:none;">
+                <button id="btnDmBack" class="auth-back">
+                    <i class="fa-solid fa-arrow-left"></i> Back
+                </button>
+                <div id="dmMessages" class="dm-messages"></div>
+                <div class="dm-input-row">
+                    <input type="text" id="dmInput" placeholder="Type a message…" />
+                    <button id="btnSendDM" class="send-btn"><i class="fa-solid fa-paper-plane"></i></button>
+                </div>
+            </div>
         </div>
 
         <!-- Settings Modal -->
@@ -196,6 +245,13 @@
                     <option value="phlegmatic">Phlegmatic</option>
                     <option value="choleric">Choleric</option>
                 </select>
+                <div id="adminSection" style="display:none;">
+                    <div style="border-top:1px solid var(--border); margin-top:1rem; padding-top:1rem;">
+                        <h4 style="margin-bottom:0.75rem;"><i class="fa-solid fa-users"></i> Pending workers</h4>
+                        <div id="adminPendingList" style="margin-bottom:0.75rem;"></div>
+                    </div>
+                </div>
+
                 <div style="display:flex; gap:0.5rem;">
                     <button id="btnSaveSettings" class="primary-btn" style="flex:1;">Save</button>
                     <button id="btnCloseSettings" class="primary-btn secondary-btn" style="flex:1;">Close</button>
@@ -206,7 +262,7 @@
 
            <div id="trainingModal" class="modal" style="display:none;">
             <div class="modal-content">
-                <h3 style="margin-bottom:1rem;">🧠 Model Training</h3>
+                <h3 style="margin-bottom:1rem;"><i class="fa-solid fa-brain"></i> Model Training</h3>
                 <p id="trainingStatusText" style="opacity:0.7; margin-bottom:1rem;">Checking runtime readiness…</p>
                 <div class="training-row">
                     <label>Epochs</label>

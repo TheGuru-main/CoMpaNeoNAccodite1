@@ -61,6 +61,14 @@ from integration import (
 
 app = FastAPI(title="CoMpaNeoN AI", version="1.0.0")
 
+# ACCD-ROOMS
+try:
+    from rooms import router as _rooms_router
+    app.include_router(_rooms_router)
+    print("[ACCD] rooms router mounted at /rooms/*")
+except Exception as _e:
+    print(f"[ACCD] rooms router not mounted: {_e}")
+
 # WEIGHTS-RELAY
 try:
     from weights_relay import router as _weights_router

@@ -976,3 +976,181 @@ input, textarea, select, [contenteditable] {
 
 /* keep the old .bottom-nav rule harmless in case it lingers */
 .bottom-nav { display: none; }
+
+/* ============================================================
+   SIDEBAR — collapsible workspace sections
+   ============================================================ */
+
+.sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(2px);
+    z-index: 90;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.18s ease;
+}
+.sidebar-backdrop.open {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 290px;
+    max-width: 82vw;
+    background: var(--bg-2);
+    border-right: 1px solid var(--border);
+    box-shadow: 4px 0 30px rgba(0, 0, 0, 0.5);
+    z-index: 91;
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.sidebar.open { transform: translateX(0); }
+
+.sidebar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.85rem 1rem;
+    border-bottom: 1px solid var(--border);
+    background: rgba(12, 12, 16, 0.9);
+}
+.sidebar-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--aqua-bright);
+}
+.sidebar-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.4rem 0;
+}
+
+/* section */
+.side-section {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.045);
+}
+.side-section:last-child { border-bottom: none; }
+
+.side-header {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.7rem 0.9rem;
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 0.84rem;
+    color: var(--text-dim);
+    user-select: none;
+    transition: background 0.12s ease, color 0.12s ease;
+}
+.side-header:hover {
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text);
+}
+.side-header i { color: var(--aqua-bright); font-size: 0.8rem; width: 14px; text-align: center; }
+.side-arrow {
+    width: 14px;
+    opacity: 0.6;
+    font-size: 0.7rem;
+    display: inline-block;
+    text-align: center;
+}
+.side-label { flex: 1; }
+.side-count {
+    opacity: 0.5;
+    font-size: 0.72rem;
+    margin-right: 0.35rem;
+}
+.side-add {
+    width: 22px;
+    height: 22px;
+    display: grid;
+    place-items: center;
+    border-radius: 0.4rem;
+    color: var(--aqua-bright);
+    font-size: 0.72rem;
+    transition: background 0.12s ease;
+}
+.side-add:hover {
+    background: rgba(125, 211, 208, 0.15);
+}
+
+/* items list */
+.side-items {
+    padding-bottom: 0.35rem;
+}
+.side-items.hidden { display: none; }
+
+.side-item {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    text-align: left;
+    padding: 0.45rem 0.9rem 0.45rem 2.4rem;
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 0.79rem;
+    transition: background 0.12s ease, color 0.12s ease;
+    border-right: 2px solid transparent;
+}
+.side-item:hover {
+    background: rgba(255, 255, 255, 0.035);
+    color: var(--text);
+}
+.side-item.active {
+    background: linear-gradient(275deg,
+        rgba(124, 30, 63, 0.28) 0%,
+        rgba(79, 140, 255, 0.20) 100%);
+    color: var(--text);
+    border-right-color: var(--aqua);
+}
+.side-item-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.side-item-badge {
+    font-size: 0.68rem;
+    opacity: 0.55;
+    padding: 0.05rem 0.35rem;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 999px;
+}
+
+.side-empty {
+    padding: 0.35rem 0.9rem 0.5rem 2.4rem;
+    font-size: 0.72rem;
+    opacity: 0.38;
+    font-style: italic;
+}
+
+/* active room title in header */
+#activeRoomTitle {
+    font-family: var(--font-mono);
+    font-size: 0.95rem;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    text-align: center;
+    padding: 0 0.5rem;
+    color: var(--aqua-bright);
+}

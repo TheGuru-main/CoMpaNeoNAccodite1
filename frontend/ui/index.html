@@ -146,8 +146,9 @@
 
 <div id="mainScreen" class="screen">
             <header class="top-header">
+                <button id="btnSidebar" class="icon-btn"><i class="fa-solid fa-bars"></i></button>
+                <h1 id="activeRoomTitle">CoMpaNeoN AI</h1>
                 <button id="btnSettings" class="icon-btn"><i class="fa-solid fa-gear"></i></button>
-                <h1>CoMpaNeoN AI</h1>
                 <button id="btnLogout" class="icon-btn"><i class="fa-solid fa-right-from-bracket"></i></button>
             </header>
 
@@ -161,12 +162,22 @@
             </nav>
 
 
-            <div class="room-bar">
-                <div class="room-list" id="roomList"></div>
-                <button id="btnNewRoom" class="room-add" title="New workspace">
-                    <i class="fa-solid fa-plus"></i>
-                </button>
-            </div>
+            <!-- Sidebar backdrop + panel -->
+            <div id="sidebarBackdrop" class="sidebar-backdrop"></div>
+            <aside id="sidebar" class="sidebar">
+                <div class="sidebar-header">
+                    <span class="sidebar-title"><i class="fa-solid fa-layer-group"></i> Workspaces</span>
+                    <div style="display:flex; gap:.35rem;">
+                        <button id="btnNewRoom" class="icon-btn" title="New workspace">
+                            <i class="fa-solid fa-plus"></i>
+                        </button>
+                        <button id="btnCloseSidebar" class="icon-btn" title="Close">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+                </div>
+                <div id="roomList" class="sidebar-body"></div>
+            </aside>
 
             <main class="chat-box" id="chatBox">
                 <!-- Messages appear here dynamically via JS -->

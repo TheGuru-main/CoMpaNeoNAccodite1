@@ -800,38 +800,118 @@ async function loadRooms() {
 }
 
 function renderRoomBar() {
+    // # SIDEBAR-V2
     const bar = document.getElementById('roomList');
     if (!bar) return;
-    if (!roomList.length) {
-        bar.innerHTML = '<span style="opacity:.5;padding:.5rem;">No workspaces yet — tap + to create one.</span>';
-        return;
-    }
-    const sorted = [...roomList].sort((a, b) => {
-        // personal brainstorms first, then others; newest first within each
-        const order = { personal_brainstorm: 0, group: 1, meeting: 2, team: 3, department: 4, organization: 5 };
-        const da = order[a.workspace_type] ?? 9;
-        const db = order[b.workspace_type] ?? 9;
-        if (da !== db) return da - db;
-        return (b.updated_at || '').localeCompare(a.updated_at || '');
+
+    const groups = [
+        { key: 'personal_brainstorm', label: 'Personal',     icon: 'fa-brain',         required: true  },
+        { key: 'group',               label: 'Groups',        icon: 'fa-users',         required: true  },
+        { key: 'meeting',             label: 'Meetings',      icon: 'fa-handshake',     required: false },
+        { key: 'team',                label: 'Teams',         icon: 'fa-people-group',  required: false },
+        { key: 'department',          label: 'Departments',   icon: 'fa-building',      required: false },
+        { key: 'organization',        label: 'Organization',  icon: 'fa-sitemap',       required: false },
+    ];
+
+    // bucket rooms by type
+    const buckets = {};
+    groups.forEach(g => buckets[g.key] = []);
+    roomList.forEach(r => {
+        if (!buckets[r.workspace_type]) buckets[r.workspace_type] = [];
+        buckets[r.workspace_type].push(r);
     });
-    bar.innerHTML = sorted.map(r => {
-        const active = r.id === currentRoomId ? ' active' : '';
-        const icon = {
-            personal_brainstorm: 'fa-brain',
-            group: 'fa-users',
-            department: 'fa-building',
-            team: 'fa-people-group',
-            meeting: 'fa-handshake',
-            organization: 'fa-sitemap',
-        }[r.workspace_type] || 'fa-comments';
-        return `<button class="room-item${active}" data-room="${r.id}">
-            <i class="fa-solid ${icon}"></i>
-            <span class="room-name">${escapeHtml(r.project_name || 'Untitled')}</span>
-        </button>`;
+
+    // collapse state from localStorage
+    let collapse = {};
+    try { collapse = JSON.parse(localStorage.getItem('acd_room_collapse') || '{}'); } catch (_) {}
+
+    bar.innerHTML = groups.map(g => {
+        const items = buckets[g.key] || [];
+        if (!g.required && items.length === 0 && !hasOrg) return '';
+        const collapsed = collapse[g.key] === true;
+        const arrow = collapsed ? '\u25B8' : '\u25BE';
+        const itemsHtml = items.length
+            ? items.map(r => `
+                <button class="side-item${r.id === currentRoomId ? ' active' : ''}" data-room="${r.id}">
+                    <span class="side-item-name">${escapeHtml(r.project_name || 'Untitled')}</span>
+                    ${r.member_count > 1 ? `<span class="side-item-badge">${r.member_count}</span>` : ''}
+                </button>
+            `).join('')
+            : `<div class="side-empty">No ${g.label.toLowerCase()} yet</div>`;
+        return `
+            <div class="side-section">
+                <div class="side-header" data-toggle="${g.key}">
+                    <span class="side-arrow">${arrow}</span>
+                    <i class="fa-solid ${g.icon}"></i>
+                    <span class="side-label">${g.label}</span>
+                    <span class="side-count">${items.length}</span>
+                    <span class="side-add" data-new="${g.key}" title="New ${g.label}">
+                        <i class="fa-solid fa-plus"></i>
+                    </span>
+                </div>
+                <div class="side-items${collapsed ? ' hidden' : ''}">
+                    ${itemsHtml}
+                </div>
+            </div>`;
     }).join('');
-    bar.querySelectorAll('.room-item').forEach(el => {
-        el.addEventListener('click', () => openRoom(el.dataset.room));
+
+    // wire section toggles
+    bar.querySelectorAll('[data-toggle]').forEach(el => {
+        el.addEventListener('click', (e) => {
+            if (e.target.closest('[data-new]')) return;
+            const key = el.dataset.toggle;
+            collapse[key] = !collapse[key];
+            localStorage.setItem('acd_room_collapse', JSON.stringify(collapse));
+            renderRoomBar();
+        });
     });
+
+    // wire + buttons
+    bar.querySelectorAll('[data-new]').forEach(el => {
+        el.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openNewRoomModalFor(el.dataset.new);
+        });
+    });
+
+    // wire item clicks
+    bar.querySelectorAll('.side-item').forEach(el => {
+        el.addEventListener('click', () => {
+            openRoom(el.dataset.room);
+            closeSidebar();
+        });
+    });
+}
+
+function openSidebar() {
+    const s = document.getElementById('sidebar');
+    const b = document.getElementById('sidebarBackdrop');
+    if (s) s.classList.add('open');
+    if (b) b.classList.add('open');
+}
+
+function closeSidebar() {
+    const s = document.getElementById('sidebar');
+    const b = document.getElementById('sidebarBackdrop');
+    if (s) s.classList.remove('open');
+    if (b) b.classList.remove('open');
+}
+
+function openNewRoomModalFor(type) {
+    const sel = document.getElementById('newRoomType');
+    if (sel) {
+        // map sidebar key to modal option value (they are the same strings)
+        sel.value = type;
+    }
+    openNewRoomModal();
+}
+
+function updateActiveTitle() {
+    const t = document.getElementById('activeRoomTitle');
+    if (!t) return;
+    if (!currentRoomId) { t.textContent = 'CoMpaNeoN AI'; return; }
+    const room = roomList.find(r => r.id === currentRoomId);
+    t.textContent = room ? room.project_name : 'CoMpaNeoN AI';
 }
 
 function escapeHtml(s) {
@@ -843,6 +923,7 @@ function escapeHtml(s) {
 async function openRoom(id) {
     currentRoomId = id;
     renderRoomBar();
+    updateActiveTitle();
     const chatBox = document.getElementById('chatBox');
     chatBox.innerHTML = '';
     try {
@@ -1213,4 +1294,18 @@ async function copyOrgCredential() {
         });
     }
     console.log('[acd] send button wired');
+})();
+
+
+// ============================================================================
+// SIDEBAR WIRING
+// ============================================================================
+
+(function wireSidebar() {
+    const openBtn = document.getElementById('btnSidebar');
+    const closeBtn = document.getElementById('btnCloseSidebar');
+    const backdrop = document.getElementById('sidebarBackdrop');
+    if (openBtn) openBtn.addEventListener('click', openSidebar);
+    if (closeBtn) closeBtn.addEventListener('click', closeSidebar);
+    if (backdrop) backdrop.addEventListener('click', closeSidebar);
 })();

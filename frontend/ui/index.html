@@ -10,44 +10,69 @@
     <div class="app">
         <!-- Auth Screen -->
         <div id="authScreen" class="screen active">
-            <div class="auth-container">
-                <h1>🤖 CoMpaNeoN AI</h1>
-                <p>Your personal AI, trained on your own data.</p>
-                <div class="auth-tabs">
-                    <button class="auth-tab active" data-tab="login">Login</button>
-                    <button class="auth-tab" data-tab="signup">Sign Up</button>
-                </div>
-                <div id="loginForm" class="auth-form active">
-                    <input type="text" id="loginPhone" placeholder="Phone (e.g. +234...)" />
-                    <input type="password" id="loginPassword" placeholder="Password" />
-                    <button id="btnLogin" class="primary-btn">Login</button>
-                </div>
-                <div id="signupForm" class="auth-form">
-                    <div class="signup-mode-tabs">
-                        <button type="button" class="signup-mode active" data-mode="solo">Regular User</button>
-                        <button type="button" class="signup-mode" data-mode="org-create">Create Org</button>
-                        <button type="button" class="signup-mode" data-mode="org-join">Join Org</button>
-                    </div>
-                    <input type="text" id="signupFullName" placeholder="Full Name" maxlength="200" />
-                    <input type="text" id="signupPhone" placeholder="Phone (e.g. +234...)" maxlength="200" />
-                    <input type="password" id="signupPassword" placeholder="Password" maxlength="200" />
+    <div class="auth-container">
 
-                    <!-- ORG CREATE (hidden by default) -->
-                    <div id="orgCreateFields" style="display:none;">
-                        <input type="text" id="orgName" placeholder="Organization Name" maxlength="255" />
-                        <input type="text" id="orgSlug" placeholder="Org slug (short id, e.g. acme-health)" maxlength="255" />
-                        <input type="text" id="orgEmail" placeholder="Org contact email (optional)" maxlength="255" />
-                        <input type="text" id="orgCountry" placeholder="Country" maxlength="100" value="Nigeria" />
-                    </div>
+        <!-- View: Landing -->
+        <div id="authLanding" class="auth-view active">
+            <h1>🤖 CoMpaNeoN AI</h1>
+            <p class="auth-sub">Your personal AI, trained on your own data.</p>
+            <div class="auth-choices">
+                <button type="button" class="auth-choice" data-view="login">
+                    <span class="auth-choice-icon">🔐</span>
+                    <span class="auth-choice-label">Log In</span>
+                    <span class="auth-choice-sub">Already have an account</span>
+                </button>
+                <button type="button" class="auth-choice" data-view="signupChoice">
+                    <span class="auth-choice-icon">✨</span>
+                    <span class="auth-choice-label">Sign Up</span>
+                    <span class="auth-choice-sub">Create a new brain</span>
+                </button>
+            </div>
+        </div>
 
-                    <!-- ORG JOIN (hidden by default) -->
-                    <div id="orgJoinFields" style="display:none;">
-                        <input type="text" id="workerCred" placeholder="Worker credential (orgname:phone:workerid)" maxlength="255" />
-                        <input type="text" id="joinDept" placeholder="Department (e.g. Engineering)" maxlength="100" />
-                        <input type="text" id="joinRole" placeholder="Role (member, reviewer, manager)" maxlength="50" value="member" />
-                        <input type="text" id="joinTitle" placeholder="Job title (optional)" maxlength="100" />
-                    </div>
-                    <select id="signupCountry">
+        <!-- View: Login -->
+        <div id="authLogin" class="auth-view">
+            <button type="button" class="auth-back" data-view="landing">← Back</button>
+            <h1>Welcome back</h1>
+            <p class="auth-sub">Sign in to your brain.</p>
+            <input type="text" id="loginPhone" placeholder="Phone (e.g. +234...)" />
+            <input type="password" id="loginPassword" placeholder="Password" />
+            <button id="btnLogin" class="primary-btn">Log In</button>
+        </div>
+
+        <!-- View: Signup — choose path -->
+        <div id="authSignupChoice" class="auth-view">
+            <button type="button" class="auth-back" data-view="landing">← Back</button>
+            <h1>Create account</h1>
+            <p class="auth-sub">What kind of account?</p>
+            <div class="auth-choices">
+                <button type="button" class="auth-choice" data-view="signupSolo">
+                    <span class="auth-choice-icon">👤</span>
+                    <span class="auth-choice-label">Regular User</span>
+                    <span class="auth-choice-sub">Personal brain for yourself</span>
+                </button>
+                <button type="button" class="auth-choice" data-view="signupOrgCreate">
+                    <span class="auth-choice-icon">🏢</span>
+                    <span class="auth-choice-label">Create Organization</span>
+                    <span class="auth-choice-sub">Start an org, invite workers</span>
+                </button>
+                <button type="button" class="auth-choice" data-view="signupOrgJoin">
+                    <span class="auth-choice-icon">🎫</span>
+                    <span class="auth-choice-label">Join Organization</span>
+                    <span class="auth-choice-sub">I have a worker credential</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- View: Signup — solo -->
+        <div id="authSignupSolo" class="auth-view">
+            <button type="button" class="auth-back" data-view="signupChoice">← Back</button>
+            <h1>Regular user</h1>
+            <p class="auth-sub">Personal brain, trained on your own data.</p>
+            <input type="text" id="soloFullName" placeholder="Full Name" maxlength="200" />
+            <input type="text" id="soloPhone" placeholder="Phone (e.g. +234...)" maxlength="200" />
+            <input type="password" id="soloPassword" placeholder="Password" maxlength="200" />
+            <select id="signupCountry">
                         <optgroup label="Africa">
                             <option value="Nigeria">Nigeria (+234)</option>
                             <option value="Ghana">Ghana (+233)</option>
@@ -73,19 +98,49 @@
                             <option value="United Arab Emirates">United Arab Emirates (+971)</option>
                         </optgroup>
                     </select>
-                    <select id="signupTemperament">
+            <select id="signupTemperament">
                         <option value="sanguine">Sanguine</option>
                         <option value="melancholy">Melancholy</option>
                         <option value="phlegmatic">Phlegmatic</option>
                         <option value="choleric">Choleric</option>
                     </select>
-                    <button id="btnSignup" class="primary-btn">Create Account</button>
-                </div>
-            </div>
+            <button id="btnSignupSolo" class="primary-btn">Create Account</button>
         </div>
 
-        <!-- Main App Screen -->
-        <div id="mainScreen" class="screen">
+        <!-- View: Signup — create org -->
+        <div id="authSignupOrgCreate" class="auth-view">
+            <button type="button" class="auth-back" data-view="signupChoice">← Back</button>
+            <h1>Create organization</h1>
+            <p class="auth-sub">You'll be the admin. Invite workers after.</p>
+            <input type="text" id="orgFullName" placeholder="Your Full Name" maxlength="200" />
+            <input type="text" id="orgAdminPhone" placeholder="Your Phone (admin)" maxlength="200" />
+            <input type="password" id="orgPassword" placeholder="Password" maxlength="200" />
+            <input type="text" id="orgName" placeholder="Organization Name" maxlength="255" />
+            <input type="text" id="orgSlug" placeholder="Org slug (e.g. acme-health)" maxlength="255" />
+            <input type="text" id="orgEmail" placeholder="Org contact email (optional)" maxlength="255" />
+            <input type="text" id="orgCountry" placeholder="Country" maxlength="100" value="Nigeria" />
+            <button id="btnSignupOrgCreate" class="primary-btn">Create Organization</button>
+        </div>
+
+        <!-- View: Signup — join org -->
+        <div id="authSignupOrgJoin" class="auth-view">
+            <button type="button" class="auth-back" data-view="signupChoice">← Back</button>
+            <h1>Join organization</h1>
+            <p class="auth-sub">Use the worker credential your org gave you.</p>
+            <input type="text" id="joinFullName" placeholder="Full Name" maxlength="200" />
+            <input type="text" id="joinPhone" placeholder="Phone (e.g. +234...)" maxlength="200" />
+            <input type="password" id="joinPassword" placeholder="Password" maxlength="200" />
+            <input type="text" id="workerCred" placeholder="Worker credential (orgslug:phone:workerid)" maxlength="255" />
+            <input type="text" id="joinDept" placeholder="Department (e.g. Engineering)" maxlength="100" />
+            <input type="text" id="joinRole" placeholder="Role (member, reviewer, manager)" maxlength="50" value="member" />
+            <input type="text" id="joinTitle" placeholder="Job title (optional)" maxlength="100" />
+            <button id="btnSignupOrgJoin" class="primary-btn">Request to Join</button>
+        </div>
+
+    </div>
+</div>
+
+<div id="mainScreen" class="screen">
             <header class="top-header">
                 <button id="btnSettings" class="icon-btn">⚙️</button>
                 <h1>CoMpaNeoN AI</h1>

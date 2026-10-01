@@ -62,104 +62,141 @@ async function login() {
     }
 }
 
-async function signup() {
-    const full_name = document.getElementById('signupFullName').value.trim();
-    const phone     = document.getElementById('signupPhone').value.trim();
-    const password  = document.getElementById('signupPassword').value;
-    if (!full_name || !phone || !password) {
-        alert('Please fill in name, phone, and password.');
+// ========== Auth Views ==========
+function showAuthView(viewName) {
+    document.querySelectorAll('.auth-view').forEach(v => v.classList.remove('active'));
+    const t = document.getElementById(viewName);
+    if (t) t.classList.add('active');
+}
+
+function authViewFromKey(key) {
+    const map = {
+        landing: 'authLanding',
+        login: 'authLogin',
+        signupChoice: 'authSignupChoice',
+        signupSolo: 'authSignupSolo',
+        signupOrgCreate: 'authSignupOrgCreate',
+        signupOrgJoin: 'authSignupOrgJoin',
+    };
+    return map[key] || 'authLanding';
+}
+
+function bindAuthNav() {
+    document.querySelectorAll('[data-view]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const key = btn.dataset.view;
+            if (key) showAuthView(authViewFromKey(key));
+        });
+    });
+}
+
+function handleAuthSuccess(data) {
+    if (!data || !data.access_token) {
+        showAuthView('authLanding');
         return;
     }
+    authToken = data.access_token;
+    currentUser = data.user;
+    localStorage.setItem('coMpaNeoN_token', authToken);
+    localStorage.setItem('coMpaNeoN_user', JSON.stringify(currentUser));
+    showScreen('mainScreen');
+    loadWorkspaces();
+}
 
+// Signup — Regular User
+async function signupSolo() {
+    const full_name = document.getElementById('soloFullName').value.trim();
+    const phone = document.getElementById('soloPhone').value.trim();
+    const password = document.getElementById('soloPassword').value;
+    const country = document.getElementById('signupCountry').value;
+    const temperament = document.getElementById('signupTemperament').value;
+    if (!full_name || !phone || !password) {
+        alert('Name, phone, and password are required.');
+        return;
+    }
     try {
-        let data;
-        if (signupMode === 'solo') {
-            const country = document.getElementById('signupCountry').value;
-            const temperament = document.getElementById('signupTemperament').value;
-            data = await api('/auth/signup', 'POST',
-                { full_name, phone, password, country, temperament, language: 'en' });
-
-        } else if (signupMode === 'org-create') {
-            const org_name  = document.getElementById('orgName').value.trim();
-            const org_slug  = document.getElementById('orgSlug').value.trim();
-            const org_email = document.getElementById('orgEmail').value.trim();
-            const org_country = document.getElementById('orgCountry').value.trim();
-            if (!org_name || !org_slug) {
-                alert('Organization name and slug are required.');
-                return;
-            }
-            data = await api('/auth/org/create', 'POST', {
-                full_name, phone, password,
-                org_name, org_slug,
-                org_email: org_email || null,
-                org_country: org_country || 'Nigeria',
-                language: 'en',
-            });
-            if (data && data.worker_credential) {
-                alert(`Organization created.\n\nWorker credential (share with workers):\n${data.worker_credential}\n\nSave it - you'll need it to onboard staff.`);
-            }
-
-        } else if (signupMode === 'org-join') {
-            const worker_credential = document.getElementById('workerCred').value.trim();
-            const department = document.getElementById('joinDept').value.trim();
-            const role = document.getElementById('joinRole').value.trim() || 'member';
-            const title = document.getElementById('joinTitle').value.trim();
-            if (!worker_credential || !department) {
-                alert('Worker credential and department are required.');
-                return;
-            }
-            data = await api('/auth/org/join', 'POST', {
-                full_name, phone, password,
-                worker_credential, department, role,
-                title: title || null,
-                language: 'en',
-            });
-            if (data && data.pending) {
-                alert('Signup submitted. An org admin must approve you before you can enter the org space.');
-            }
-        }
-
-        if (data && data.access_token) {
-            authToken = data.access_token;
-            currentUser = data.user;
-            localStorage.setItem('coMpaNeoN_token', authToken);
-            localStorage.setItem('coMpaNeoN_user', JSON.stringify(currentUser));
-            showScreen('mainScreen');
-            await loadWorkspaces();
-        } else {
-            showScreen('authScreen');
-        }
+        const data = await api('/auth/signup', 'POST',
+            { full_name, phone, password, country, temperament, language: 'en' });
+        handleAuthSuccess(data);
     } catch (e) {
-        alert(`Registration Fault: ${e.message}`);
+        alert(`Registration failed: ${e.message}`);
     }
 }
 
-// Signup mode tabs
-function bindSignupModeTabs() {
-    document.querySelectorAll('.signup-mode').forEach(btn => {
-        btn.addEventListener('click', () => {
-            document.querySelectorAll('.signup-mode').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            signupMode = btn.dataset.mode;
-
-            const solo = document.getElementById('signupCountry');
-            const soloTemp = document.getElementById('signupTemperament');
-            const oc = document.getElementById('orgCreateFields');
-            const oj = document.getElementById('orgJoinFields');
-
-            const showSolo = signupMode === 'solo';
-            if (solo) solo.style.display = showSolo ? '' : 'none';
-            if (soloTemp) soloTemp.style.display = showSolo ? '' : 'none';
-            if (oc) oc.style.display = signupMode === 'org-create' ? 'block' : 'none';
-            if (oj) oj.style.display = signupMode === 'org-join' ? 'block' : 'none';
-
-            const btnSignup = document.getElementById('btnSignup');
-            if (btnSignup) {
-                btnSignup.textContent = showSolo ? 'Create Account'
-                    : (signupMode === 'org-create' ? 'Create Organization'
-                    : 'Request to Join Org');
-            }
+// Signup — Create Organization
+async function signupOrgCreate() {
+    const full_name = document.getElementById('orgFullName').value.trim();
+    const phone = document.getElementById('orgAdminPhone').value.trim();
+    const password = document.getElementById('orgPassword').value;
+    const org_name = document.getElementById('orgName').value.trim();
+    const org_slug = document.getElementById('orgSlug').value.trim();
+    const org_email = document.getElementById('orgEmail').value.trim();
+    const org_country = document.getElementById('orgCountry').value.trim() || 'Nigeria';
+    if (!full_name || !phone || !password || !org_name || !org_slug) {
+        alert('All fields except org email are required.');
+        return;
+    }
+    try {
+        const data = await api('/auth/org/create', 'POST', {
+            full_name, phone, password,
+            org_name, org_slug,
+            org_email: org_email || null,
+            org_country,
+            language: 'en',
         });
+        if (data && data.worker_credential) {
+            alert('Organization created.\n\nWorker credential (share with your team):\n\n'
+                + data.worker_credential
+                + '\n\nSave this \u2014 you will need it to onboard workers.');
+        }
+        handleAuthSuccess(data);
+    } catch (e) {
+        alert(`Org creation failed: ${e.message}`);
+    }
+}
+
+// Signup — Join Organization as worker
+async function signupOrgJoin() {
+    const full_name = document.getElementById('joinFullName').value.trim();
+    const phone = document.getElementById('joinPhone').value.trim();
+    const password = document.getElementById('joinPassword').value;
+    const worker_credential = document.getElementById('workerCred').value.trim();
+    const department = document.getElementById('joinDept').value.trim();
+    const role = document.getElementById('joinRole').value.trim() || 'member';
+    const title = document.getElementById('joinTitle').value.trim();
+    if (!full_name || !phone || !password || !worker_credential || !department) {
+        alert('Name, phone, password, worker credential, and department are required.');
+        return;
+    }
+    try {
+        const data = await api('/auth/org/join', 'POST', {
+            full_name, phone, password,
+            worker_credential, department, role,
+            title: title || null,
+            language: 'en',
+        });
+        if (data && data.pending) {
+            alert('Signup submitted. An org admin must approve you before you can enter.');
+            showAuthView('authLanding');
+            return;
+        }
+        handleAuthSuccess(data);
+    } catch (e) {
+        alert(`Join failed: ${e.message}`);
+    }
+}
+
+function bindAuthButtons() {
+    const pairs = [
+        ['btnLogin', login],
+        ['btnSignupSolo', signupSolo],
+        ['btnSignupOrgCreate', signupOrgCreate],
+        ['btnSignupOrgJoin', signupOrgJoin],
+    ];
+    pairs.forEach(([id, fn]) => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('click', fn);
     });
 }
 
@@ -673,7 +710,12 @@ if (authToken) {
     }
 } else {
     showScreen('authScreen');
+    try { showAuthView('authLanding'); } catch (_) {}
 }
 
-// Bind signup mode tabs
-try { bindSignupModeTabs(); } catch (_) {}
+// Bind auth navigation + submit buttons
+try {
+    bindAuthNav();
+    bindAuthButtons();
+    showAuthView('authLanding');
+} catch (_) {}

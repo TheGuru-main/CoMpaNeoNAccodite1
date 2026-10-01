@@ -344,3 +344,67 @@ select option {
     50%  { opacity: 1.0; }
     100% { opacity: 0.55; }
 }
+
+/* ============================================================ */
+/* Auth views: landing / login / signup choice / signup forms  */
+/* ============================================================ */
+
+.auth-view { display: none; }
+.auth-view.active { display: block; }
+
+.auth-sub {
+    opacity: 0.7;
+    margin-bottom: 1.5rem;
+    font-size: 0.9rem;
+}
+
+.auth-choices {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+}
+
+.auth-choice {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 1rem 1.25rem;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 0.75rem;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    font: inherit;
+    transition: all 0.15s ease;
+    width: 100%;
+}
+.auth-choice:hover {
+    background: rgba(99,102,241,0.14);
+    border-color: rgba(99,102,241,0.4);
+    transform: translateY(-1px);
+}
+.auth-choice:active {
+    transform: translateY(0);
+}
+
+.auth-choice-icon { font-size: 1.6rem; margin-bottom: 0.35rem; line-height: 1; }
+.auth-choice-label { font-size: 1rem; font-weight: 600; }
+.auth-choice-sub { font-size: 0.8rem; opacity: 0.65; margin-top: 0.2rem; }
+
+.auth-back {
+    background: transparent;
+    border: none;
+    color: inherit;
+    opacity: 0.6;
+    cursor: pointer;
+    font-size: 0.9rem;
+    padding: 0.4rem 0;
+    margin-bottom: 1rem;
+    font-family: inherit;
+}
+.auth-back:hover { opacity: 1; }
+
+/* give the auth container a bit more room for the landing */
+.auth-container { max-width: 440px; }

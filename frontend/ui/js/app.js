@@ -924,6 +924,7 @@ async function openRoom(id) {
     currentRoomId = id;
     renderRoomBar();
     updateActiveTitle();
+    updateInviteButtonVisibility();
     const chatBox = document.getElementById('chatBox');
     chatBox.innerHTML = '';
     try {
@@ -1308,4 +1309,218 @@ async function copyOrgCredential() {
     if (openBtn) openBtn.addEventListener('click', openSidebar);
     if (closeBtn) closeBtn.addEventListener('click', closeSidebar);
     if (backdrop) backdrop.addEventListener('click', closeSidebar);
+})();
+
+
+// ============================================================================
+// INVITE MEMBER
+// ============================================================================
+
+function openInviteModal() {
+    const room = roomList.find(r => r.id === currentRoomId);
+    if (!room) { alert('Open a room first.'); return; }
+    if (room.workspace_type === 'personal_brainstorm') {
+        alert('Personal brainstorm is private. Create a Group to invite people.');
+        return;
+    }
+    document.getElementById('inviteResult').textContent = '';
+    document.getElementById('invitePhone').value = '';
+    document.getElementById('inviteModal').style.display = 'flex';
+    setTimeout(() => document.getElementById('invitePhone').focus(), 50);
+}
+
+async function sendInvite() {
+    const room = roomList.find(r => r.id === currentRoomId);
+    if (!room) return;
+    const phone = document.getElementById('invitePhone').value.trim();
+    const out = document.getElementById('inviteResult');
+    if (!phone) { out.textContent = 'Enter a phone number.'; return; }
+    out.textContent = 'Looking up…';
+    try {
+        const data = await api(`/rooms/${currentRoomId}/members`, 'POST', { phone });
+        if (data.already_member) {
+            out.innerHTML = '<span style="color:var(--aqua-bright);">Already a member.</span>';
+        } else {
+            out.innerHTML = `<span style="color:#86efac;">Added ${escapeHtml(data.invited || phone)}.</span>`;
+        }
+    } catch (e) {
+        out.innerHTML = `<span style="color:#f3a9c1;">${escapeHtml(e.message)}</span>`;
+    }
+}
+
+function updateInviteButtonVisibility() {
+    const btn = document.getElementById('btnInvite');
+    if (!btn) return;
+    const room = roomList.find(r => r.id === currentRoomId);
+    const isPrivate = !room || room.workspace_type === 'personal_brainstorm';
+    btn.style.display = isPrivate ? 'none' : '';
+}
+
+// hook invite button + modal close + Enter in phone field
+(function wireInvite() {
+    const btn = document.getElementById('btnInvite');
+    if (btn) btn.addEventListener('click', openInviteModal);
+    const send = document.getElementById('btnSendInvite');
+    if (send) send.addEventListener('click', sendInvite);
+    const close = document.getElementById('btnCloseInvite');
+    if (close) close.addEventListener('click', () => {
+        document.getElementById('inviteModal').style.display = 'none';
+    });
+    const input = document.getElementById('invitePhone');
+    if (input) input.addEventListener('keydown', e => {
+        if (e.key === 'Enter') sendInvite();
+    });
+})();
+
+
+// ============================================================================
+// PROFILE
+// ============================================================================
+
+async function openProfile() {
+    const modal = document.getElementById('profileModal');
+    const body = document.getElementById('profileBody');
+    if (!modal || !body) return;
+    modal.style.display = 'flex';
+    body.innerHTML = '<p style="opacity:.6;">Loading…</p>';
+    try {
+        const p = await api('/auth/profile');
+        const orgs = (p.orgs || []).map(o => `
+            <div class="profile-org">
+                <div class="profile-org-name">${escapeHtml(o.org_name || '')}</div>
+                <div class="profile-org-meta">${escapeHtml(o.role || '')}${o.department ? ' · ' + escapeHtml(o.department) : ''}${o.title ? ' · ' + escapeHtml(o.title) : ''}</div>
+                <div class="profile-org-meta" style="opacity:.55;">${o.credential_active ? 'active' : 'pending'}</div>
+            </div>
+        `).join('') || '<p style="opacity:.5; font-size:0.8rem;">No organization memberships</p>';
+
+        body.innerHTML = `
+            <div class="profile-header">
+                <div class="profile-avatar"><i class="fa-solid fa-user-circle"></i></div>
+                <div>
+                    <div class="profile-name">${escapeHtml(p.full_name || '')}</div>
+                    <div class="profile-phone">${escapeHtml(p.phone || '')}</div>
+                </div>
+            </div>
+            <div class="profile-grid">
+                <div class="profile-kv"><span class="k">Country</span><span class="v">${escapeHtml(p.country || '')}</span></div>
+                <div class="profile-kv"><span class="k">Language</span><span class="v">${escapeHtml(p.language || '')}</span></div>
+                <div class="profile-kv"><span class="k">Temperament</span><span class="v">${escapeHtml(p.temperament || '')}</span></div>
+                <div class="profile-kv"><span class="k">Account type</span><span class="v">${escapeHtml(p.account_type || 'regular')}</span></div>
+                <div class="profile-kv"><span class="k">Start row</span><span class="v">${escapeHtml(String(p.start_row ?? '—'))}</span></div>
+                <div class="profile-kv"><span class="k">Start col</span><span class="v">${escapeHtml(String(p.start_col ?? '—'))}</span></div>
+                <div class="profile-kv"><span class="k">Brain UID</span><span class="v">${escapeHtml(p.personal_ai_uid || '—')}</span></div>
+                <div class="profile-kv"><span class="k">Joined</span><span class="v">${p.created_at ? new Date(p.created_at).toLocaleString() : '—'}</span></div>
+            </div>
+            <h4 style="margin-top:1rem;"><i class="fa-solid fa-sitemap"></i> Organizations</h4>
+            <div style="margin-top:0.5rem;">${orgs}</div>
+        `;
+    } catch (e) {
+        body.innerHTML = `<p style="color:#f3a9c1;">${escapeHtml(e.message)}</p>`;
+    }
+}
+
+// ============================================================================
+// DOCUMENTS SPACE
+// ============================================================================
+
+async function openDocuments() {
+    hideAllPanels();
+    const panel = document.getElementById('docsPanel');
+    if (!panel) return;
+    panel.style.display = 'block';
+    const box = document.getElementById('docsResults');
+    box.innerHTML = '<p style="opacity:.6;">Loading artifacts…</p>';
+    try {
+        const data = await api('/documents');
+        if (!data || !data.items || !data.items.length) {
+            box.innerHTML = `
+                <p style="opacity:.55; padding:1rem 0;">
+                    No documents yet. Generated PDFs, ZIPs, summaries, and
+                    iterations will appear here as your work produces them.
+                </p>`;
+            return;
+        }
+        const iconFor = {
+            summary:   'fa-file-lines',
+            pdf:       'fa-file-pdf',
+            archive:   'fa-file-zipper',
+            table:     'fa-table',
+            image:     'fa-image',
+            diagram:   'fa-diagram-project',
+            repo:      'fa-code-branch',
+            iteration: 'fa-brain',
+            note:      'fa-note-sticky',
+        };
+        box.innerHTML = data.items.map(it => `
+            <div class="doc-item">
+                <div class="doc-icon"><i class="fa-solid ${iconFor[it.kind] || 'fa-file'}"></i></div>
+                <div class="doc-body">
+                    <div class="doc-name">${escapeHtml(it.name || 'untitled')}</div>
+                    <div class="doc-meta">
+                        <span class="doc-kind">${escapeHtml(it.kind)}</span>
+                        ${it.size ? `<span>${Math.round(it.size / 1024)} KB</span>` : ''}
+                        <span>${it.created_at ? new Date(it.created_at).toLocaleDateString() : ''}</span>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    } catch (e) {
+        box.innerHTML = `<p style="color:#f3a9c1;">${escapeHtml(e.message)}</p>`;
+    }
+}
+
+// ============================================================================
+// SCREEN ISOLATION
+// ============================================================================
+
+function hideAllPanels() {
+    const ids = ['researchPanel', 'dmPanel', 'docsPanel'];
+    ids.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+    });
+}
+
+function showHome() {
+    hideAllPanels();
+}
+
+// ============================================================================
+// WIRING
+// ============================================================================
+
+(function wireProfileAndDocs() {
+    const btnProfile = document.getElementById('btnProfile');
+    if (btnProfile) btnProfile.addEventListener('click', openProfile);
+    const btnCloseProfile = document.getElementById('btnCloseProfile');
+    if (btnCloseProfile) btnCloseProfile.addEventListener('click', () => {
+        document.getElementById('profileModal').style.display = 'none';
+    });
+    const btnCloseDocs = document.getElementById('btnCloseDocs');
+    if (btnCloseDocs) btnCloseDocs.addEventListener('click', () => {
+        document.getElementById('docsPanel').style.display = 'none';
+    });
+
+    // Rebind nav so each action isolates the panel
+    document.querySelectorAll('.nav-link, .header-nav .nav-link').forEach(link => {
+        // remove existing listener is hard; add a capturing one first that
+        // wins by stopping propagation on the previous handler is impossible
+        // without refactoring. Instead, we add a second listener that runs
+        // after and enforces the correct panel state.
+        link.addEventListener('click', () => {
+            const action = link.dataset.action;
+            if (action === 'home') {
+                showHome();
+            } else if (action === 'research') {
+                hideAllPanels();
+            } else if (action === 'workspace') {
+                // workspace nav now opens the documents space
+                setTimeout(openDocuments, 0);
+            } else if (action === 'messages') {
+                hideAllPanels();
+            } else if (action === 'train') {
+                hideAllPanels();
+            }
+        });
+    });
 })();

@@ -574,6 +574,129 @@ async def me(user: User = Depends(get_current_user)):
         db.close()
 
 
+# ACCD-PROFILE + DOCUMENTS
+class ArtifactCreate(BaseModel):
+    kind: str = Field(..., min_length=2, max_length=40)
+    name: str = Field(..., min_length=1, max_length=255)
+    workspace_id: Optional[str] = None
+    path: Optional[str] = None
+    size: Optional[int] = None
+    content: Optional[str] = None
+    metadata_json: Optional[Dict[str, Any]] = None
+
+
+@app.get("/auth/profile")
+async def profile(user: User = Depends(get_current_user)):
+    """Full user detail card — powers the profile modal."""
+    db = SessionLocal()
+    try:
+        from db_models import OrganizationMembership, Organization
+        memberships = db.query(OrganizationMembership).filter(
+            OrganizationMembership.user_id == user.id
+        ).all()
+        orgs = []
+        for m in memberships:
+            org = db.query(Organization).filter(
+                Organization.id == m.organization_id
+            ).first()
+            orgs.append({
+                "org_id": str(m.organization_id),
+                "org_name": org.name if org else None,
+                "org_slug": org.slug if org else None,
+                "role": m.role,
+                "department": getattr(m, "department", None),
+                "title": getattr(m, "title", None),
+                "credential_active": bool(getattr(m, "credential_active", False)),
+                "joined_at": m.created_at.isoformat() if getattr(m, "created_at", None) else None,
+            })
+        return {
+            "id": str(user.id),
+            "phone": user.phone,
+            "full_name": user.full_name,
+            "country": user.country,
+            "language": getattr(user, "language", None),
+            "temperament": user.temperament,
+            "start_row": user.start_row,
+            "start_col": user.start_col,
+            "account_type": getattr(user, "account_type", "regular"),
+            "personal_ai_uid": getattr(user, "personal_ai_uid", None),
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+            "orgs": orgs,
+        }
+    finally:
+        db.close()
+
+
+@app.get("/documents")
+async def list_documents(
+    workspace_id: Optional[str] = None,
+    kind: Optional[str] = None,
+    limit: int = 200,
+    user: User = Depends(get_current_user),
+):
+    """List artifacts the caller has access to."""
+    db = SessionLocal()
+    try:
+        from db_models import Artifact
+        q = db.query(Artifact).filter(Artifact.user_id == user.id)
+        if workspace_id:
+            q = q.filter(Artifact.workspace_id == workspace_id)
+        if kind:
+            q = q.filter(Artifact.kind == kind)
+        q = q.order_by(Artifact.created_at.desc()).limit(min(limit, 500))
+        rows = q.all()
+        # group by kind for the UI
+        grouped: Dict[str, list] = {}
+        flat = []
+        for r in rows:
+            item = {
+                "id": str(r.id),
+                "kind": r.kind,
+                "name": r.name,
+                "path": r.path,
+                "size": r.size,
+                "workspace_id": str(r.workspace_id) if r.workspace_id else None,
+                "metadata": r.metadata_json or {},
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            flat.append(item)
+            grouped.setdefault(r.kind, []).append(item)
+        return {"items": flat, "grouped": grouped, "count": len(flat)}
+    finally:
+        db.close()
+
+
+@app.post("/documents")
+async def create_document(req: ArtifactCreate, user: User = Depends(get_current_user)):
+    """Register a new artifact (called by tools after creating a PDF/ZIP/etc.)."""
+    db = SessionLocal()
+    try:
+        from db_models import Artifact
+        import uuid as _uuid
+        row = Artifact(
+            id=_uuid.uuid4(),
+            user_id=user.id,
+            workspace_id=req.workspace_id,
+            kind=req.kind,
+            name=req.name,
+            path=req.path,
+            size=req.size,
+            content=req.content,
+            metadata_json=req.metadata_json or {},
+        )
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return {
+            "id": str(row.id),
+            "kind": row.kind,
+            "name": row.name,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+        }
+    finally:
+        db.close()
+
+
 @app.post("/workspace")
 async def create_workspace(
     req: WorkspaceCreate,

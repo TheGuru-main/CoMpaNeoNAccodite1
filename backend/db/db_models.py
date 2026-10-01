@@ -1006,3 +1006,54 @@ class DirectMessage(Base):
     __table_args__ = (
         Index("ix_dm_pair", "sender_phone", "recipient_phone", "created_at"),
     )
+
+
+# =====================================================================
+# ARTIFACT (documents space: PDFs, ZIPs, summaries, repos, iterations)
+# =====================================================================
+
+class Artifact(Base):
+    """
+    A generated or referenced document within a workspace.
+
+    kinds:
+        summary     — AI-generated summary of a room / conversation
+        pdf         — PDF produced by doc.pdf.create
+        archive     — ZIP / tar produced by archive.* tools
+        table       — XLSX / CSV produced by table.* tools
+        image       — image produced by image.generate
+        diagram     — mermaid / graphviz / plantuml output
+        repo        — link to a git repository
+        iteration   — a training iteration or weight snapshot
+        note        — free-form note saved by the user
+    """
+    __tablename__ = "artifacts"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=True,
+        index=True,
+    )
+    workspace_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id"),
+        nullable=True,
+        index=True,
+    )
+    kind = Column(String(40), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    path = Column(String(1024), nullable=True)
+    size = Column(Integer, nullable=True)
+    content = Column(Text, nullable=True)       # inline for small text artifacts
+    metadata_json = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=utcnow, index=True)
+
+    __table_args__ = (
+        Index("ix_artifact_scope", "user_id", "workspace_id", "kind"),
+    )

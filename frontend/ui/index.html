@@ -149,6 +149,9 @@
                 <button id="btnSidebar" class="icon-btn"><i class="fa-solid fa-bars"></i></button>
                 <h1 id="activeRoomTitle">CoMpaNeoN AI</h1>
                 <button id="btnSettings" class="icon-btn"><i class="fa-solid fa-gear"></i></button>
+                <button id="btnProfile" class="icon-btn" title="Profile">
+                    <i class="fa-solid fa-user-circle"></i>
+                </button>
                 <button id="btnLogout" class="icon-btn"><i class="fa-solid fa-right-from-bracket"></i></button>
             </header>
 
@@ -235,6 +238,30 @@
                 <div class="dm-input-row">
                     <input type="text" id="dmInput" placeholder="Type a message…" />
                     <button id="btnSendDM" class="send-btn"><i class="fa-solid fa-paper-plane"></i></button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Documents Panel -->
+        <div id="docsPanel" class="research-panel" style="display:none;">
+            <div class="research-header">
+                <h3><i class="fa-solid fa-folder-tree"></i> Documents</h3>
+                <button id="btnCloseDocs" class="icon-btn"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div id="docsResults" class="docs-results">
+                <p style="opacity:.6;">Loading artifacts…</p>
+            </div>
+        </div>
+
+        <!-- Profile Modal -->
+        <div id="profileModal" class="modal" style="display:none;">
+            <div class="modal-content">
+                <h3><i class="fa-solid fa-user-circle"></i> Profile</h3>
+                <div id="profileBody" style="margin-top:0.75rem;">
+                    <p style="opacity:.6;">Loading…</p>
+                </div>
+                <div style="display:flex; gap:0.5rem; margin-top:1rem;">
+                    <button id="btnCloseProfile" class="primary-btn secondary-btn" style="flex:1;">Close</button>
                 </div>
             </div>
         </div>

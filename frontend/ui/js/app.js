@@ -1625,3 +1625,162 @@ document.addEventListener('visibilitychange', () => {
         openRoom(currentRoomId).catch(() => {});
     }
 });
+
+
+// ============================================================================
+// NAV UNIFIED (single listener, one panel at a time)
+// ============================================================================
+
+function _openPanel(which) {
+    // close everything first
+    ['researchPanel', 'dmPanel', 'docsPanel'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+    });
+    if (which === 'research') {
+        try { openResearch(); } catch (_) {}
+    } else if (which === 'dm') {
+        const el = document.getElementById('dmPanel');
+        if (el) el.style.display = 'block';
+        try { loadDMConversations(); } catch (_) {}
+    } else if (which === 'docs') {
+        try { openDocuments(); } catch (_) {}
+    }
+    // 'home' → all closed; chat box visible
+}
+
+(function bindNavUnified() {
+    // # NAV-UNIFIED
+    const links = document.querySelectorAll('.header-nav .nav-link, .bottom-nav .nav-link');
+    links.forEach(link => {
+        // replace by cloning to drop any earlier listeners
+        const clone = link.cloneNode(true);
+        link.parentNode.replaceChild(clone, link);
+    });
+    document.querySelectorAll('.header-nav .nav-link, .bottom-nav .nav-link').forEach(link => {
+        link.addEventListener('click', (e) => {
+            e.preventDefault();
+            document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+            link.classList.add('active');
+            const action = link.dataset.action;
+            if (action === 'home')       _openPanel('home');
+            else if (action === 'research') _openPanel('research');
+            else if (action === 'workspace') _openPanel('docs');
+            else if (action === 'messages') _openPanel('dm');
+            else if (action === 'train') {
+                _openPanel('home');
+                try { openTrainingModal(); } catch (_) {}
+            }
+        });
+    });
+})();
+
+// ============================================================================
+// INPUT VISIBILITY (JS only — no CSS !important)
+// ============================================================================
+
+function updateInputVisibility() {
+    const inputArea = document.getElementById('inputArea');
+    const chips = document.getElementById('roomChips');
+    const onMain = document.getElementById('mainScreen')?.classList.contains('active');
+    const room = roomList.find(r => r.id === currentRoomId);
+
+    if (!onMain || !currentRoomId) {
+        if (inputArea) inputArea.style.display = 'none';
+        if (chips) chips.style.display = 'none';
+        return;
+    }
+    if (inputArea) inputArea.style.display = 'flex';
+    if (chips) {
+        const isPrivate = room && room.workspace_type === 'personal_brainstorm';
+        chips.style.display = isPrivate ? 'none' : 'flex';
+        const cnt = document.getElementById('chipMemberCount');
+        if (cnt && room) cnt.textContent = String(room.member_count || 1);
+    }
+}
+
+// show/hide based on screen
+const _origShowScreen = showScreen;
+showScreen = function(id) {
+    _origShowScreen(id);
+    document.body.classList.toggle('logged-in', id === 'mainScreen');
+    setTimeout(updateInputVisibility, 0);
+};
+
+// ============================================================================
+// LAST ROOM PERSISTENCE
+// ============================================================================
+
+function rememberRoom(id) {
+    if (!id) return;
+    try { localStorage.setItem('acd_last_room', id); } catch (_) {}
+}
+
+function forgetRoom() {
+    try { localStorage.removeItem('acd_last_room'); } catch (_) {}
+}
+
+function recallRoom() {
+    try { return localStorage.getItem('acd_last_room'); } catch (_) { return null; }
+}
+
+// wrap openRoom to remember
+const _origOpenRoomPersist = openRoom;
+openRoom = async function(id) {
+    await _origOpenRoomPersist(id);
+    rememberRoom(id);
+    updateInputVisibility();
+};
+
+// wrap loadRooms to restore last room after list arrives
+const _origLoadRooms = loadRooms;
+loadRooms = async function() {
+    await _origLoadRooms();
+    // if a room was remembered and still exists, open it
+    const last = recallRoom();
+    if (last && roomList.find(r => r.id === last) && last !== currentRoomId) {
+        await openRoom(last);
+        return;
+    }
+    // else if no active room, open the first
+    if (!currentRoomId && roomList.length > 0) {
+        await openRoom(roomList[0].id);
+    }
+    updateInputVisibility();
+};
+
+// wrap logout to forget
+const _origLogoutPersist = logout;
+logout = function() {
+    forgetRoom();
+    currentRoomId = null;
+    updateInputVisibility();
+    _origLogoutPersist();
+};
+
+// ============================================================================
+// DM: hide compose when in thread, show when in list
+// ============================================================================
+
+const _origOpenDMThread = openDMThread;
+openDMThread = async function(phone) {
+    const compose = document.querySelector('.dm-compose');
+    if (compose) compose.style.display = 'none';
+    await _origOpenDMThread(phone);
+};
+
+const _origLoadDMConversations = loadDMConversations;
+loadDMConversations = async function() {
+    const compose = document.querySelector('.dm-compose');
+    if (compose) compose.style.display = '';
+    await _origLoadDMConversations();
+};
+
+// ============================================================================
+// BOOT: ensure no input on auth, main screen state applied
+// ============================================================================
+
+(function bootVisibility() {
+    document.body.classList.remove('logged-in');
+    setTimeout(updateInputVisibility, 0);
+})();

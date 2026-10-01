@@ -1348,10 +1348,7 @@ html, body {
    INPUT VISIBILITY
    ============================================================ */
 
-#authScreen.active ~ #mainScreen #inputArea,
-body:not(.logged-in) #inputArea {
-    display: none !important;
-}
+/* input area is controlled by JS via .style.display — no CSS forcing */
 
 /* ============================================================
    ROOM CHIPS (invite + members)

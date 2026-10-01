@@ -41,33 +41,11 @@ def _AsyncSessionLocal():
 
 # Convenience aliases for ported code that does `from database import engine`.
 # These are lazy objects — calling `.connect()` or `.begin()` triggers connect.
-class _LazyEngine:
-    def __getattr__(self, name):
-        return getattr(_engine(), name)
-
-
-class _LazySessionMaker:
-    def __call__(self, *a, **k):
-        return get_sync_sessionmaker()(*a, **k)
-
-    def __getattr__(self, name):
-        return getattr(get_sync_sessionmaker(), name)
-
-
-class _LazyAsyncEngine:
-    def __getattr__(self, name):
-        return getattr(_async_engine(), name)
-
-
-class _LazyAsyncSessionMaker:
-    def __call__(self, *a, **k):
-        return get_async_sessionmaker()(*a, **k)
-
-    def __getattr__(self, name):
-        return getattr(get_async_sessionmaker(), name)
-
-
-engine = _LazyEngine()
-async_engine = _LazyAsyncEngine()
-SessionLocal = _LazySessionMaker()
-AsyncSessionLocal = _LazyAsyncSessionMaker()
+# REAL-ENGINE: expose the actual SQLAlchemy Engine/SessionMaker objects.
+# get_sync_engine() / get_sync_sessionmaker() are themselves lazy
+# (built on first call), so no extra wrapper is needed — and inspect()
+# requires a real Engine, not a proxy.
+engine = get_sync_engine()
+async_engine = get_async_engine() if ASYNC_AVAILABLE else None
+SessionLocal = get_sync_sessionmaker()
+AsyncSessionLocal = get_async_sessionmaker() if ASYNC_AVAILABLE else None

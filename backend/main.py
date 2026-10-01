@@ -275,15 +275,20 @@ async def signup(req: SignupRequest):
         hashed = hash_password(req.password)
         start_row, start_col = compute_user_cell(req.full_name, req.phone)
         
+        # SIGNUP-FIELDS: set all required columns explicitly
+        import uuid as _uuid
+        personal_ai_uid = f"user-{_uuid.uuid4().hex[:12]}"
         new_user = User(
             full_name=req.full_name,
             phone=req.phone,
             password_hash=hashed,
             language=req.language,
-            country=req.country,  # Stores cleanly up to 200 characters
+            country=req.country,
             temperament=req.temperament,
             start_row=start_row,
-            start_col=start_col
+            start_col=start_col,
+            account_type="regular",
+            personal_ai_uid=personal_ai_uid,
         )
         db.add(new_user)
         db.commit()
@@ -1138,6 +1143,14 @@ from fastapi.responses import RedirectResponse as _AccdRedirect
 @app.get("/")
 async def _accd_root():
     return _AccdRedirect(url="/app")
+
+@app.head("/")
+async def _accd_root_head():
+    return None
+
+@app.head("/health")
+async def _accd_health_head():
+    return None
 
 @app.get("/health")
 async def _accd_health():

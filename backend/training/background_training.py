@@ -106,7 +106,19 @@ def collect_memorygrid_texts() -> List[str]:
 
     texts: List[str] = []
 
-    for document in memory.doc_store:
+    # MG-DOCS-FIX: MemoryGrid stores documents in .documents (dict),
+    # older branches used .doc_store. Handle both.
+    _docs = None
+    for attr in ("documents", "doc_store", "_documents"):
+        val = getattr(memory, attr, None)
+        if val is None:
+            continue
+        _docs = val
+        break
+    if _docs is None:
+        return 0
+    _iter = _docs.values() if hasattr(_docs, "values") else _docs
+    for document in _iter:
 
         if not isinstance(document, dict):
             continue

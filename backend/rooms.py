@@ -3,8 +3,8 @@ Accodite Rooms
 ==============
 Workspace CRUD + room chat.
 
-Every user-facing conversation is a Workspace row. The workspace_type
-and member_count decide the AI trigger rule:
+Every user-facing conversation is a Workspace row. member_count and
+workspace_type decide the AI trigger rule:
 
     personal_brainstorm (1 member)  -> every message fires the AI
     group / department / team /
@@ -45,10 +45,6 @@ CREATABLE_TYPES = {
 }
 
 
-# ============================================================================
-# REQUEST MODELS
-# ============================================================================
-
 class CreateRoomReq(BaseModel):
     workspace_type: str = "personal_brainstorm"
     project_name: str = Field(..., min_length=1, max_length=255)
@@ -69,10 +65,6 @@ class InviteMemberReq(BaseModel):
     phone: str = Field(..., min_length=5, max_length=32)
 
 
-# ============================================================================
-# HELPERS
-# ============================================================================
-
 def _role_for(db, user, org_id):
     if not org_id:
         return ROLE_OWNER
@@ -87,25 +79,25 @@ def _role_for(db, user, org_id):
     return m.role if m else None
 
 
-def _is_member(db, workspace, user_id) -> bool:
-    if workspace.user_id == user_id:
+def _is_member(db, ws, user_id) -> bool:
+    if ws.user_id == user_id:
         return True
     if WorkspaceMember is None:
         return False
     return db.query(WorkspaceMember).filter(
-        WorkspaceMember.workspace_id == workspace.id,
+        WorkspaceMember.workspace_id == ws.id,
         WorkspaceMember.user_id == user_id,
         WorkspaceMember.removed_at.is_(None),
     ).first() is not None
 
 
-def _member_count(db, workspace) -> int:
+def _member_count(db, ws) -> int:
     n = 0
-    if workspace.user_id is not None:
+    if ws.user_id is not None:
         n += 1
     if WorkspaceMember is not None:
         n += db.query(WorkspaceMember).filter(
-            WorkspaceMember.workspace_id == workspace.id,
+            WorkspaceMember.workspace_id == ws.id,
             WorkspaceMember.removed_at.is_(None),
         ).count()
     return max(n, 1)
@@ -128,7 +120,7 @@ def _can_create(db, user, wtype, org_id) -> bool:
     return False
 
 
-def _serialize_room(db, ws, user) -> Dict[str, Any]:
+def _serialize(db, ws) -> Dict[str, Any]:
     return {
         "id": str(ws.id),
         "workspace_type": ws.workspace_type,
@@ -143,10 +135,6 @@ def _serialize_room(db, ws, user) -> Dict[str, Any]:
     }
 
 
-# ============================================================================
-# ROOM CRUD
-# ============================================================================
-
 @router.get("")
 async def list_rooms(
     workspace_type: Optional[str] = None,
@@ -154,14 +142,12 @@ async def list_rooms(
 ):
     db = SessionLocal()
     try:
-        sub = None
+        cond = [Workspace.user_id == user.id]
         if WorkspaceMember is not None:
             sub = db.query(WorkspaceMember.workspace_id).filter(
                 WorkspaceMember.user_id == user.id,
                 WorkspaceMember.removed_at.is_(None),
             )
-        cond = [Workspace.user_id == user.id]
-        if sub is not None:
             cond.append(Workspace.id.in_(sub))
         q = db.query(Workspace).filter(or_(*cond))
         if hasattr(Workspace, "deleted_at"):
@@ -169,7 +155,7 @@ async def list_rooms(
         if workspace_type:
             q = q.filter(Workspace.workspace_type == workspace_type)
         q = q.order_by(Workspace.updated_at.desc())
-        return [_serialize_room(db, r, user) for r in q.all()]
+        return [_serialize(db, r) for r in q.all()]
     finally:
         db.close()
 
@@ -195,17 +181,15 @@ async def create_room(req: CreateRoomReq, user: User = Depends(get_current_user)
         )
         db.add(ws)
         db.flush()
-
         if req.workspace_type not in ("personal_brainstorm",) and WorkspaceMember is not None:
             db.add(WorkspaceMember(
                 workspace_id=ws.id,
                 user_id=user.id,
                 added_by=user.id,
             ))
-
         db.commit()
         db.refresh(ws)
-        return _serialize_room(db, ws, user)
+        return _serialize(db, ws)
     finally:
         db.close()
 
@@ -219,7 +203,7 @@ async def get_room(room_id: str, user: User = Depends(get_current_user)):
             raise HTTPException(404, "room not found")
         if not _is_member(db, ws, user.id):
             raise HTTPException(403, "not a member")
-        return _serialize_room(db, ws, user)
+        return _serialize(db, ws)
     finally:
         db.close()
 
@@ -244,7 +228,7 @@ async def rename_room(room_id: str, req: RenameRoomReq, user: User = Depends(get
         ws.updated_at = datetime.utcnow()
         db.commit()
         db.refresh(ws)
-        return _serialize_room(db, ws, user)
+        return _serialize(db, ws)
     finally:
         db.close()
 
@@ -265,14 +249,10 @@ async def delete_room(room_id: str, user: User = Depends(get_current_user)):
         else:
             db.delete(ws)
         db.commit()
-        return {"ok": True, "soft_deleted": hasattr(Workspace, "deleted_at")}
+        return {"ok": True}
     finally:
         db.close()
 
-
-# ============================================================================
-# MEMBERS
-# ============================================================================
 
 @router.get("/{room_id}/members")
 async def list_members(room_id: str, user: User = Depends(get_current_user)):
@@ -326,16 +306,13 @@ async def invite_member(room_id: str, req: InviteMemberReq, user: User = Depends
             raise HTTPException(400, "personal brainstorm is private; create a group instead")
         if WorkspaceMember is None:
             raise HTTPException(500, "membership table not available")
-
         target = db.query(User).filter(User.phone == req.phone).first()
         if target is None:
             raise HTTPException(404, "no user with that phone")
-
         existing = db.query(WorkspaceMember).filter(
             WorkspaceMember.workspace_id == ws.id,
             WorkspaceMember.user_id == target.id,
         ).first()
-
         if existing:
             if existing.removed_at is None:
                 return {"ok": True, "already_member": True}
@@ -385,10 +362,6 @@ async def remove_member(room_id: str, phone: str, user: User = Depends(get_curre
         db.close()
 
 
-# ============================================================================
-# ROOM CHAT
-# ============================================================================
-
 @router.get("/{room_id}/messages")
 async def list_messages(
     room_id: str,
@@ -409,14 +382,13 @@ async def list_messages(
             .limit(limit)
             .all()
         )
-        rows = list(reversed(rows))
         return [{
             "id": str(m.id),
             "user_id": str(m.user_id),
             "role": m.role,
             "content": m.content,
             "created_at": m.created_at.isoformat() if m.created_at else None,
-        } for m in rows]
+        } for m in reversed(rows)]
     finally:
         db.close()
 
@@ -434,7 +406,6 @@ async def send_message_to_room(
             raise HTTPException(404, "room not found")
         if not _is_member(db, ws, user.id):
             raise HTTPException(403, "not a member")
-
         content = req.content.strip()
         if not content:
             raise HTTPException(400, "content is required")
@@ -452,7 +423,6 @@ async def send_message_to_room(
         member_count = _member_count(db, ws)
         ai_invoked = False
         frames: List[str] = []
-
         try:
             from integration import handle_generate
 

@@ -1,4 +1,5 @@
 import os
+import hashlib
 import json
 import asyncio
 

@@ -75,6 +75,7 @@ def _serialize(db, ws, org) -> Dict[str, Any]:
         "organization_id": str(ws.organization_id) if ws.organization_id else None,
         "org_name": org.name if org else None,
         "ai_invocation": getattr(ws, "ai_invocation", "@AI"),
+        "brain_uid": getattr(ws, "brain_uid", None),
         "member_count": max(n, 1),
         "created_at": ws.created_at.isoformat() if ws.created_at else None,
         "updated_at": ws.updated_at.isoformat() if ws.updated_at else None,
@@ -113,6 +114,7 @@ async def create_org_room(
                 f"(allowed: {sorted(allowed)})",
             )
 
+        # BRAIN-UID-ORG: every org room shares the org's brain uid
         ws = Workspace(
             id=uuid.uuid4(),
             user_id=None,
@@ -121,6 +123,7 @@ async def create_org_room(
             project_name=req.name.strip(),
             project_domain=req.domain or "general",
             ai_invocation="@AI",
+            brain_uid=org.ai_uid,
         )
         db.add(ws)
         db.flush()

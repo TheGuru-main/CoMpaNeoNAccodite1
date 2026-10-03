@@ -598,6 +598,43 @@ async def login(req: LoginRequest):
 # WORKSPACE ENDPOINTS (Complete & Corrected)
 # ==============================================================================
 
+def _backfill_room_brain_uid(engine):
+    """BRAIN-BACKFILL: give every existing room a brain_uid."""
+    try:
+        from db_models import Workspace, Organization, User
+        from database import SessionLocal
+        db = SessionLocal()
+        try:
+            rooms = db.query(Workspace).filter(Workspace.brain_uid.is_(None)).all()
+            fixed = 0
+            for ws in rooms:
+                uid = None
+                if ws.workspace_type == "personal_brainstorm" and ws.user_id:
+                    u = db.query(User).filter(User.id == ws.user_id).first()
+                    uid = getattr(u, "personal_ai_uid", None) if u else None
+                elif ws.organization_id:
+                    org = db.query(Organization).filter(
+                        Organization.id == ws.organization_id
+                    ).first()
+                    uid = getattr(org, "ai_uid", None) if org else None
+                elif ws.workspace_type == "group":
+                    import hashlib
+                    h = hashlib.sha256(
+                        ((ws.project_name or "") + "::" + str(ws.id)).encode()
+                    ).hexdigest()[:16]
+                    uid = f"room-{h}"
+                if uid:
+                    ws.brain_uid = uid
+                    fixed += 1
+            if fixed:
+                db.commit()
+            print(f"[ACCD] brain-backfill: {fixed} room(s) updated")
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"[ACCD] brain-backfill failed: {type(e).__name__}: {e}")
+
+
 def _backfill_admin_membership(db, user):
     """
     # MEMBERSHIP-BACKFILL
@@ -1446,6 +1483,12 @@ async def startup_event():
             print("[ACCD] schema-sync: no changes")
     except Exception as _e:
         print(f"[ACCD] schema-sync skipped: {type(_e).__name__}: {_e}")
+
+    # BRAIN-BACKFILL
+    try:
+        _backfill_room_brain_uid(engine)
+    except Exception as _e:
+        print(f"[ACCD] brain-backfill skipped: {_e}")
 
     # UNIQUE-CONSTRAINTS: phone identity must be enforced at DB level
     try:

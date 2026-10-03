@@ -46,6 +46,28 @@ except Exception:
         WorkspaceMember = None
 
 
+
+
+def _derive_room_brain_uid(name: str, creator_phone: str = "") -> str:
+    """# BRAIN-UID-ROOM: stable brain uid derived from the room name."""
+    try:
+        from tokenizer import tokenize
+        toks = tokenize(name or "", "en") or []
+        parts = []
+        for t in toks:
+            if isinstance(t, dict):
+                u = t.get("uID") or t.get("uid")
+                if u:
+                    parts.append(str(u))
+        joined = "-".join(parts)[:140]
+        if joined:
+            return f"room-{joined}"
+    except Exception:
+        pass
+    import hashlib
+    h = hashlib.sha256(((name or "") + "::" + (creator_phone or "")).encode()).hexdigest()[:16]
+    return f"room-{h}"
+
 router = APIRouter(prefix="/rooms", tags=["rooms"])
 
 # SOLO-ONLY: /rooms is for personal and group chats.
@@ -145,6 +167,7 @@ def _serialize(db, ws) -> Dict[str, Any]:
         "organization_id": str(ws.organization_id) if ws.organization_id else None,
         "ai_invocation": getattr(ws, "ai_invocation", "@AI"),
         "member_count": _member_count(db, ws),
+        "brain_uid": getattr(ws, "brain_uid", None),
         "created_at": ws.created_at.isoformat() if ws.created_at else None,
         "updated_at": ws.updated_at.isoformat() if ws.updated_at else None,
     }
@@ -206,6 +229,17 @@ async def create_room(req: CreateRoomReq, user: User = Depends(get_current_user)
 
         # solo-only endpoint — no org roles involved
         owner_id = user.id
+        # BRAIN-UID-ROOM: one identity per room
+        _uid_brain = None
+        if req.workspace_type == "personal_brainstorm":
+            try:
+                u = db.query(User).filter(User.id == user.id).first()
+                _uid_brain = getattr(u, "personal_ai_uid", None) if u else None
+            except Exception:
+                _uid_brain = None
+        elif req.workspace_type == "group":
+            _uid_brain = _derive_room_brain_uid(req.project_name, user.phone or "")
+
         ws = Workspace(
             id=uuid.uuid4(),
             user_id=owner_id,
@@ -214,6 +248,7 @@ async def create_room(req: CreateRoomReq, user: User = Depends(get_current_user)
             project_name=req.project_name.strip(),
             project_domain=req.project_domain or "general",
             ai_invocation="@AI",
+            brain_uid=_uid_brain,
         )
         db.add(ws)
         db.flush()
@@ -557,6 +592,7 @@ async def send_message_to_room(
                 prompt=content,
                 member_count=1 if is_personal else 2,
                 generate_fn=_gen,
+                brain_uid=getattr(ws_row, "brain_uid", None),
             )
             frames = out.get("frames") or []
             ai_text = out.get("raw") or ""

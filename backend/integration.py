@@ -367,6 +367,7 @@ def handle_generate(
     stream: bool = False,
     mode: Optional[str] = None,
     mode_policy: Optional[dict] = None,
+    brain_uid: Optional[str] = None,   # BRAIN-PIPE
 ):
     """
     Full pipeline for a generate request.
@@ -446,6 +447,11 @@ def handle_generate(
                 pass
             pstm.set_draft(workspace_id, actor_identity, "")
             pstm.add_suggestion(workspace_id, actor_identity, "response ready")
+            if brain_uid:
+                try:
+                    pstm.set_extra(workspace_id, actor_identity, "brain_uid", brain_uid)
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -465,6 +471,7 @@ def handle_generate(
         "frames": frames,
         "summary": summary,
         "raw": ai_text,
+        "brain_uid": brain_uid,
     }
 
 

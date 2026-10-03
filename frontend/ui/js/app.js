@@ -3339,3 +3339,37 @@ function openSearchPanel() {
     const i = clone.querySelector('i');
     if (i) i.className = 'fa-solid fa-magnifying-glass';
 })();
+
+
+// ============================================================================
+// SIDEBAR-COLLAPSE — hide the drawer the moment the user commits to anything
+// ============================================================================
+
+// 1) Any nav-link click closes the sidebar first (capture phase)
+document.addEventListener('click', (e) => {
+    const link = e.target.closest('.bottom-nav .nav-link');
+    if (link) {
+        try { closeSidebar(); } catch (_) {}
+    }
+}, true);
+
+// 2) Opening the new-room modal closes the sidebar
+const _origOpenNewRoomModalSidebar = openNewRoomModal;
+openNewRoomModal = function() {
+    try { closeSidebar(); } catch (_) {}
+    return _origOpenNewRoomModalSidebar();
+};
+
+// 3) Opening a room closes the sidebar
+const _origOpenRoomSidebar = openRoom;
+openRoom = async function(id) {
+    try { closeSidebar(); } catch (_) {}
+    return _origOpenRoomSidebar(id);
+};
+
+// 4) Escape also closes it
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        try { closeSidebar(); } catch (_) {}
+    }
+});

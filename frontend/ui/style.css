@@ -2126,3 +2126,15 @@ html, body {
     flex-direction: column;
 }
 #mainScreen > .bottom-nav { flex: 0 0 auto; margin-top: auto; }
+
+/* Sidebar should never fight a modal for attention */
+.sidebar.open          { z-index: 91; }
+.sidebar-backdrop.open { z-index: 90; }
+.modal                 { z-index: 100; }
+.toast-tray            { z-index: 200; }
+body.modal-open .sidebar,
+body.modal-open .sidebar-backdrop {
+    transform: translateX(-100%);
+    opacity: 0;
+    pointer-events: none;
+}

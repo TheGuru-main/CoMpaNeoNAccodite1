@@ -781,6 +781,24 @@ class Workspace(Base):
 
     # ---------------------------------------------------------------
 
+    # ---------------------------------------------------------------
+    # BRAIN IDENTITY
+    #
+    # One identity per room. Every AI memory op for this room reads and
+    # writes under this uid — never the individual user's personal brain.
+    #
+    #   personal_brainstorm   -> creator's personal_ai_uid (user-xxx)
+    #   group                 -> derived from name (room-xxx)
+    #   department / team /
+    #   meeting / organization-> the org's ai_uid (the credential)
+    # ---------------------------------------------------------------
+
+    brain_uid = Column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
     user = relationship(
         "User",
         back_populates="workspaces",

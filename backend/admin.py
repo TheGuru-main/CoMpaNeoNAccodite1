@@ -292,40 +292,19 @@ async def change_role(
 # WORKER CREDENTIAL
 # ============================================================================
 
-def _ensure_credential(db, org):
-    """
-    Return the current worker credential, generating one if the org does
-    not have one yet (legacy orgs created before credentials were stored).
-    """
-    import hashlib as _h, secrets as _s
-    cred = getattr(org, "worker_credential", None)
-    if cred:
-        return cred
-    suffix = _s.token_hex(4)
-    phone_tail = "0000"
-    if org.phone:
-        phone_tail = org.phone[-4:]
-    cred = f"{org.slug}:{phone_tail}:{suffix}"
-    org.worker_credential = cred
-    org.worker_credential_hash = _h.sha256(cred.encode("utf-8")).hexdigest()
-    org.worker_credential_rotated_at = datetime.utcnow()
-    db.commit()
-    return cred
-
-
 @router.get("/credential")
 async def get_worker_credential(
     org_id: Optional[str] = None,
     user: User = Depends(get_current_user),
 ):
-    """Return the current shared worker credential. CEO/HR only."""
+    """Return the current credential state. Does NOT auto-generate. # GEN-ENDPOINT"""
     db = SessionLocal()
     try:
         me = _pick_admin_membership(db, user, org_id)
         if me is None:
             raise HTTPException(403, "not an admin in any org")
         if me.role not in ADMIN_ROLES:
-            raise HTTPException(403, "only CEO / c_suite / HR can view the credential")
+            raise HTTPException(403, "only CEO / c_suite / HR can view")
 
         org = db.query(Organization).filter(
             Organization.id == me.organization_id
@@ -333,16 +312,72 @@ async def get_worker_credential(
         if org is None:
             raise HTTPException(404, "org not found")
 
-        cred = _ensure_credential(db, org)
+        cred = getattr(org, "worker_credential", None)
         return {
             "org_id": str(org.id),
             "org_name": org.name,
-            "org_slug": org.slug,
             "worker_credential": cred,
-            "rotated_at": org.worker_credential_rotated_at.isoformat()
-                          if getattr(org, "worker_credential_rotated_at", None)
-                          else None,
-            "share_hint": "Share this one credential with every worker joining your org.",
+            "needs_generation": not cred,
+            "ai_uid": org.ai_uid,
+            "rotated_at": (org.worker_credential_rotated_at.isoformat()
+                           if getattr(org, "worker_credential_rotated_at", None)
+                           else None),
+            "share_hint": "Share this one credential with every worker.",
+        }
+    finally:
+        db.close()
+
+
+@router.post("/credential/generate")
+async def generate_worker_credential(
+    org_id: Optional[str] = None,
+    user: User = Depends(get_current_user),
+):
+    """Create the shared worker credential AND set it as the org brain uID."""
+    import hashlib as _h, secrets as _s
+    db = SessionLocal()
+    try:
+        me = _pick_admin_membership(db, user, org_id)
+        if me is None:
+            raise HTTPException(403, "not an admin in any org")
+        if me.role not in ADMIN_ROLES:
+            raise HTTPException(403, "only CEO / c_suite / HR can generate")
+
+        org = db.query(Organization).filter(
+            Organization.id == me.organization_id
+        ).first()
+        if org is None:
+            raise HTTPException(404, "org not found")
+
+        if getattr(org, "worker_credential", None):
+            raise HTTPException(400, "credential already exists — use rotate")
+
+        org_phone = getattr(org, "phone", None) or ""
+        worker_id = f"wrk-{_s.token_hex(3)}"
+        cred = f"{org.name}:{org_phone}:{worker_id}"
+        org.worker_credential = cred
+        org.worker_credential_hash = _h.sha256(cred.encode("utf-8")).hexdigest()
+        org.worker_credential_rotated_at = datetime.utcnow()
+        # the credential IS the org brain uID
+        org.ai_uid = cred
+
+        # backfill admin membership credential_hash so /auth/me reflects it
+        try:
+            m = db.query(OrganizationMembership).filter(
+                OrganizationMembership.organization_id == org.id,
+                OrganizationMembership.role == "ceo",
+            ).first()
+            if m is not None:
+                m.credential_hash = org.worker_credential_hash
+        except Exception:
+            pass
+
+        db.commit()
+        return {
+            "ok": True,
+            "worker_credential": cred,
+            "ai_uid": cred,
+            "rotated_at": org.worker_credential_rotated_at.isoformat(),
         }
     finally:
         db.close()
@@ -374,6 +409,7 @@ async def rotate_worker_credential(
         org.worker_credential = new_cred
         org.worker_credential_hash = _h.sha256(new_cred.encode("utf-8")).hexdigest()
         org.worker_credential_rotated_at = datetime.utcnow()
+        org.ai_uid = new_cred
         db.commit()
 
         return {

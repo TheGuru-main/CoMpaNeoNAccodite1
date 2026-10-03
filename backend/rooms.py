@@ -482,6 +482,92 @@ async def send_message_to_room(
 
 
 # ============================================================================
+# CANDIDATES — who can be added to this room
+# ============================================================================
+
+@router.get("/{room_id}/candidates")
+async def room_candidates(room_id: str, user: User = Depends(get_current_user)):
+    """Users who can be added to this room but aren't in it yet."""
+    db = SessionLocal()
+    try:
+        ws = db.query(Workspace).filter(Workspace.id == room_id).first()
+        if ws is None:
+            raise HTTPException(404, "room not found")
+        if not _is_member(db, ws, user.id):
+            raise HTTPException(403, "not a member")
+
+        member_ids = set()
+        if ws.user_id is not None:
+            member_ids.add(str(ws.user_id))
+        if WorkspaceMember is not None:
+            for r in db.query(WorkspaceMember).filter(
+                WorkspaceMember.workspace_id == ws.id,
+                WorkspaceMember.removed_at.is_(None),
+            ).all():
+                member_ids.add(str(r.user_id))
+
+        out = []
+
+        # ORG room -> org members
+        if ws.organization_id is not None:
+            try:
+                from db_models import OrganizationMembership
+                rows = db.query(OrganizationMembership).filter(
+                    OrganizationMembership.organization_id == ws.organization_id,
+                    OrganizationMembership.credential_active.is_(True),
+                ).all()
+                for m in rows:
+                    uid = str(m.user_id)
+                    if uid in member_ids:
+                        continue
+                    u = db.query(User).filter(User.id == m.user_id).first()
+                    if u:
+                        out.append({
+                            "user_id": uid,
+                            "full_name": u.full_name,
+                            "phone": u.phone,
+                            "role": m.role,
+                            "department": getattr(m, "department", None),
+                            "source": "org",
+                        })
+            except Exception as e:
+                print(f"[candidates] org lookup error: {e}")
+
+        # SOLO/GROUP -> contacts (DM partners)
+        if not out:
+            try:
+                from db_models import DirectMessage
+                from sqlalchemy import or_
+                rows = db.query(DirectMessage).filter(
+                    or_(DirectMessage.sender_phone == user.phone,
+                        DirectMessage.recipient_phone == user.phone)
+                ).all()
+                seen = set()
+                for r in rows:
+                    partner = r.recipient_phone if r.sender_phone == user.phone else r.sender_phone
+                    if partner in seen:
+                        continue
+                    seen.add(partner)
+                    u = db.query(User).filter(User.phone == partner).first()
+                    if u and str(u.id) not in member_ids:
+                        out.append({
+                            "user_id": str(u.id),
+                            "full_name": u.full_name,
+                            "phone": u.phone,
+                            "source": "contact",
+                        })
+            except Exception as e:
+                print(f"[candidates] contacts lookup error: {e}")
+
+        dedup = {}
+        for r in out:
+            dedup[r["user_id"]] = r
+        return {"candidates": list(dedup.values())}
+    finally:
+        db.close()
+
+
+# ============================================================================
 # CONTACT MATCH (phone book lookup)
 # ============================================================================
 

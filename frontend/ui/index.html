@@ -196,6 +196,9 @@
                 <button id="btnOrg" class="icon-btn" title="Organization" style="display:none;">
                     <i class="fa-solid fa-building"></i>
                 </button>
+                <button id="btnInvite" class="icon-btn" title="Add member" style="display:none;">
+                    <i class="fa-solid fa-user-plus"></i>
+                </button>
                 <button id="btnProfile" class="icon-btn" title="Profile">
                     <i class="fa-solid fa-user-circle"></i>
                 </button>
@@ -348,13 +351,21 @@
         <div id="inviteModal" class="modal" style="display:none;">
             <div class="modal-content">
                 <h3><i class="fa-solid fa-user-plus"></i> Add member</h3>
+
                 <div class="invite-tabs">
-                    <button class="invite-tab active" data-itab="search">Friends</button>
+                    <button class="invite-tab active" data-itab="org">Org members</button>
+                    <button class="invite-tab" data-itab="contacts">Contacts</button>
                     <button class="invite-tab" data-itab="phone">Phone</button>
                     <button class="invite-tab" data-itab="link">Share link</button>
                 </div>
 
-                <div class="invite-body" id="inviteBodySearch">
+                <div class="invite-body" id="inviteBodyOrg">
+                    <div id="inviteCandidates" class="invite-results">
+                        <p class="org-empty">Loading candidates…</p>
+                    </div>
+                </div>
+
+                <div class="invite-body" id="inviteBodyContacts" style="display:none;">
                     <input type="text" id="inviteSearchInput" placeholder="Search by name or phone" />
                     <div id="inviteSearchResults" class="invite-results">
                         <p class="org-empty">Type a name or phone to search</p>

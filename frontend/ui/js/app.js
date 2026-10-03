@@ -1306,18 +1306,6 @@ async function copyOrgCredential() {
 // INVITE MEMBER
 // ============================================================================
 
-function openInviteModal() {
-    const room = roomList.find(r => r.id === currentRoomId);
-    if (!room) { alert('Open a room first.'); return; }
-    if (room.workspace_type === 'personal_brainstorm') {
-        alert('Personal brainstorm is private. Create a Group to invite people.');
-        return;
-    }
-    document.getElementById('inviteResult').textContent = '';
-    document.getElementById('invitePhone').value = '';
-    document.getElementById('inviteModal').style.display = 'flex';
-    setTimeout(() => document.getElementById('invitePhone').focus(), 50);
-}
 
 async function sendInvite() {
     const room = roomList.find(r => r.id === currentRoomId);
@@ -1878,10 +1866,36 @@ async function renderOrgMembers(body) {
 }
 
 async function renderOrgCredential(body) {
+    // # ORG-CRED-GEN
     const data = await api('/admin/credential');
+    if (data.needs_generation) {
+        body.innerHTML = `
+            <p style="font-size:0.85rem; opacity:0.72; padding:0.5rem 0 0.75rem;">
+                No worker credential has been created yet. Generate one to
+                become the org brain uID and give your workers an entry point.
+            </p>
+            <button id="btnGenerateOrgCred" class="primary-btn">
+                <i class="fa-solid fa-key"></i> Generate worker credential
+            </button>
+            <div id="orgCredMsg" style="font-size:0.8rem; margin-top:0.5rem;"></div>
+        `;
+        document.getElementById('btnGenerateOrgCred').addEventListener('click', async () => {
+            const msg = document.getElementById('orgCredMsg');
+            msg.textContent = 'Generating…';
+            try {
+                await api('/admin/credential/generate', 'POST');
+                renderOrgTab('credential');
+            } catch (e) {
+                msg.innerHTML = `<span style="color:#f3a9c1;">${escapeHtml(e.message)}</span>`;
+            }
+        });
+        return;
+    }
+
     body.innerHTML = `
         <p style="font-size:0.82rem; opacity:0.72; padding:0.5rem 0 0.75rem;">
-            One credential shared with every worker. Rotate invalidates the old one.
+            Share this one credential with every worker joining your org.
+            Rotating invalidates the old one.
         </p>
         <div class="cred-box">
             <code id="orgCredValue">${escapeHtml(data.worker_credential || '—')}</code>
@@ -1890,11 +1904,9 @@ async function renderOrgCredential(body) {
         <button id="btnRotateOrgCred" class="primary-btn secondary-btn" style="margin-top:0.75rem; font-size:0.85rem;">
             <i class="fa-solid fa-arrows-rotate"></i> Rotate credential
         </button>
-        <div style="font-size:0.72rem; opacity:0.55; margin-top:0.5rem;">
+        <div style="font-size:0.72rem; opacity:0.55; margin-top:0.6rem;">brain uID: ${escapeHtml(data.ai_uid || '—')}</div>
+        <div style="font-size:0.72rem; opacity:0.55; margin-top:0.3rem;">
             ${data.rotated_at ? 'last rotated ' + new Date(data.rotated_at).toLocaleString() : ''}
-        </div>
-        <div style="font-size:0.72rem; opacity:0.55; margin-top:0.4rem; word-break:break-all;">
-            brain ai_uid: ${escapeHtml(data.ai_uid || '—')}
         </div>
     `;
     document.getElementById('btnCopyOrgCred').addEventListener('click', () => {
@@ -2020,37 +2032,7 @@ async function renderOrgBoards(body) {
 
 let inviteActiveTab = 'search';
 
-function openInviteModal() {
-    const room = roomList.find(r => r.id === currentRoomId);
-    if (!room) { alert('Open a room first.'); return; }
-    if (room.workspace_type === 'personal_brainstorm') {
-        alert('Personal brainstorm is private. Create a Group to invite.');
-        return;
-    }
-    // populate share link
-    const link = `${window.location.origin}/app/#room=${currentRoomId}`;
-    const lv = document.getElementById('inviteLinkValue');
-    if (lv) lv.textContent = link;
-    // reset tabs
-    switchInviteTab('search');
-    document.getElementById('inviteSearchInput').value = '';
-    document.getElementById('inviteSearchResults').innerHTML = '<p class="org-empty">Type a name or phone to search</p>';
-    document.getElementById('invitePhoneInput').value = '';
-    document.getElementById('invitePhoneResult').innerHTML = '';
-    document.getElementById('inviteModal').style.display = 'flex';
-    setTimeout(() => document.getElementById('inviteSearchInput')?.focus(), 50);
-}
 
-function switchInviteTab(tab) {
-    inviteActiveTab = tab;
-    document.querySelectorAll('.invite-tab').forEach(t => {
-        t.classList.toggle('active', t.dataset.itab === tab);
-    });
-    document.getElementById('inviteBodySearch').style.display = tab === 'search' ? '' : 'none';
-    document.getElementById('inviteBodyPhone').style.display = tab === 'phone' ? '' : 'none';
-    document.getElementById('inviteBodyLink').style.display = tab === 'link' ? '' : 'none';
-    document.getElementById('btnSendInvitePhone').style.display = tab === 'phone' ? '' : 'none';
-}
 
 async function inviteSearch() {
     const q = document.getElementById('inviteSearchInput').value.trim();
@@ -2158,4 +2140,221 @@ updateInputVisibility = function() {
     _origUpdateInputVisibilityForOrg();
     const btn = document.getElementById('btnOrg');
     if (btn) btn.style.display = hasOrg ? '' : 'none';
+};
+
+
+// ORG-BTN-VIS — toggle org button visibility on hasOrg
+const _origUpdateInputVisibilityForOrgBtn = updateInputVisibility;
+updateInputVisibility = function() {
+    _origUpdateInputVisibilityForOrgBtn();
+    const btn = document.getElementById('btnOrg');
+    if (btn) btn.style.display = hasOrg ? '' : 'none';
+};
+
+
+// ============================================================================
+// INVITE MODAL (single source of truth)
+// ============================================================================
+
+function openInviteModal() {
+    // # INVITE-CLEAN
+    const room = roomList.find(r => r.id === currentRoomId);
+    if (!room) { alert('Open a room first.'); return; }
+    if (room.workspace_type === 'personal_brainstorm') {
+        alert('Personal brainstorm is private. Create a Group to invite.');
+        return;
+    }
+    // share link
+    const link = `${window.location.origin}/app/#room=${currentRoomId}`;
+    const lv = document.getElementById('inviteLinkValue');
+    if (lv) lv.textContent = link;
+
+    // reset
+    switchInviteTab('org');
+    document.getElementById('inviteSearchInput').value = '';
+    document.getElementById('inviteSearchResults').innerHTML =
+        '<p class="org-empty">Type a name or phone to search</p>';
+    document.getElementById('invitePhoneInput').value = '';
+    document.getElementById('invitePhoneResult').innerHTML = '';
+
+    document.getElementById('inviteModal').style.display = 'flex';
+    loadInviteCandidates();
+}
+
+function switchInviteTab(tab) {
+    // # INVITE-CLEAN
+    document.querySelectorAll('.invite-tab').forEach(t => {
+        t.classList.toggle('active', t.dataset.itab === tab);
+    });
+    const map = {
+        org: 'inviteBodyOrg',
+        contacts: 'inviteBodyContacts',
+        phone: 'inviteBodyPhone',
+        link: 'inviteBodyLink',
+    };
+    Object.entries(map).forEach(([k, id]) => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = k === tab ? '' : 'none';
+    });
+    const sendPhone = document.getElementById('btnSendInvitePhone');
+    if (sendPhone) sendPhone.style.display = tab === 'phone' ? '' : 'none';
+    if (tab === 'contacts') {
+        setTimeout(() => document.getElementById('inviteSearchInput')?.focus(), 50);
+    }
+}
+
+async function loadInviteCandidates() {
+    const box = document.getElementById('inviteCandidates');
+    if (!box) return;
+    box.innerHTML = '<p style="opacity:.6;">Loading candidates…</p>';
+    try {
+        const data = await api(`/rooms/${currentRoomId}/candidates`);
+        const list = data.candidates || [];
+        if (!list.length) {
+            box.innerHTML = '<p class="org-empty">No one left to add</p>';
+            return;
+        }
+        box.innerHTML = list.map(c => `
+            <div class="invite-result" data-phone="${escapeHtml(c.phone)}">
+                <div>
+                    <div class="org-row-title">${escapeHtml(c.full_name || '')}</div>
+                    <div class="org-row-sub">${escapeHtml(c.phone || '')}${c.department ? ' · ' + escapeHtml(c.department) : ''}${c.role ? ' · ' + escapeHtml(c.role) : ''}</div>
+                </div>
+                <button class="mini-btn ok"><i class="fa-solid fa-plus"></i></button>
+            </div>
+        `).join('');
+        box.querySelectorAll('.invite-result').forEach(el => el.addEventListener('click', async () => {
+            await inviteByPhone(el.dataset.phone, box);
+        }));
+    } catch (e) {
+        box.innerHTML = `<p style="color:#f3a9c1;">${escapeHtml(e.message)}</p>`;
+    }
+}
+
+async function inviteSearch() {
+    const q = document.getElementById('inviteSearchInput').value.trim();
+    const box = document.getElementById('inviteSearchResults');
+    if (q.length < 2) {
+        box.innerHTML = '<p class="org-empty">Type a name or phone to search</p>';
+        return;
+    }
+    box.innerHTML = '<p style="opacity:.6;">Searching…</p>';
+    try {
+        const data = await api(`/contacts/search?q=${encodeURIComponent(q)}`);
+        if (!data.results || !data.results.length) {
+            box.innerHTML = '<p class="org-empty">None found</p>';
+            return;
+        }
+        box.innerHTML = data.results.map(r => `
+            <div class="invite-result" data-phone="${escapeHtml(r.phone)}">
+                <div>
+                    <div class="org-row-title">${escapeHtml(r.full_name || '')}</div>
+                    <div class="org-row-sub">${escapeHtml(r.phone || '')}</div>
+                </div>
+                <button class="mini-btn ok"><i class="fa-solid fa-plus"></i></button>
+            </div>
+        `).join('');
+        box.querySelectorAll('.invite-result').forEach(el => el.addEventListener('click', async () => {
+            await inviteByPhone(el.dataset.phone, box);
+        }));
+    } catch (e) {
+        box.innerHTML = `<p style="color:#f3a9c1;">${escapeHtml(e.message)}</p>`;
+    }
+}
+
+async function inviteByPhone(phone, targetBox) {
+    const box = targetBox || document.getElementById('inviteSearchResults') || document.getElementById('invitePhoneResult');
+    try {
+        const data = await api(`/rooms/${currentRoomId}/members`, 'POST', { phone });
+        const msg = data.already_member ? 'Already a member.' : `Added ${phone}.`;
+        const ok = document.createElement('div');
+        ok.style.cssText = 'color:#86efac; font-size:0.8rem; padding:0.3rem 0;';
+        ok.textContent = msg;
+        box.appendChild(ok);
+    } catch (e) {
+        const err = document.createElement('div');
+        err.style.cssText = 'color:#f3a9c1; font-size:0.8rem; padding:0.3rem 0;';
+        err.textContent = e.message;
+        box.appendChild(err);
+    }
+}
+
+async function inviteByPhoneInput() {
+    const cc = document.getElementById('inviteCountryCode').value;
+    let raw = (document.getElementById('invitePhoneInput').value || '').replace(/\D/g, '');
+    if (raw.startsWith('0')) raw = raw.slice(1);
+    const phone = `+${cc}${raw}`;
+    if (phone.length < 8) { alert('Invalid phone'); return; }
+    const box = document.getElementById('invitePhoneResult');
+    await inviteByPhone(phone, box);
+}
+
+// ============================================================================
+// INVITE WIRING (idempotent — safe to re-run)
+// ============================================================================
+
+(function wireInviteClean() {
+    // bind tabs once
+    document.querySelectorAll('.invite-tab').forEach(t => {
+        if (t.dataset.bound === '1') return;
+        t.dataset.bound = '1';
+        t.addEventListener('click', () => switchInviteTab(t.dataset.itab));
+    });
+    // chipInvite
+    const chip = document.getElementById('chipInvite');
+    if (chip && chip.dataset.bound !== '1') {
+        chip.dataset.bound = '1';
+        chip.addEventListener('click', openInviteModal);
+    }
+    // btnInvite
+    const btn = document.getElementById('btnInvite');
+    if (btn && btn.dataset.bound !== '1') {
+        btn.dataset.bound = '1';
+        btn.addEventListener('click', openInviteModal);
+    }
+    // search input
+    const si = document.getElementById('inviteSearchInput');
+    if (si && si.dataset.bound !== '1') {
+        si.dataset.bound = '1';
+        let tmr = null;
+        si.addEventListener('input', () => {
+            clearTimeout(tmr);
+            tmr = setTimeout(inviteSearch, 300);
+        });
+    }
+    // phone add button
+    const sp = document.getElementById('btnSendInvitePhone');
+    if (sp && sp.dataset.bound !== '1') {
+        sp.dataset.bound = '1';
+        sp.addEventListener('click', inviteByPhoneInput);
+    }
+    // close
+    const cl = document.getElementById('btnCloseInvite');
+    if (cl && cl.dataset.bound !== '1') {
+        cl.dataset.bound = '1';
+        cl.addEventListener('click', () => {
+            document.getElementById('inviteModal').style.display = 'none';
+        });
+    }
+    // copy link
+    const cp = document.getElementById('btnCopyInviteLink');
+    if (cp && cp.dataset.bound !== '1') {
+        cp.dataset.bound = '1';
+        cp.addEventListener('click', () => {
+            const v = document.getElementById('inviteLinkValue').textContent;
+            navigator.clipboard.writeText(v);
+        });
+    }
+})();
+
+
+// HEADER-INVITE-VIS — show header invite only in non-personal rooms
+const _origUpdateInputVisibilityForHeaderInvite = updateInputVisibility;
+updateInputVisibility = function() {
+    _origUpdateInputVisibilityForHeaderInvite();
+    const btn = document.getElementById('btnInvite');
+    if (!btn) return;
+    const room = roomList.find(r => r.id === currentRoomId);
+    const show = room && room.workspace_type !== 'personal_brainstorm';
+    btn.style.display = show ? '' : 'none';
 };

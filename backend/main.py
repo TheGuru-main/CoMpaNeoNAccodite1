@@ -411,6 +411,23 @@ async def org_create(req: OrgCreateRequest):
         ).hexdigest()
         org.worker_credential_rotated_at = datetime.utcnow()
 
+        # ADMIN-MEMBERSHIP: the admin must have a membership row for
+        # /auth/me, hasOrg, and /admin/* to work.
+        from db_models import OrganizationMembership
+        admin_membership = OrganizationMembership(
+            id=_uuid.uuid4(),
+            user_id=admin_user.id,
+            organization_id=org.id,
+            role="ceo",
+            department="Administration",
+            title="Founder",
+            credential_hash=hashlib.sha256(
+                credential.encode("utf-8")
+            ).hexdigest(),
+            credential_active=True,
+        )
+        db.add(admin_membership)
+
         try:
             from org.departments import create_department_room
             create_department_room(
@@ -565,12 +582,48 @@ async def login(req: LoginRequest):
 # WORKSPACE ENDPOINTS (Complete & Corrected)
 # ==============================================================================
 
+def _backfill_admin_membership(db, user):
+    """
+    # MEMBERSHIP-BACKFILL
+    If this user owns an Organization (by phone) but has no membership
+    row (a bug from an earlier version of org_create), insert one now.
+    """
+    try:
+        from db_models import Organization, OrganizationMembership
+        import hashlib as _h, uuid as _u
+        existing = db.query(OrganizationMembership).filter(
+            OrganizationMembership.user_id == user.id
+        ).first()
+        if existing:
+            return  # already has one
+        org = db.query(Organization).filter(Organization.phone == user.phone).first()
+        if not org:
+            return  # user doesn't own an org
+        cred = getattr(org, "worker_credential", "") or ""
+        membership = OrganizationMembership(
+            id=_u.uuid4(),
+            user_id=user.id,
+            organization_id=org.id,
+            role="ceo",
+            department="Administration",
+            title="Founder",
+            credential_hash=_h.sha256(cred.encode("utf-8")).hexdigest() if cred else "",
+            credential_active=True,
+        )
+        db.add(membership)
+        db.commit()
+        print(f"[ACCD] backfilled admin membership for user={user.phone} org={org.name}")
+    except Exception as e:
+        print(f"[ACCD] membership backfill error: {type(e).__name__}: {e}")
+
+
 @app.get("/auth/me")
 async def me(user: User = Depends(get_current_user)):
     """Return the current user's identity, orgs, roles, and admin flag."""
     db = SessionLocal()
     try:
         from db_models import OrganizationMembership, Organization
+        _backfill_admin_membership(db, user)
         memberships = db.query(OrganizationMembership).filter(
             OrganizationMembership.user_id == user.id
         ).all()

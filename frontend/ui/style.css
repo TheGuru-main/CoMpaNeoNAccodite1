@@ -435,7 +435,8 @@ input, textarea, select, [contenteditable] {
     backdrop-filter: blur(12px);
 }
 .input-area input {
-    flex: 1;
+    flex: 1 1 auto;
+    min-width: 0;                 /* allow the input to shrink, not push buttons off */
     padding: 0.85rem 1.05rem;
     background: rgba(0, 0, 0, 0.32);
     border: 1px solid var(--border);
@@ -979,8 +980,7 @@ input, textarea, select, [contenteditable] {
         rgba(79, 140, 255, 0.22) 100%);
 }
 
-/* keep the old .bottom-nav rule harmless in case it lingers */
-.bottom-nav { display: none; }
+/* .bottom-nav is the live nav — not hidden */
 
 /* ============================================================
    SIDEBAR — collapsible workspace sections
@@ -2101,3 +2101,28 @@ html, body {
     line-height: 1.45;
     word-break: break-word;
 }
+
+/* Input row: prevent buttons from being pushed off-screen */
+.input-area .send-btn,
+.input-area .attach-btn,
+.input-area .icon-btn {
+    flex: 0 0 auto;
+    min-width: 0;
+}
+.input-area {
+    flex-wrap: nowrap;
+    overflow: hidden;
+    width: 100%;
+    box-sizing: border-box;
+}
+.input-area input {
+    box-sizing: border-box;
+}
+
+#mainScreen.active {
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+#mainScreen > .bottom-nav { flex: 0 0 auto; margin-top: auto; }

@@ -44,10 +44,12 @@ except Exception:
 
 router = APIRouter(prefix="/rooms", tags=["rooms"])
 
-CREATABLE_TYPES = {
-    "personal_brainstorm", "group", "department",
-    "team", "meeting", "organization",
-}
+# SOLO-ONLY: /rooms is for personal and group chats.
+# Org rooms (department / team / meeting / organization) live at
+# POST /orgs/{org_id}/rooms.
+CREATABLE_TYPES = {"personal_brainstorm", "group"}
+
+ORG_ONLY_TYPES = {"department", "team", "meeting", "organization"}
 
 
 class CreateRoomReq(BaseModel):
@@ -172,6 +174,12 @@ async def list_rooms(
 async def create_room(req: CreateRoomReq, user: User = Depends(get_current_user)):
     db = SessionLocal()
     try:
+        if req.workspace_type in ORG_ONLY_TYPES:
+            raise HTTPException(
+                400,
+                f"'{req.workspace_type}' is an org room type — "
+                "use POST /orgs/{org_id}/rooms instead",
+            )
         if req.workspace_type not in CREATABLE_TYPES:
             raise HTTPException(400, f"unknown workspace_type: {req.workspace_type}")
 
@@ -191,15 +199,12 @@ async def create_room(req: CreateRoomReq, user: User = Depends(get_current_user)
             except Exception as e:
                 print(f"[rooms] org infer failed: {type(e).__name__}: {e}")
 
-        if not _can_create(db, user, req.workspace_type, org_id):
-            role = _role_for(db, user, org_id)
-            raise HTTPException(403, f"role '{role}' cannot create '{req.workspace_type}'")
-
-        owner_id = user.id if req.workspace_type in ("personal_brainstorm", "group") else None
+        # solo-only endpoint — no org roles involved
+        owner_id = user.id
         ws = Workspace(
             id=uuid.uuid4(),
             user_id=owner_id,
-            organization_id=org_id,
+            organization_id=None,   # SOLO-ONLY
             workspace_type=req.workspace_type,
             project_name=req.project_name.strip(),
             project_domain=req.project_domain or "general",

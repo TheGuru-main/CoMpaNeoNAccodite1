@@ -84,6 +84,14 @@ try:
     print("[ACCD] contacts router mounted at /contacts/*")
 except Exception as _e:
     print(f"[ACCD] contacts router not mounted: {_e}")
+    print("[ACCD] contacts router mounted at /contacts/*")
+
+try:
+    from org_rooms import router as _org_rooms_router
+    app.include_router(_org_rooms_router)
+    print("[ACCD] org rooms router mounted at /orgs/{id}/rooms")
+except Exception as _e:
+    print(f"[ACCD] org rooms router not mounted: {_e}")
 
 # WEIGHTS-RELAY
 try:

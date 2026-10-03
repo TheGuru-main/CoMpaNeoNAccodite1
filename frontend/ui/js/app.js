@@ -759,6 +759,7 @@ let currentRoomId = null;
 let currentUserRole = 'owner';
 let isAdmin = false;
 let hasOrg = false;
+let activeOrgId = null;
 let dmPartner = null;
 
 async function loadMe() {
@@ -769,7 +770,11 @@ async function loadMe() {
         hasOrg = !!me.has_org;
         currentUser = Object.assign({}, currentUser || {}, me.user, {
             role: currentUserRole,
+            orgs: me.orgs || [],
         });
+        // ORG-ROOM-CREATE
+        const activeOrgs = (me.orgs || []).filter(o => o.credential_active);
+        activeOrgId = activeOrgs.length ? activeOrgs[0].org_id : null;
         localStorage.setItem('coMpaNeoN_user', JSON.stringify(currentUser));
     } catch (e) {
         console.warn('loadMe failed:', e.message);
@@ -933,14 +938,32 @@ async function openRoom(id) {
 }
 
 async function createRoom() {
+    // ORG-ROOM-CREATE
     const type = document.getElementById('newRoomType').value;
     const name = document.getElementById('newRoomName').value.trim();
     if (!name) { alert('Give the workspace a name.'); return; }
+
+    const orgTypes = new Set(['department', 'team', 'meeting', 'organization']);
+    const isOrgType = orgTypes.has(type);
+
     try {
-        const room = await api('/rooms', 'POST', {
-            workspace_type: type,
-            project_name: name,
-        });
+        let room;
+        if (isOrgType) {
+            if (!activeOrgId) {
+                alert('You are not in an organization. Departments / teams / meetings / org rooms are org-only.');
+                return;
+            }
+            room = await api(`/orgs/${activeOrgId}/rooms`, 'POST', {
+                workspace_type: type,
+                name: name,
+            });
+        } else {
+            // personal_brainstorm / group
+            room = await api('/rooms', 'POST', {
+                workspace_type: type,
+                project_name: name,
+            });
+        }
         document.getElementById('newRoomModal').style.display = 'none';
         document.getElementById('newRoomName').value = '';
         await loadRooms();
@@ -953,7 +976,7 @@ async function createRoom() {
 function openNewRoomModal() {
     const modal = document.getElementById('newRoomModal');
     if (!modal) return;
-    // hide org-only options when user has no org
+    // ORG-ROOM-CREATE: org-only types are hidden for solo users
     modal.querySelectorAll('option[data-org-only]').forEach(opt => {
         opt.style.display = hasOrg ? '' : 'none';
     });

@@ -515,8 +515,10 @@ async def org_join(req: OrgJoinRequest):
             role=req.role or "member",
             department=req.department,
             title=req.title,
+            # CRED-HASH-UNIQUE: per-worker hash to avoid the UNIQUE collision
+            # on the shared org credential
             credential_hash=hashlib.sha256(
-                req.worker_credential.encode("utf-8")
+                (phone + ":" + req.worker_credential).encode("utf-8")
             ).hexdigest(),
             credential_active=False,
         )

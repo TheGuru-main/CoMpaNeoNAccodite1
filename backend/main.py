@@ -586,11 +586,25 @@ def _backfill_admin_membership(db, user):
     """
     # MEMBERSHIP-BACKFILL
     If this user owns an Organization (by phone) but has no membership
-    row (a bug from an earlier version of org_create), insert one now.
+    row, insert one now. Also repair ai_uid so it matches the credential.
     """
     try:
         from db_models import Organization, OrganizationMembership
         import hashlib as _h, uuid as _u
+
+        # AI-UID-REPAIR: the org brain uID must equal the worker credential.
+        owned_orgs = db.query(Organization).filter(
+            Organization.phone == user.phone
+        ).all()
+        for _org in owned_orgs:
+            _cred = getattr(_org, "worker_credential", None)
+            if _cred and _org.ai_uid != _cred:
+                print(f"[ACCD] repairing ai_uid for org={_org.name}: "
+                      f"{_org.ai_uid!r} -> credential")
+                _org.ai_uid = _cred
+        if owned_orgs:
+            db.commit()
+
         existing = db.query(OrganizationMembership).filter(
             OrganizationMembership.user_id == user.id
         ).first()

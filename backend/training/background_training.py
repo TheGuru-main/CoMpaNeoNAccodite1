@@ -862,7 +862,121 @@ def train_model(
 # BACKGROUND MONITOR
 # ============================================================================
 
-# MONITOR-V2
+def run_consolidation_cycle(grid=None) -> dict:
+    """
+    One consolidation pass:
+      1. Collect MemoryGrid texts (shared grid if available).
+      2. Filter via data.filter.DataFilter.is_training_worthy.
+      3. Feed survivors to FineTunerAndWeightScalar.process.
+      4. Return counters.
+    """
+    report = {"collected": 0, "kept": 0, "rejected": 0, "processed": 0, "errors": 0}
+
+    # shared grid > fresh grid
+    if grid is None:
+        try:
+            from integration import get_state
+            grid = get_state().get("grid")
+        except Exception:
+            grid = None
+    if grid is None:
+        try:
+            grid = MemoryGrid()
+        except Exception:
+            return report
+
+    try:
+        texts = collect_memorygrid_texts(grid)
+    except Exception as e:
+        print(f"[consolidation] collect failed: {type(e).__name__}: {e}")
+        return report
+
+    report["collected"] = len(texts)
+    if not texts:
+        return report
+
+    # filter
+    dfilter = None
+    try:
+        try:
+            from data.filter import DataFilter
+        except Exception:
+            from data_filter import DataFilter
+        dfilter = DataFilter()
+    except Exception:
+        dfilter = None
+
+    kept = []
+    for t in texts[:200]:
+        if dfilter is None:
+            kept.append(t); continue
+        try:
+            ok = True
+            # preferred: filter_text returns recognized dict, then is_training_worthy
+            if hasattr(dfilter, "filter_text") and hasattr(dfilter, "is_training_worthy"):
+                rec = dfilter.filter_text(t)
+                ok = dfilter.is_training_worthy(rec)
+            elif hasattr(dfilter, "is_training_worthy"):
+                ok = dfilter.is_training_worthy({"text": t})
+        except Exception:
+            ok = True
+        if ok:
+            kept.append(t)
+        else:
+            report["rejected"] += 1
+
+    report["kept"] = len(kept)
+    if not kept:
+        return report
+
+    # finetuner
+    try:
+        try:
+            from training.fine_tuner_and_weight_scalar import FineTunerAndWeightScalar
+        except Exception:
+            from fine_tuner_and_weight_scalar import FineTunerAndWeightScalar
+    except Exception:
+        return report
+
+    ft = None
+    try:
+        ft = FineTunerAndWeightScalar()
+    except Exception:
+        try:
+            ft = FineTunerAndWeightScalar.__new__(FineTunerAndWeightScalar)
+        except Exception:
+            return report
+
+    for t in kept:
+        try:
+            if hasattr(ft, "process"):
+                ft.process(t)
+            elif hasattr(ft, "process_user_input"):
+                ft.process_user_input(t)
+            report["processed"] += 1
+        except Exception:
+            report["errors"] += 1
+
+    print(f"[consolidation] {report}")
+    return report
+
+
+def _shared_grid():
+    """Return the app's live grid if bootstrapped; else a fresh one."""
+    try:
+        from integration import get_state
+        g = get_state().get("grid")
+        if g is not None:
+            return g
+    except Exception:
+        pass
+    try:
+        return MemoryGrid()
+    except Exception:
+        return None
+
+
+# MONITOR-V3
 async def auto_train_monitor():
     """
     Three-cadence background monitor:
@@ -887,7 +1001,11 @@ async def auto_train_monitor():
             try:
                 if _crawler is None:
                     from web_crawler import WebCrawler
-                    _crawler = WebCrawler()
+                    _grid = _shared_grid()
+                    try:
+                        _crawler = WebCrawler(_grid) if _grid is not None else WebCrawler(MemoryGrid())
+                    except TypeError:
+                        _crawler = WebCrawler()
                 result = _crawler.run_scheduled(limit=10)
                 if result:
                     print(f"[monitor] crawler processed {len(result)} item(s)")
@@ -897,7 +1015,7 @@ async def auto_train_monitor():
         # --- 2) finetuner consolidation (every 10 minutes) ---
         if ticks % 10 == 0:
             try:
-                report = run_consolidation_cycle()
+                report = run_consolidation_cycle(grid=_shared_grid())
                 print(f"[monitor] consolidation: {report}")
             except Exception as e:
                 print(f"[monitor] consolidation failed: {type(e).__name__}: {e}")

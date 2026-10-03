@@ -550,48 +550,59 @@ class MatchContactsReq(BaseModel):
     phones: List[str] = Field(default_factory=list)
 
 
-@contacts_router.post("/match")
-async def match_contacts(
-    req: MatchContactsReq,
+
+# ============================================================================
+# CONTACT SEARCH — by name or partial phone
+# ============================================================================
+
+@contacts_router.get("/search")
+async def search_contacts(
+    q: str,
+    limit: int = 20,
     user: User = Depends(get_current_user),
 ):
     """
-    Given a list of phone numbers (from the client's contact list),
-    return the subset that exist as Accodite users.
-
-    Normalizes both directions so +234... and 0... forms match.
+    Search for users to invite by:
+        - name (full_name contains q, case-insensitive)
+        - phone (normalized partial match)
     """
     from phone_util import normalize_phone, variants
     db = SessionLocal()
     try:
-        wanted = {}
-        for raw in (req.phones or [])[:1000]:
-            canon = normalize_phone(raw)
-            if not canon:
-                continue
-            wanted[canon] = raw
+        q = (q or "").strip()
+        if len(q) < 2:
+            return {"results": []}
 
-        if not wanted:
-            return {"matched": [], "count": 0}
+        results: Dict[str, Dict[str, Any]] = {}
 
-        # gather all candidate forms and query once
-        all_forms = set()
-        for canon in wanted.keys():
-            for v in variants(canon):
-                all_forms.add(v)
+        # name match
+        name_rows = db.query(User).filter(
+            User.full_name.ilike(f"%{q}%"),
+            User.id != user.id,
+        ).limit(limit).all()
+        for r in name_rows:
+            results[str(r.id)] = {
+                "user_id": str(r.id),
+                "full_name": r.full_name,
+                "phone": r.phone,
+            }
 
-        rows = db.query(User).filter(User.phone.in_(list(all_forms))).all()
+        # phone match
+        if len(results) < limit:
+            digits = "".join(c for c in q if c.isdigit())
+            if digits:
+                cand = variants(digits)
+                phone_rows = db.query(User).filter(
+                    User.phone.in_(cand),
+                    User.id != user.id,
+                ).limit(limit).all()
+                for r in phone_rows:
+                    results[str(r.id)] = {
+                        "user_id": str(r.id),
+                        "full_name": r.full_name,
+                        "phone": r.phone,
+                    }
 
-        matched = []
-        for row in rows:
-            canon = normalize_phone(row.phone)
-            matched.append({
-                "phone": row.phone,
-                "canonical": canon,
-                "full_name": row.full_name,
-                "user_id": str(row.id),
-            })
-
-        return {"matched": matched, "count": len(matched)}
+        return {"results": list(results.values())[:limit]}
     finally:
         db.close()

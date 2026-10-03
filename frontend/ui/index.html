@@ -193,6 +193,9 @@
                 <button id="btnSidebar" class="icon-btn"><i class="fa-solid fa-bars"></i></button>
                 <h1 id="activeRoomTitle">CoMpaNeoN AI</h1>
                 <button id="btnSettings" class="icon-btn"><i class="fa-solid fa-gear"></i></button>
+                <button id="btnOrg" class="icon-btn" title="Organization" style="display:none;">
+                    <i class="fa-solid fa-building"></i>
+                </button>
                 <button id="btnProfile" class="icon-btn" title="Profile">
                     <i class="fa-solid fa-user-circle"></i>
                 </button>
@@ -339,6 +342,82 @@
                     <button id="btnCloseProfile" class="primary-btn secondary-btn" style="flex:1;">Close</button>
                 </div>
             </div>
+        </div>
+
+        <!-- Invite Modal -->
+        <div id="inviteModal" class="modal" style="display:none;">
+            <div class="modal-content">
+                <h3><i class="fa-solid fa-user-plus"></i> Add member</h3>
+                <div class="invite-tabs">
+                    <button class="invite-tab active" data-itab="search">Friends</button>
+                    <button class="invite-tab" data-itab="phone">Phone</button>
+                    <button class="invite-tab" data-itab="link">Share link</button>
+                </div>
+
+                <div class="invite-body" id="inviteBodySearch">
+                    <input type="text" id="inviteSearchInput" placeholder="Search by name or phone" />
+                    <div id="inviteSearchResults" class="invite-results">
+                        <p class="org-empty">Type a name or phone to search</p>
+                    </div>
+                </div>
+
+                <div class="invite-body" id="inviteBodyPhone" style="display:none;">
+                    <div class="dm-compose-row">
+                        <select id="inviteCountryCode">
+                            <option value="234">+234 (NG)</option>
+                            <option value="233">+233 (GH)</option>
+                            <option value="254">+254 (KE)</option>
+                            <option value="27">+27 (ZA)</option>
+                            <option value="1">+1 (US/CA)</option>
+                            <option value="44">+44 (UK)</option>
+                            <option value="91">+91 (IN)</option>
+                        </select>
+                        <input type="tel" id="invitePhoneInput" placeholder="8012345678" />
+                    </div>
+                    <div id="invitePhoneResult" class="invite-results"></div>
+                </div>
+
+                <div class="invite-body" id="inviteBodyLink" style="display:none;">
+                    <p style="font-size:0.82rem; opacity:0.7; margin-bottom:0.6rem;">
+                        Anyone with this link can request to join this group.
+                    </p>
+                    <div class="cred-box">
+                        <code id="inviteLinkValue">—</code>
+                        <button id="btnCopyInviteLink" class="mini-btn" title="Copy">
+                            <i class="fa-solid fa-copy"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div style="display:flex; gap:0.5rem; margin-top:1rem;">
+                    <button id="btnSendInvitePhone" class="primary-btn" style="flex:1; display:none;">Add</button>
+                    <button id="btnCloseInvite" class="primary-btn secondary-btn" style="flex:1;">Close</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Org Screen -->
+        <div id="orgScreen" class="screen">
+            <header class="top-header">
+                <button id="btnBackFromOrg" class="icon-btn" title="Back">
+                    <i class="fa-solid fa-arrow-left"></i>
+                </button>
+                <h1 id="orgScreenTitle">Organization</h1>
+                <button class="icon-btn" style="visibility:hidden;"></button>
+            </header>
+
+            <nav class="org-tabs" id="orgTabs">
+                <button class="org-tab active" data-otab="pending">Pending</button>
+                <button class="org-tab" data-otab="members">Members</button>
+                <button class="org-tab" data-otab="credential">Credential</button>
+                <button class="org-tab" data-otab="details">Details</button>
+                <button class="org-tab" data-otab="departments">Departments</button>
+                <button class="org-tab" data-otab="boards">Boards</button>
+            </nav>
+
+            <main class="org-body" id="orgBody">
+                <p style="opacity:.6; padding:1rem;">Loading…</p>
+            </main>
         </div>
 
         <!-- Settings Modal -->

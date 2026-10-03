@@ -1784,3 +1784,378 @@ loadDMConversations = async function() {
     document.body.classList.remove('logged-in');
     setTimeout(updateInputVisibility, 0);
 })();
+
+
+// ============================================================================
+// ORG DASHBOARD SCREEN
+// ============================================================================
+
+let orgActiveTab = 'pending';
+
+async function openOrgScreen() {
+    showScreen('orgScreen');
+    // refresh identity so we know the role
+    try { await loadMe(); } catch (_) {}
+    document.getElementById('orgScreenTitle').textContent = 'Organization';
+    await renderOrgTab(orgActiveTab);
+}
+
+async function renderOrgTab(tab) {
+    orgActiveTab = tab;
+    document.querySelectorAll('.org-tab').forEach(t => {
+        t.classList.toggle('active', t.dataset.otab === tab);
+    });
+    const body = document.getElementById('orgBody');
+    body.innerHTML = '<p style="opacity:.6; padding:1rem;">Loading…</p>';
+    try {
+        if (tab === 'pending')      return renderOrgPending(body);
+        if (tab === 'members')      return renderOrgMembers(body);
+        if (tab === 'credential')   return renderOrgCredential(body);
+        if (tab === 'details')      return renderOrgDetails(body);
+        if (tab === 'departments')  return renderOrgDepartments(body);
+        if (tab === 'boards')       return renderOrgBoards(body);
+    } catch (e) {
+        body.innerHTML = `<p style="color:#f3a9c1; padding:1rem;">${escapeHtml(e.message)}</p>`;
+    }
+}
+
+async function renderOrgPending(body) {
+    const pending = await api('/admin/pending');
+    if (!pending.length) {
+        body.innerHTML = '<p class="org-empty">No pending signups.</p>';
+        return;
+    }
+    body.innerHTML = pending.map(p => `
+        <div class="org-row">
+            <div>
+                <div class="org-row-title">${escapeHtml(p.full_name || '')}</div>
+                <div class="org-row-sub">${escapeHtml(p.phone || '')} · ${escapeHtml(p.department || '—')}</div>
+            </div>
+            <div class="org-actions">
+                <button class="mini-btn ok" data-approve="${p.membership_id}"><i class="fa-solid fa-check"></i></button>
+                <button class="mini-btn err" data-reject="${p.membership_id}"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+        </div>
+    `).join('');
+    body.querySelectorAll('[data-approve]').forEach(el => el.addEventListener('click', async () => {
+        try { await api(`/admin/approve/${el.dataset.approve}`, 'POST'); renderOrgTab('pending'); }
+        catch (e) { alert(e.message); }
+    }));
+    body.querySelectorAll('[data-reject]').forEach(el => el.addEventListener('click', async () => {
+        if (!confirm('Reject this signup?')) return;
+        try { await api(`/admin/reject/${el.dataset.reject}`, 'POST'); renderOrgTab('pending'); }
+        catch (e) { alert(e.message); }
+    }));
+}
+
+async function renderOrgMembers(body) {
+    const members = await api('/admin/members');
+    if (!members.length) {
+        body.innerHTML = '<p class="org-empty">No active members yet.</p>';
+        return;
+    }
+    body.innerHTML = members.map(m => `
+        <div class="org-row">
+            <div>
+                <div class="org-row-title">${escapeHtml(m.full_name || '')}</div>
+                <div class="org-row-sub">${escapeHtml(m.phone || '')} · ${escapeHtml(m.department || '—')} · ${escapeHtml(m.role || '')}</div>
+            </div>
+            <div class="org-actions">
+                <select class="role-select" data-mid="${m.membership_id}">
+                    ${['ceo','c_suite','hr','dept_head','manager','member','reviewer','viewer']
+                        .map(r => `<option value="${r}" ${r === m.role ? 'selected' : ''}>${r}</option>`).join('')}
+                </select>
+            </div>
+        </div>
+    `).join('');
+    body.querySelectorAll('.role-select').forEach(sel => sel.addEventListener('change', async () => {
+        try {
+            await api('/admin/role', 'POST', { membership_id: sel.dataset.mid, new_role: sel.value });
+            sel.style.borderColor = 'var(--aqua)';
+            setTimeout(() => { sel.style.borderColor = ''; }, 800);
+        } catch (e) { alert(e.message); }
+    }));
+}
+
+async function renderOrgCredential(body) {
+    const data = await api('/admin/credential');
+    body.innerHTML = `
+        <p style="font-size:0.82rem; opacity:0.72; padding:0.5rem 0 0.75rem;">
+            One credential shared with every worker. Rotate invalidates the old one.
+        </p>
+        <div class="cred-box">
+            <code id="orgCredValue">${escapeHtml(data.worker_credential || '—')}</code>
+            <button id="btnCopyOrgCred" class="mini-btn" title="Copy"><i class="fa-solid fa-copy"></i></button>
+        </div>
+        <button id="btnRotateOrgCred" class="primary-btn secondary-btn" style="margin-top:0.75rem; font-size:0.85rem;">
+            <i class="fa-solid fa-arrows-rotate"></i> Rotate credential
+        </button>
+        <div style="font-size:0.72rem; opacity:0.55; margin-top:0.5rem;">
+            ${data.rotated_at ? 'last rotated ' + new Date(data.rotated_at).toLocaleString() : ''}
+        </div>
+        <div style="font-size:0.72rem; opacity:0.55; margin-top:0.4rem; word-break:break-all;">
+            brain ai_uid: ${escapeHtml(data.ai_uid || '—')}
+        </div>
+    `;
+    document.getElementById('btnCopyOrgCred').addEventListener('click', () => {
+        navigator.clipboard.writeText(data.worker_credential || '');
+    });
+    document.getElementById('btnRotateOrgCred').addEventListener('click', async () => {
+        if (!confirm('Rotate credential? Old code stops working immediately.')) return;
+        try { await api('/admin/credential/rotate', 'POST'); renderOrgTab('credential'); }
+        catch (e) { alert(e.message); }
+    });
+}
+
+async function renderOrgDetails(body) {
+    const d = await api('/admin/org-details');
+    body.innerHTML = `
+        <label class="field-label">Organization name</label>
+        <input type="text" id="orgEditName" value="${escapeHtml(d.name || '')}" />
+        <label class="field-label">Email</label>
+        <input type="text" id="orgEditEmail" value="${escapeHtml(d.email || '')}" />
+        <label class="field-label">Country</label>
+        <input type="text" id="orgEditCountry" value="${escapeHtml(d.country || '')}" />
+        <label class="field-label">Type</label>
+        <select id="orgEditType">
+            ${['software','healthcare','school','finance','legal','government','ngo','research','retail','other']
+              .map(t => `<option value="${t}" ${t === (d.settings?.org_type || 'software') ? 'selected' : ''}>${t}</option>`).join('')}
+        </select>
+        <label class="field-label">Goals</label>
+        <input type="text" id="orgEditGoals" value="${escapeHtml(d.settings?.goals || '')}" />
+        <label class="field-label">AI temperament</label>
+        <select id="orgEditTemp">
+            ${['sanguine','melancholy','phlegmatic','choleric']
+              .map(t => `<option value="${t}" ${t === (d.settings?.ai_temperament || 'sanguine') ? 'selected' : ''}>${t}</option>`).join('')}
+        </select>
+        <button id="btnSaveOrgDetails" class="primary-btn" style="margin-top:1rem;">Save changes</button>
+        <div id="orgDetailsMsg" style="font-size:0.8rem; margin-top:0.5rem;"></div>
+    `;
+    document.getElementById('btnSaveOrgDetails').addEventListener('click', async () => {
+        const msg = document.getElementById('orgDetailsMsg');
+        msg.textContent = 'Saving…';
+        try {
+            await api('/admin/org-details', 'PUT', {
+                name: document.getElementById('orgEditName').value,
+                email: document.getElementById('orgEditEmail').value,
+                country: document.getElementById('orgEditCountry').value,
+                org_type: document.getElementById('orgEditType').value,
+                goals: document.getElementById('orgEditGoals').value,
+                ai_temperament: document.getElementById('orgEditTemp').value,
+            });
+            msg.innerHTML = '<span style="color:#86efac;">Saved.</span>';
+        } catch (e) {
+            msg.innerHTML = `<span style="color:#f3a9c1;">${escapeHtml(e.message)}</span>`;
+        }
+    });
+}
+
+async function renderOrgDepartments(body) {
+    const list = await api('/admin/departments');
+    body.innerHTML = `
+        <div class="org-add-row">
+            <input type="text" id="newDeptName" placeholder="Department name (e.g. Engineering)" />
+            <button id="btnAddDept" class="primary-btn" style="width:auto; padding:0 1rem;">
+                <i class="fa-solid fa-plus"></i>
+            </button>
+        </div>
+        <div id="orgDeptList">
+            ${list.length === 0 ? '<p class="org-empty">No departments yet.</p>' :
+              list.map(d => `
+                <div class="org-row">
+                    <div>
+                        <div class="org-row-title">${escapeHtml(d.name)}</div>
+                        <div class="org-row-sub">created ${d.created_at ? new Date(d.created_at).toLocaleDateString() : ''}</div>
+                    </div>
+                </div>
+              `).join('')}
+        </div>
+    `;
+    document.getElementById('btnAddDept').addEventListener('click', async () => {
+        const name = document.getElementById('newDeptName').value.trim();
+        if (!name) return;
+        try { await api('/admin/departments', 'POST', { name }); renderOrgTab('departments'); }
+        catch (e) { alert(e.message); }
+    });
+}
+
+async function renderOrgBoards(body) {
+    const list = await api('/admin/boards');
+    body.innerHTML = `
+        <div class="org-add-row">
+            <input type="text" id="newBoardName" placeholder="Board name (e.g. security)" />
+            <button id="btnAddBoard" class="primary-btn" style="width:auto; padding:0 1rem;">
+                <i class="fa-solid fa-plus"></i>
+            </button>
+        </div>
+        <div>
+            ${list.length === 0 ? '<p class="org-empty">No boards yet.</p>' :
+              list.map(b => `
+                <div class="org-row">
+                    <div>
+                        <div class="org-row-title">${escapeHtml(b.name)}</div>
+                        <div class="org-row-sub">min severity: ${escapeHtml(b.min_severity)} · kinds: ${(b.pattern_kinds || []).join(', ') || 'any'}</div>
+                    </div>
+                    <button class="mini-btn err" data-del-board="${b.id}"><i class="fa-solid fa-trash"></i></button>
+                </div>
+              `).join('')}
+        </div>
+    `;
+    document.getElementById('btnAddBoard').addEventListener('click', async () => {
+        const name = document.getElementById('newBoardName').value.trim();
+        if (!name) return;
+        try { await api('/admin/boards', 'POST', { name }); renderOrgTab('boards'); }
+        catch (e) { alert(e.message); }
+    });
+    body.querySelectorAll('[data-del-board]').forEach(el => el.addEventListener('click', async () => {
+        if (!confirm('Delete this board?')) return;
+        try { await api(`/admin/boards/${el.dataset.delBoard}`, 'DELETE'); renderOrgTab('boards'); }
+        catch (e) { alert(e.message); }
+    }));
+}
+
+// ============================================================================
+// INVITE MODAL REBUILD (3 tabs: friends / phone / link)
+// ============================================================================
+
+let inviteActiveTab = 'search';
+
+function openInviteModal() {
+    const room = roomList.find(r => r.id === currentRoomId);
+    if (!room) { alert('Open a room first.'); return; }
+    if (room.workspace_type === 'personal_brainstorm') {
+        alert('Personal brainstorm is private. Create a Group to invite.');
+        return;
+    }
+    // populate share link
+    const link = `${window.location.origin}/app/#room=${currentRoomId}`;
+    const lv = document.getElementById('inviteLinkValue');
+    if (lv) lv.textContent = link;
+    // reset tabs
+    switchInviteTab('search');
+    document.getElementById('inviteSearchInput').value = '';
+    document.getElementById('inviteSearchResults').innerHTML = '<p class="org-empty">Type a name or phone to search</p>';
+    document.getElementById('invitePhoneInput').value = '';
+    document.getElementById('invitePhoneResult').innerHTML = '';
+    document.getElementById('inviteModal').style.display = 'flex';
+    setTimeout(() => document.getElementById('inviteSearchInput')?.focus(), 50);
+}
+
+function switchInviteTab(tab) {
+    inviteActiveTab = tab;
+    document.querySelectorAll('.invite-tab').forEach(t => {
+        t.classList.toggle('active', t.dataset.itab === tab);
+    });
+    document.getElementById('inviteBodySearch').style.display = tab === 'search' ? '' : 'none';
+    document.getElementById('inviteBodyPhone').style.display = tab === 'phone' ? '' : 'none';
+    document.getElementById('inviteBodyLink').style.display = tab === 'link' ? '' : 'none';
+    document.getElementById('btnSendInvitePhone').style.display = tab === 'phone' ? '' : 'none';
+}
+
+async function inviteSearch() {
+    const q = document.getElementById('inviteSearchInput').value.trim();
+    const box = document.getElementById('inviteSearchResults');
+    if (q.length < 2) {
+        box.innerHTML = '<p class="org-empty">Type a name or phone to search</p>';
+        return;
+    }
+    box.innerHTML = '<p style="opacity:.6;">Searching…</p>';
+    try {
+        const data = await api(`/contacts/search?q=${encodeURIComponent(q)}`);
+        if (!data.results || !data.results.length) {
+            box.innerHTML = '<p class="org-empty">None found</p>';
+            return;
+        }
+        box.innerHTML = data.results.map(r => `
+            <div class="invite-result" data-uid="${r.user_id}" data-phone="${escapeHtml(r.phone)}">
+                <div>
+                    <div class="org-row-title">${escapeHtml(r.full_name || '')}</div>
+                    <div class="org-row-sub">${escapeHtml(r.phone || '')}</div>
+                </div>
+                <button class="mini-btn ok"><i class="fa-solid fa-plus"></i></button>
+            </div>
+        `).join('');
+        box.querySelectorAll('.invite-result').forEach(el => el.addEventListener('click', async () => {
+            await inviteByPhone(el.dataset.phone);
+        }));
+    } catch (e) {
+        box.innerHTML = `<p style="color:#f3a9c1;">${escapeHtml(e.message)}</p>`;
+    }
+}
+
+async function inviteByPhone(phone) {
+    const box = document.getElementById('inviteSearchResults') || document.getElementById('invitePhoneResult');
+    try {
+        const data = await api(`/rooms/${currentRoomId}/members`, 'POST', { phone });
+        const msg = data.already_member ? 'Already a member.' : `Added ${phone}.`;
+        const ok = document.createElement('div');
+        ok.style.cssText = 'color:#86efac; font-size:0.8rem; padding:0.3rem 0;';
+        ok.textContent = msg;
+        box.appendChild(ok);
+    } catch (e) {
+        const err = document.createElement('div');
+        err.style.cssText = 'color:#f3a9c1; font-size:0.8rem; padding:0.3rem 0;';
+        err.textContent = e.message;
+        box.appendChild(err);
+    }
+}
+
+async function inviteByPhoneInput() {
+    const cc = document.getElementById('inviteCountryCode').value;
+    let raw = (document.getElementById('invitePhoneInput').value || '').replace(/\D/g, '');
+    if (raw.startsWith('0')) raw = raw.slice(1);
+    const phone = `+${cc}${raw}`;
+    if (phone.length < 8) { alert('Invalid phone'); return; }
+    await inviteByPhone(phone);
+}
+
+// ============================================================================
+// WIRING
+// ============================================================================
+
+(function wireOrgAndInvite() {
+    const btnOrg = document.getElementById('btnOrg');
+    if (btnOrg) btnOrg.addEventListener('click', openOrgScreen);
+    const back = document.getElementById('btnBackFromOrg');
+    if (back) back.addEventListener('click', () => showScreen('mainScreen'));
+
+    document.querySelectorAll('.org-tab').forEach(t => {
+        t.addEventListener('click', () => renderOrgTab(t.dataset.otab));
+    });
+
+    document.querySelectorAll('.invite-tab').forEach(t => {
+        t.addEventListener('click', () => switchInviteTab(t.dataset.itab));
+    });
+    const si = document.getElementById('inviteSearchInput');
+    if (si) {
+        let tmr = null;
+        si.addEventListener('input', () => {
+            clearTimeout(tmr);
+            tmr = setTimeout(inviteSearch, 300);
+        });
+    }
+    const sendPhone = document.getElementById('btnSendInvitePhone');
+    if (sendPhone) sendPhone.addEventListener('click', inviteByPhoneInput);
+    const closeInv = document.getElementById('btnCloseInvite');
+    if (closeInv) closeInv.addEventListener('click', () => {
+        document.getElementById('inviteModal').style.display = 'none';
+    });
+    const copyLink = document.getElementById('btnCopyInviteLink');
+    if (copyLink) copyLink.addEventListener('click', () => {
+        const v = document.getElementById('inviteLinkValue').textContent;
+        navigator.clipboard.writeText(v);
+    });
+
+    const chipInvite = document.getElementById('chipInvite');
+    if (chipInvite) chipInvite.addEventListener('click', openInviteModal);
+    const hdrInvite = document.getElementById('btnInvite');
+    if (hdrInvite) hdrInvite.addEventListener('click', openInviteModal);
+})();
+
+// show org button on main screen when user has an org
+const _origUpdateInputVisibilityForOrg = updateInputVisibility;
+updateInputVisibility = function() {
+    _origUpdateInputVisibilityForOrg();
+    const btn = document.getElementById('btnOrg');
+    if (btn) btn.style.display = hasOrg ? '' : 'none';
+};

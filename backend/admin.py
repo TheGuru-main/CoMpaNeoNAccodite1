@@ -384,3 +384,224 @@ async def rotate_worker_credential(
         }
     finally:
         db.close()
+
+
+# ============================================================================
+# ORG DETAILS
+# ============================================================================
+
+class OrgDetailsReq(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    country: Optional[str] = None
+    org_type: Optional[str] = None
+    goals: Optional[str] = None
+    ai_temperament: Optional[str] = None
+
+
+@router.get("/org-details")
+async def get_org_details(user: User = Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        me = _pick_admin_membership(db, user)
+        if me is None:
+            raise HTTPException(403, "not an admin in any org")
+        org = db.query(Organization).filter(Organization.id == me.organization_id).first()
+        if org is None:
+            raise HTTPException(404, "org not found")
+        s = org.settings or {}
+        return {
+            "org_id": str(org.id),
+            "name": org.name,
+            "email": org.email,
+            "country": org.country,
+            "ai_uid": org.ai_uid,
+            "phone": getattr(org, "phone", None),
+            "settings": {
+                "org_type": s.get("org_type", "software"),
+                "goals": s.get("goals", ""),
+                "ai_temperament": s.get("ai_temperament", "sanguine"),
+            },
+        }
+    finally:
+        db.close()
+
+
+@router.put("/org-details")
+async def update_org_details(req: OrgDetailsReq, user: User = Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        me = _pick_admin_membership(db, user)
+        if me is None:
+            raise HTTPException(403, "not an admin in any org")
+        if me.role not in ADMIN_ROLES:
+            raise HTTPException(403, "only CEO / c_suite / HR can edit org details")
+        org = db.query(Organization).filter(Organization.id == me.organization_id).first()
+        if org is None:
+            raise HTTPException(404, "org not found")
+
+        if req.name is not None: org.name = req.name
+        if req.email is not None: org.email = req.email
+        if req.country is not None: org.country = req.country
+
+        s = dict(org.settings or {})
+        if req.org_type is not None: s["org_type"] = req.org_type
+        if req.goals is not None: s["goals"] = req.goals
+        if req.ai_temperament is not None: s["ai_temperament"] = req.ai_temperament
+        org.settings = s
+        db.commit()
+        return {"ok": True, "settings": s}
+    finally:
+        db.close()
+
+
+# ============================================================================
+# DEPARTMENTS
+# ============================================================================
+
+class CreateDeptReq(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+
+
+@router.get("/departments")
+async def list_departments(user: User = Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        me = _pick_admin_membership(db, user)
+        if me is None:
+            raise HTTPException(403, "not an admin in any org")
+        from db_models import Workspace
+        rows = db.query(Workspace).filter(
+            Workspace.organization_id == me.organization_id,
+            Workspace.workspace_type == "department",
+        ).all()
+        out = []
+        for r in rows:
+            out.append({
+                "id": str(r.id),
+                "name": r.project_name,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            })
+        return out
+    finally:
+        db.close()
+
+
+@router.post("/departments")
+async def create_department(req: CreateDeptReq, user: User = Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        me = _pick_admin_membership(db, user)
+        if me is None:
+            raise HTTPException(403, "not an admin in any org")
+        if me.role not in ADMIN_ROLES and me.role != ROLE_DEPT_HEAD:
+            raise HTTPException(403, "only CEO / c_suite / HR / dept_head can create departments")
+        from org.departments import create_department_room
+        room = create_department_room(
+            session=db,
+            organization_id=str(me.organization_id),
+            department_name=req.name.strip(),
+            created_by=str(user.id),
+        )
+        db.commit()
+        return {"ok": True, "id": str(room.id), "name": room.project_name}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"{type(e).__name__}: {e}")
+    finally:
+        db.close()
+
+
+# ============================================================================
+# DIRECTIVE BOARDS
+# ============================================================================
+
+class CreateBoardReq(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    pattern_kinds: List[str] = Field(default_factory=list)
+    min_severity: str = "warn"
+    subscribers: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+@router.get("/boards")
+async def list_boards(user: User = Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        me = _pick_admin_membership(db, user)
+        if me is None:
+            raise HTTPException(403, "not an admin in any org")
+        try:
+            from db.models_org import DirectiveBoard
+        except Exception:
+            from models_org import DirectiveBoard
+        rows = db.query(DirectiveBoard).filter(
+            DirectiveBoard.organization_id == me.organization_id
+        ).all()
+        return [{
+            "id": str(r.id),
+            "name": r.name,
+            "pattern_kinds": r.pattern_kinds or [],
+            "min_severity": r.min_severity,
+            "subscribers": r.subscribers or [],
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        } for r in rows]
+    finally:
+        db.close()
+
+
+@router.post("/boards")
+async def create_board(req: CreateBoardReq, user: User = Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        me = _pick_admin_membership(db, user)
+        if me is None:
+            raise HTTPException(403, "not an admin in any org")
+        try:
+            from db.models_org import DirectiveBoard
+        except Exception:
+            from models_org import DirectiveBoard
+        import uuid as _uuid
+        board = DirectiveBoard(
+            id=_uuid.uuid4(),
+            organization_id=me.organization_id,
+            name=req.name.strip(),
+            pattern_kinds=req.pattern_kinds,
+            min_severity=req.min_severity,
+            subscribers=req.subscribers,
+        )
+        db.add(board)
+        db.commit()
+        return {"ok": True, "id": str(board.id), "name": board.name}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"{type(e).__name__}: {e}")
+    finally:
+        db.close()
+
+
+@router.delete("/boards/{board_id}")
+async def delete_board(board_id: str, user: User = Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        me = _pick_admin_membership(db, user)
+        if me is None:
+            raise HTTPException(403, "not an admin in any org")
+        try:
+            from db.models_org import DirectiveBoard
+        except Exception:
+            from models_org import DirectiveBoard
+        board = db.query(DirectiveBoard).filter(
+            DirectiveBoard.id == board_id,
+            DirectiveBoard.organization_id == me.organization_id,
+        ).first()
+        if board is None:
+            raise HTTPException(404, "board not found")
+        db.delete(board)
+        db.commit()
+        return {"ok": True}
+    finally:
+        db.close()

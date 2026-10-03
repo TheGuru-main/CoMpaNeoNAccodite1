@@ -174,14 +174,32 @@ async def create_room(req: CreateRoomReq, user: User = Depends(get_current_user)
     try:
         if req.workspace_type not in CREATABLE_TYPES:
             raise HTTPException(400, f"unknown workspace_type: {req.workspace_type}")
-        if not _can_create(db, user, req.workspace_type, req.organization_id):
-            raise HTTPException(403, f"your role cannot create {req.workspace_type}")
+
+        # ORG-INFER: if the request didn't specify an org (or the caller has
+        # one), resolve the org from the user's active membership so role
+        # checks work for org-only room types.
+        org_id = req.organization_id
+        if org_id is None and req.workspace_type in ("department", "team", "meeting", "organization"):
+            try:
+                from db_models import OrganizationMembership as _OM
+                m = db.query(_OM).filter(
+                    _OM.user_id == user.id,
+                    _OM.credential_active.is_(True),
+                ).first()
+                if m is not None:
+                    org_id = str(m.organization_id)
+            except Exception as e:
+                print(f"[rooms] org infer failed: {type(e).__name__}: {e}")
+
+        if not _can_create(db, user, req.workspace_type, org_id):
+            role = _role_for(db, user, org_id)
+            raise HTTPException(403, f"role '{role}' cannot create '{req.workspace_type}'")
 
         owner_id = user.id if req.workspace_type in ("personal_brainstorm", "group") else None
         ws = Workspace(
             id=uuid.uuid4(),
             user_id=owner_id,
-            organization_id=req.organization_id,
+            organization_id=org_id,
             workspace_type=req.workspace_type,
             project_name=req.project_name.strip(),
             project_domain=req.project_domain or "general",

@@ -1668,3 +1668,103 @@ html, body {
         rgba(79, 140, 255, 0.12) 100%);
     border-color: rgba(125, 211, 208, 0.32);
 }
+
+/* ============================================================
+   BOTTOM NAV (fixed at bottom of main screen)
+   ============================================================ */
+
+#mainScreen { position: relative; }
+
+.bottom-nav {
+    display: flex;
+    justify-content: space-around;
+    padding: 0.55rem 0 0.75rem;
+    border-top: 1px solid var(--border);
+    background: rgba(12, 12, 16, 0.94);
+    backdrop-filter: blur(14px);
+    flex: 0 0 auto;
+}
+.bottom-nav .nav-link {
+    color: var(--text-faint);
+    font-size: 1.15rem;
+    padding: 0.5rem 1.1rem;
+    border-radius: 0.6rem;
+    text-decoration: none;
+    transition: all 0.14s ease;
+}
+.bottom-nav .nav-link:hover { color: var(--text-dim); }
+.bottom-nav .nav-link.active {
+    color: var(--aqua-bright);
+    background: linear-gradient(275deg,
+        rgba(124, 30, 63, 0.28) 0%,
+        rgba(79, 140, 255, 0.22) 100%);
+}
+
+/* ============================================================
+   HOME WELCOME
+   ============================================================ */
+
+.home-welcome {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 2.5rem 1.5rem;
+    min-height: 50vh;
+}
+.home-welcome-icon {
+    font-size: 3rem;
+    color: var(--aqua-bright);
+    margin-bottom: 1rem;
+    background: linear-gradient(275deg,
+        rgba(124, 30, 63, 0.32) 0%,
+        rgba(125, 211, 208, 0.24) 100%);
+    width: 84px; height: 84px;
+    display: grid; place-items: center;
+    border-radius: 24px;
+    border: 1px solid rgba(125, 211, 208, 0.32);
+}
+.home-welcome h2 {
+    font-size: 1.3rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    background: linear-gradient(275deg, var(--neon-blue-bright), var(--aqua-bright));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+.home-welcome p {
+    opacity: 0.62;
+    font-size: 0.88rem;
+    max-width: 320px;
+    margin-bottom: 1.5rem;
+}
+.home-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+.home-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.6rem 1rem;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+    border-radius: 0.65rem;
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    cursor: pointer;
+    transition: all 0.14s ease;
+}
+.home-action i { color: var(--aqua-bright); }
+.home-action:hover {
+    color: var(--text);
+    background: linear-gradient(275deg,
+        rgba(124, 30, 63, 0.24) 0%,
+        rgba(79, 140, 255, 0.18) 100%);
+    border-color: rgba(125, 211, 208, 0.4);
+}

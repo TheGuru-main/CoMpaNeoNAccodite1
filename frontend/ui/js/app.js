@@ -2393,3 +2393,108 @@ updateInputVisibility = function() {
     const show = room && room.workspace_type !== 'personal_brainstorm';
     btn.style.display = show ? '' : 'none';
 };
+
+
+// ============================================================================
+// HOME STATE + GREETING
+// ============================================================================
+
+function greetingFor() {
+    const h = new Date().getHours();
+    if (h < 5)  return 'Working late';
+    if (h < 12) return 'Good morning';
+    if (h < 17) return 'Good afternoon';
+    if (h < 21) return 'Good evening';
+    return 'Working late';
+}
+
+function showHomeState() {
+    // # HOME-STATE
+    currentRoomId = null;
+    try { localStorage.removeItem('acd_last_room'); } catch (_) {}
+    renderRoomBar();
+    const title = document.getElementById('activeRoomTitle');
+    if (title) title.textContent = 'Accodite Coding Agent';
+
+    const chatBox = document.getElementById('chatBox');
+    if (!chatBox) return;
+    const name = (currentUser && (currentUser.full_name || currentUser.phone)) || 'there';
+    const g = greetingFor();
+    chatBox.innerHTML = `
+        <div class="home-welcome">
+            <div class="home-welcome-icon"><i class="fa-solid fa-brain"></i></div>
+            <h2>${g}, ${escapeHtml(name)}.</h2>
+            <p>${lastSessionLine()}</p>
+            <div class="home-actions">
+                <button class="home-action" data-new-room="personal_brainstorm">
+                    <i class="fa-solid fa-brain"></i> New brainstorm
+                </button>
+                <button class="home-action" data-new-room="group">
+                    <i class="fa-solid fa-users"></i> New group
+                </button>
+            </div>
+        </div>
+    `;
+    chatBox.querySelectorAll('[data-new-room]').forEach(el => {
+        el.addEventListener('click', () => {
+            document.getElementById('newRoomType').value = el.dataset.newRoom;
+            openNewRoomModal();
+        });
+    });
+
+    updateInputVisibility();
+    document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+    document.querySelector('[data-action="home"]')?.classList.add('active');
+}
+
+function lastSessionLine() {
+    try {
+        const last = localStorage.getItem('acd_last_room');
+        if (last && roomList.length) {
+            const r = roomList.find(x => x.id === last);
+            if (r) return `Last session: ${escapeHtml(r.project_name)}. Pick it from the sidebar, or start something new.`;
+        }
+    } catch (_) {}
+    return 'No workspace is open. Pick one from the sidebar, or start a new one.';
+}
+
+// On login, greet instead of auto-opening a room
+const _origLoadRoomsHome = loadRooms;
+loadRooms = async function() {
+    await _origLoadRoomsHome();
+    // if nothing was remembered, greet
+    const last = recallRoom();
+    const hasLast = last && roomList.find(r => r.id === last);
+    if (!hasLast && !currentRoomId) {
+        showHomeState();
+    }
+};
+
+// Rebind the nav to route home through showHomeState
+(function rebindNavHome() {
+    const links = document.querySelectorAll('.bottom-nav .nav-link');
+    links.forEach(link => {
+        // clone to strip old listeners
+        const clone = link.cloneNode(true);
+        link.parentNode.replaceChild(clone, link);
+    });
+    document.querySelectorAll('.bottom-nav .nav-link').forEach(link => {
+        link.addEventListener('click', (e) => {
+            e.preventDefault();
+            document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+            link.classList.add('active');
+            const action = link.dataset.action;
+            if (action === 'home') {
+                showHomeState();
+            } else if (action === 'research') {
+                hideAllPanels(); openResearch();
+            } else if (action === 'workspace') {
+                hideAllPanels(); openDocuments();
+            } else if (action === 'messages') {
+                hideAllPanels(); openDMPanel();
+            } else if (action === 'train') {
+                hideAllPanels(); openTrainingModal();
+            }
+        });
+    });
+})();

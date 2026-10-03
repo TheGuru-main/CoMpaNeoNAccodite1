@@ -2498,3 +2498,88 @@ loadRooms = async function() {
         });
     });
 })();
+
+
+// ============================================================================
+// ROOM WEBSOCKET — real-time fan-out
+// ============================================================================
+
+let _roomSocket = null;
+let _roomSocketRoom = null;
+
+function closeRoomSocket() {
+    // # ROOM-WS
+    if (_roomSocket) {
+        try { _roomSocket.close(); } catch (_) {}
+        _roomSocket = null;
+        _roomSocketRoom = null;
+    }
+}
+
+function openRoomSocket(roomId) {
+    if (!roomId || !authToken) return;
+    if (_roomSocketRoom === roomId && _roomSocket && _roomSocket.readyState === 1) return;
+    closeRoomSocket();
+
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const url = `${proto}//${location.host}/rooms/${roomId}/ws?token=${encodeURIComponent(authToken)}`;
+    try {
+        const ws = new WebSocket(url);
+        _roomSocket = ws;
+        _roomSocketRoom = roomId;
+
+        ws.addEventListener('message', (ev) => {
+            let payload;
+            try { payload = JSON.parse(ev.data); } catch (_) { return; }
+            if (payload.room_id !== currentRoomId) return;
+
+            if (payload.type === 'user_message') {
+                const m = payload.message;
+                if (!m) return;
+                // skip our own message — already rendered optimistically
+                const mine = currentUser && m.user_id === currentUser.id;
+                if (mine) return;
+                appendMessage('user', `${m.full_name || m.phone || ''}: ${m.content}`);
+            } else if (payload.type === 'ai_message') {
+                const frames = payload.frames || [];
+                if (frames.length) {
+                    appendFrameMessage('ai', frames, []);
+                } else if (payload.message && payload.message.content) {
+                    appendMessage('ai', payload.message.content);
+                }
+            }
+        });
+
+        ws.addEventListener('close', () => {
+            if (_roomSocketRoom === roomId) {
+                setTimeout(() => {
+                    if (currentRoomId === roomId) openRoomSocket(roomId);
+                }, 2000);
+            }
+        });
+
+        ws.addEventListener('error', () => {});
+    } catch (e) {
+        console.warn('[ws] connect failed:', e.message);
+    }
+}
+
+// hook into openRoom to (re)connect the socket
+const _origOpenRoomWS = openRoom;
+openRoom = async function(id) {
+    await _origOpenRoomWS(id);
+    openRoomSocket(id);
+};
+
+// close socket on logout / home
+const _origShowHomeStateWS = showHomeState;
+showHomeState = function() {
+    closeRoomSocket();
+    _origShowHomeStateWS();
+};
+
+const _origLogoutWS = logout;
+logout = function() {
+    closeRoomSocket();
+    _origLogoutWS();
+};

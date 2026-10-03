@@ -82,3 +82,13 @@ def get_current_user(authorization: str = Header(None), db: Session = Depends(ge
     if not user:
         raise HTTPException(401, "User not found")
     return user
+
+
+def decode_access_token(token: str):
+    """Decode a JWT and return the payload, or None if invalid."""
+    try:
+        import jwt
+        secret = os.environ.get("SECRET_KEY", "change-me")
+        return jwt.decode(token, secret, algorithms=["HS256"])
+    except Exception:
+        return None

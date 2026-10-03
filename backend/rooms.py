@@ -17,11 +17,15 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 from sqlalchemy import or_
 
 from database import SessionLocal
+try:
+    from room_hub import HUB as _ROOM_HUB
+except Exception:
+    _ROOM_HUB = None
 from db_models import User, Workspace, Message
 try:
     from phone_util import normalize_phone, variants
@@ -432,76 +436,178 @@ async def send_message_to_room(
     req: SendMessageReq,
     user: User = Depends(get_current_user),
 ):
+    """Store the message; run AI only if personal room OR @AI present. Broadcast to all members."""
     db = SessionLocal()
     try:
-        ws = db.query(Workspace).filter(Workspace.id == room_id).first()
-        if ws is None:
+        ws_row = db.query(Workspace).filter(Workspace.id == room_id).first()
+        if ws_row is None:
             raise HTTPException(404, "room not found")
-        if not _is_member(db, ws, user.id):
+        if not _is_member(db, ws_row, user.id):
             raise HTTPException(403, "not a member")
         content = req.content.strip()
         if not content:
             raise HTTPException(400, "content is required")
 
-        # MSG-PERSIST
-        import uuid as _uuid
-        try:
-            ws_uuid = _uuid.UUID(str(ws.id)) if not isinstance(ws.id, _uuid.UUID) else ws.id
-            usr_uuid = _uuid.UUID(str(user.id)) if not isinstance(user.id, _uuid.UUID) else user.id
-        except Exception as e:
-            print(f"[rooms] uuid parse error: {e}")
-            ws_uuid = ws.id
-            usr_uuid = user.id
-
+        # 1) persist the user message
         msg = Message(
-            workspace_id=ws_uuid,
-            user_id=usr_uuid,
+            workspace_id=ws_row.id,
+            user_id=user.id,
             role="user",
             content=content,
         )
         db.add(msg)
         db.commit()
         db.refresh(msg)
-        print(f"[rooms] stored message {msg.id} in room {ws_uuid}")
 
-        # TYPE-TRIGGER: personal_brainstorm = solo (always fire)
-        # every other type (group/department/team/meeting/organization)
-        # always requires @AI, regardless of how many members there are
-        member_count = 1 if ws.workspace_type == "personal_brainstorm" else 2
-        ai_invoked = False
-        frames: List[str] = []
+        # 2) fan out the user message immediately
+        user_payload = {
+            "type": "user_message",
+            "room_id": str(ws_row.id),
+            "message": {
+                "id": str(msg.id),
+                "user_id": str(user.id),
+                "phone": user.phone,
+                "full_name": user.full_name,
+                "role": "user",
+                "content": msg.content,
+                "created_at": msg.created_at.isoformat() if msg.created_at else None,
+            },
+        }
+        if _ROOM_HUB is not None:
+            try: await _ROOM_HUB.broadcast(str(ws_row.id), user_payload)
+            except Exception as e: print(f"[rooms] broadcast user failed: {e}")
+
+        # 3) EXPLICIT-AI-GATE: decide whether the AI runs
+        is_personal = ws_row.workspace_type == "personal_brainstorm"
+        should_invoke = is_personal
+        if not is_personal:
+            try:
+                from agent.trigger import ModeAwareTriggerParser
+                parser = ModeAwareTriggerParser()
+                trig = parser.parse(
+                    member_count=2,                       # force GROUP mode
+                    actor_id=user.phone or str(user.id),
+                    workspace_id=str(ws_row.id),
+                    text=content,
+                )
+                should_invoke = trig is not None
+            except Exception as e:
+                print(f"[rooms] trigger parse failed: {type(e).__name__}: {e}")
+                should_invoke = False
+
+        if not should_invoke:
+            return {
+                "id": str(msg.id),
+                "content": msg.content,
+                "created_at": msg.created_at.isoformat() if msg.created_at else None,
+                "ai_invoked": False,
+                "frames": [],
+            }
+
+        # 4) run the pipeline
+        frames: list = []
+        ai_text = ""
         try:
             from integration import handle_generate
-
             def _gen(prompt):
                 try:
                     from main import generate_from_prompt
                     return generate_from_prompt(prompt, 128, 0.7)
                 except Exception:
                     return prompt
-
             out = handle_generate(
-                workspace_id=str(ws.id),
+                workspace_id=str(ws_row.id),
                 user_id=user.phone or str(user.id),
                 prompt=content,
-                member_count=member_count,
+                member_count=1 if is_personal else 2,
                 generate_fn=_gen,
             )
-            ai_invoked = bool(out.get("ai_invoked"))
             frames = out.get("frames") or []
+            ai_text = out.get("raw") or ""
         except Exception as e:
             print(f"[rooms] pipeline error: {type(e).__name__}: {e}")
+            frames = [f"#error#{type(e).__name__}: {e}"]
+
+        # 5) persist the AI message
+        ai_msg_id = None
+        try:
+            ai_row = Message(
+                workspace_id=ws_row.id,
+                user_id=user.id,          # attributed to triggering user
+                role="ai",
+                content=ai_text or "[AI response]",
+            )
+            db.add(ai_row)
+            db.commit()
+            db.refresh(ai_row)
+            ai_msg_id = str(ai_row.id)
+        except Exception as e:
+            print(f"[rooms] ai persist failed: {e}")
+
+        # 6) fan out the AI response
+        ai_payload = {
+            "type": "ai_message",
+            "room_id": str(ws_row.id),
+            "message": {
+                "id": ai_msg_id,
+                "user_id": str(user.id),
+                "role": "ai",
+                "content": ai_text,
+                "created_at": None,
+            },
+            "frames": frames,
+        }
+        if _ROOM_HUB is not None:
+            try: await _ROOM_HUB.broadcast(str(ws_row.id), ai_payload)
+            except Exception as e: print(f"[rooms] broadcast ai failed: {e}")
 
         return {
             "id": str(msg.id),
             "content": msg.content,
             "created_at": msg.created_at.isoformat() if msg.created_at else None,
-            "member_count": member_count,
-            "ai_invoked": ai_invoked,
+            "ai_invoked": True,
             "frames": frames,
         }
     finally:
         db.close()
+
+
+# ============================================================================
+# WEBSOCKET — real-time room fan-out
+# ============================================================================
+
+@router.websocket("/{room_id}/ws")
+async def room_ws(websocket: WebSocket, room_id: str, token: str = Query("")):
+    """
+    Clients connect with ?token=<jwt>. The socket receives every message
+    (user and AI) posted to this room.
+    """
+    if _ROOM_HUB is None:
+        await websocket.close(code=1011)
+        return
+    # authenticate
+    try:
+        from auth import decode_access_token
+        payload = decode_access_token(token) if token else None
+        if not payload:
+            await websocket.close(code=1008)
+            return
+    except Exception:
+        await websocket.close(code=1008)
+        return
+
+    await _ROOM_HUB.connect(room_id, websocket)
+    try:
+        while True:
+            # ignore inbound — we only push
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        await _ROOM_HUB.disconnect(room_id, websocket)
+
 
 
 # ============================================================================

@@ -69,7 +69,8 @@ class RenameRoomReq(BaseModel):
 
 
 class SendMessageReq(BaseModel):
-    content: str = Field(..., min_length=1, max_length=20000)
+    content: str = Field("", max_length=20000)         # ATTACH: may be empty
+    attachment_id: Optional[str] = None
 
 
 class InviteMemberReq(BaseModel):
@@ -419,13 +420,35 @@ async def list_messages(
             .limit(limit)
             .all()
         )
-        return [{
-            "id": str(m.id),
-            "user_id": str(m.user_id),
-            "role": m.role,
-            "content": m.content,
-            "created_at": m.created_at.isoformat() if m.created_at else None,
-        } for m in reversed(rows)]
+        # THREAD-AI: attach author name + preview for any threaded reply
+        out = []
+        for m in reversed(rows):
+            author = db.query(User).filter(User.id == m.user_id).first()
+            item = {
+                "id": str(m.id),
+                "user_id": str(m.user_id),
+                "full_name": author.full_name if author else None,
+                "avatar_url": getattr(author, "avatar_url", None) if author else None,
+                "role": m.role,
+                "content": m.content,
+                "attachment": (
+                    {"id": str(m.attachment_id),
+                     "url": f"/uploads/{m.attachment_id}"}
+                    if getattr(m, "attachment_id", None) else None
+                ),
+                "replies_to": str(m.replies_to) if getattr(m, "replies_to", None) else None,
+                "replies_to_author": None,
+                "replies_to_preview": None,
+                "created_at": m.created_at.isoformat() if m.created_at else None,
+            }
+            if getattr(m, "replies_to", None):
+                ref = db.query(Message).filter(Message.id == m.replies_to).first()
+                if ref:
+                    ref_user = db.query(User).filter(User.id == ref.user_id).first()
+                    item["replies_to_author"] = ref_user.full_name if ref_user else None
+                    item["replies_to_preview"] = (ref.content or "")[:80]
+            out.append(item)
+        return out
     finally:
         db.close()
 
@@ -444,16 +467,24 @@ async def send_message_to_room(
             raise HTTPException(404, "room not found")
         if not _is_member(db, ws_row, user.id):
             raise HTTPException(403, "not a member")
-        content = req.content.strip()
-        if not content:
-            raise HTTPException(400, "content is required")
+        content = (req.content or "").strip()
+        if not content and not req.attachment_id:
+            raise HTTPException(400, "content or attachment is required")
 
         # 1) persist the user message
+        import uuid as _uuid_att
+        _att_uuid = None
+        if req.attachment_id:
+            try:
+                _att_uuid = _uuid_att.UUID(req.attachment_id)
+            except Exception:
+                _att_uuid = None
         msg = Message(
             workspace_id=ws_row.id,
             user_id=user.id,
             role="user",
-            content=content,
+            content=content or "[attachment]",
+            attachment_id=_att_uuid,
         )
         db.add(msg)
         db.commit()
@@ -470,6 +501,11 @@ async def send_message_to_room(
                 "full_name": user.full_name,
                 "role": "user",
                 "content": msg.content,
+                "attachment": (
+                    {"id": str(msg.attachment_id),
+                     "url": f"/uploads/{msg.attachment_id}"}
+                    if msg.attachment_id else None
+                ),
                 "created_at": msg.created_at.isoformat() if msg.created_at else None,
             },
         }
@@ -531,11 +567,13 @@ async def send_message_to_room(
         # 5) persist the AI message
         ai_msg_id = None
         try:
+            # THREAD-AI: link the AI reply to the message that triggered it
             ai_row = Message(
                 workspace_id=ws_row.id,
-                user_id=user.id,          # attributed to triggering user
+                user_id=user.id,
                 role="ai",
                 content=ai_text or "[AI response]",
+                replies_to=msg.id,
             )
             db.add(ai_row)
             db.commit()

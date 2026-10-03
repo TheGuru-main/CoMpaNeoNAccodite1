@@ -245,9 +245,29 @@
                 </button>
             </div>
             <footer class="input-area" id="inputArea" style="display:none;">
-                <input type="text" id="promptInput" placeholder="Start a chat with CoMpaNeoN!!" />
+                <button id="btnAttachImage" class="icon-btn attach-btn" title="Image">
+                    <i class="fa-solid fa-image"></i>
+                </button>
+                <input type="file" id="imageInput" accept="image/*" style="display:none;" />
+                <button id="btnMic" class="icon-btn attach-btn" title="Voice note">
+                    <i class="fa-solid fa-microphone"></i>
+                </button>
+                <input type="text" id="promptInput" placeholder="Type or @AI to invoke the agent" />
                 <button id="btnSend" class="send-btn"><i class="fa-solid fa-paper-plane"></i></button>
             </footer>
+
+            <!-- Voice recording overlay -->
+            <div id="voiceOverlay" class="voice-overlay" style="display:none;">
+                <div class="voice-overlay-inner">
+                    <div class="voice-dot"></div>
+                    <div class="voice-time" id="voiceTimer">0:00</div>
+                    <div class="voice-hint">Recording — tap to stop and send</div>
+                    <div class="voice-actions">
+                        <button id="btnVoiceCancel" class="primary-btn secondary-btn" style="flex:1;">Cancel</button>
+                        <button id="btnVoiceStop" class="primary-btn" style="flex:1;">Send</button>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- New Room Modal -->
@@ -311,6 +331,26 @@
                     <input type="text" id="dmInput" placeholder="Type a message…" />
                     <button id="btnSendDM" class="send-btn"><i class="fa-solid fa-paper-plane"></i></button>
                 </div>
+            </div>
+        </div>
+
+        <!-- Search Panel -->
+        <div id="searchPanel" class="research-panel" style="display:none;">
+            <div class="research-header">
+                <h3><i class="fa-solid fa-magnifying-glass"></i> Search</h3>
+                <button id="btnCloseSearch" class="icon-btn"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="search-row">
+                <input type="text" id="searchInput" placeholder="Search memory grid, messages, documents…" />
+                <select id="searchScope">
+                    <option value="all">All</option>
+                    <option value="grid">Memory grid</option>
+                    <option value="messages">Messages</option>
+                    <option value="documents">Documents</option>
+                </select>
+            </div>
+            <div id="searchResults" class="search-results">
+                <p style="opacity:.55; padding:0.75rem;">Type to search across everything in this instance.</p>
             </div>
         </div>
 

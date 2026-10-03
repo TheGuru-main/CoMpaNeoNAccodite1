@@ -2583,3 +2583,759 @@ logout = function() {
     closeRoomSocket();
     _origLogoutWS();
 };
+
+
+// ============================================================================
+// ATTACHMENTS — image upload
+// ============================================================================
+
+function _apiBase() {
+    return (typeof API_BASE !== 'undefined' && API_BASE) ? API_BASE : '';
+}
+
+async function uploadImage(file) {
+    // # ATTACH-UPLOAD
+    const fd = new FormData();
+    fd.append('file', file, file.name || 'photo.jpg');
+    const res = await fetch(_apiBase() + '/uploads/image', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${authToken}` },
+        body: fd,
+    });
+    const text = await res.text();
+    if (!res.ok) throw new Error(`${res.status} ${text.slice(0, 200)}`);
+    return JSON.parse(text);
+}
+
+// SAFARI-VOICE: pick the format the browser actually supports.
+// Safari (macOS/iOS) -> audio/mp4
+// Chrome / Firefox    -> audio/webm;codecs=opus
+// Older Firefox        -> audio/ogg;codecs=opus
+const VOICE_MIME_CANDIDATES = [
+    { mime: 'audio/webm;codecs=opus', ext: 'webm' },
+    { mime: 'audio/webm',             ext: 'webm' },
+    { mime: 'audio/mp4',              ext: 'm4a'  },
+    { mime: 'audio/mp4;codecs=mp4a.40.2', ext: 'm4a' },
+    { mime: 'audio/ogg;codecs=opus',  ext: 'ogg'  },
+    { mime: 'audio/ogg',              ext: 'ogg'  },
+    { mime: 'audio/wav',              ext: 'wav'  },
+];
+
+function pickVoiceFormat() {
+    try {
+        if (typeof MediaRecorder === 'undefined') return null;
+        if (typeof MediaRecorder.isTypeSupported !== 'function') {
+            // very old Safari — just try mp4
+            return { mime: 'audio/mp4', ext: 'm4a' };
+        }
+        for (const c of VOICE_MIME_CANDIDATES) {
+            try {
+                if (MediaRecorder.isTypeSupported(c.mime)) return c;
+            } catch (_) {}
+        }
+        // last resort — let the browser decide
+        return { mime: '', ext: 'webm' };
+    } catch (_) {
+        return null;
+    }
+}
+
+async function uploadVoice(blob, ext = 'webm') {
+    const fd = new FormData();
+    fd.append('file', blob, `voice.${ext}`);
+    const res = await fetch(_apiBase() + '/uploads/voice', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${authToken}` },
+        body: fd,
+    });
+    const text = await res.text();
+    if (!res.ok) throw new Error(`${res.status} ${text.slice(0, 200)}`);
+    return JSON.parse(text);
+}
+
+async function postMessageWithAttachment({ text = '', attachmentId = null }) {
+    if (!currentRoomId) { alert('Open a room first.'); return; }
+    const body = { content: text };
+    if (attachmentId) body.attachment_id = attachmentId;
+
+    // optimistic user bubble
+    appendAttachmentBubble('user', {
+        full_name: (currentUser && currentUser.full_name) || '',
+        content: text,
+        attachment: attachmentId ? { url: `/uploads/${attachmentId}` } : null,
+    });
+
+    try {
+        await api(`/rooms/${currentRoomId}/messages`, 'POST', body);
+    } catch (e) {
+        appendMessage('ai', `Send failed: ${e.message}`);
+    }
+}
+
+function appendAttachmentBubble(role, payload) {
+    const chatBox = document.getElementById('chatBox');
+    if (!chatBox) return;
+    const div = document.createElement('div');
+    div.className = `message ${role}`;
+
+    if (role !== 'ai' && payload.full_name) {
+        const who = document.createElement('div');
+        who.className = 'msg-author';
+        who.textContent = payload.full_name;
+        div.appendChild(who);
+    }
+
+    if (payload.content && payload.content !== '[attachment]') {
+        const p = document.createElement('div');
+        p.className = 'frame-prose';
+        p.textContent = payload.content;
+        div.appendChild(p);
+    }
+
+    if (payload.attachment) {
+        div.appendChild(renderAttachment(payload.attachment));
+    }
+
+    chatBox.appendChild(div);
+    chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+function renderAttachment(att) {
+    const url = _apiBase() + (att.url || '');
+    const lower = (url.split('?')[0] || '').toLowerCase();
+    const isImg = lower.match(/\.(png|jpg|jpeg|gif|webp)$/);
+    const isAudio = lower.match(/\.(webm|ogg|mp3|m4a|wav)$/);
+
+    const wrap = document.createElement('div');
+    wrap.className = 'attachment';
+
+    if (isImg || (!isAudio && (att.kind || '') === 'image')) {
+        const img = document.createElement('img');
+        img.src = url;
+        img.className = 'attachment-image';
+        img.loading = 'lazy';
+        img.addEventListener('click', () => window.open(url, '_blank'));
+        wrap.appendChild(img);
+    } else if (isAudio || (att.kind || '') === 'voice_note') {
+        const audio = document.createElement('audio');
+        audio.src = url;
+        audio.controls = true;
+        audio.className = 'attachment-audio';
+        wrap.appendChild(audio);
+    } else {
+        const a = document.createElement('a');
+        a.href = url;
+        a.target = '_blank';
+        a.textContent = att.name || 'attachment';
+        wrap.appendChild(a);
+    }
+    return wrap;
+}
+
+// wire attach button
+(function wireAttach() {
+    const btn = document.getElementById('btnAttachImage');
+    const input = document.getElementById('imageInput');
+    if (btn && input) {
+        btn.addEventListener('click', () => input.click());
+        input.addEventListener('change', async () => {
+            const f = input.files && input.files[0];
+            input.value = '';
+            if (!f) return;
+            btn.disabled = true;
+            const original = btn.innerHTML;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+            try {
+                const up = await uploadImage(f);
+                await postMessageWithAttachment({ text: '', attachmentId: up.id });
+            } catch (e) {
+                alert(`Image upload failed: ${e.message}`);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = original;
+            }
+        });
+    }
+})();
+
+// ============================================================================
+// VOICE NOTES
+// ============================================================================
+
+let _mediaRecorder = null;
+let _voiceMime = '';
+let _voiceExt = 'webm';
+let _mediaChunks = [];
+let _mediaStream = null;
+let _voiceStart = 0;
+let _voiceTimerHandle = null;
+
+function _voiceTimerUpdate() {
+    const el = document.getElementById('voiceTimer');
+    if (!el) return;
+    const s = Math.floor((Date.now() - _voiceStart) / 1000);
+    el.textContent = `${Math.floor(s/60)}:${String(s % 60).padStart(2,'0')}`;
+}
+
+async function startVoiceRecording() {
+    if (!currentRoomId) { alert('Open a room first.'); return; }
+    if (_mediaRecorder) return;
+
+    const fmt = pickVoiceFormat();
+    if (fmt === null) {
+        alert('This browser does not support audio recording.');
+        return;
+    }
+
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        _mediaStream = stream;
+        _mediaChunks = [];
+        _voiceMime = fmt.mime;
+        _voiceExt = fmt.ext;
+
+        let mr;
+        try {
+            mr = fmt.mime
+                ? new MediaRecorder(stream, { mimeType: fmt.mime })
+                : new MediaRecorder(stream);
+        } catch (e) {
+            // fallback: let the browser choose
+            mr = new MediaRecorder(stream);
+            _voiceMime = mr.mimeType || '';
+            _voiceExt = _voiceMime.includes('mp4') ? 'm4a'
+                      : _voiceMime.includes('ogg') ? 'ogg'
+                      : 'webm';
+        }
+
+        mr.addEventListener('dataavailable', (e) => {
+            if (e.data && e.data.size > 0) _mediaChunks.push(e.data);
+        });
+        _mediaRecorder = mr;
+        mr.start();
+
+        _voiceStart = Date.now();
+        document.getElementById('voiceOverlay').style.display = 'flex';
+        _voiceTimerHandle = setInterval(_voiceTimerUpdate, 250);
+        _voiceTimerUpdate();
+    } catch (e) {
+        alert(`Microphone access denied: ${e.message}`);
+    }
+}
+
+function _stopVoiceTracks() {
+    try { _mediaStream && _mediaStream.getTracks().forEach(t => t.stop()); } catch (_) {}
+    _mediaStream = null;
+    if (_voiceTimerHandle) { clearInterval(_voiceTimerHandle); _voiceTimerHandle = null; }
+}
+
+async function stopVoiceRecording(send = true) {
+    if (!_mediaRecorder) return;
+    const mr = _mediaRecorder;
+    _mediaRecorder = null;
+    const chunks = _mediaChunks;
+    _mediaChunks = [];
+
+    await new Promise((resolve) => {
+        mr.addEventListener('stop', resolve, { once: true });
+        try { mr.stop(); } catch (_) { resolve(); }
+    });
+    _stopVoiceTracks();
+    document.getElementById('voiceOverlay').style.display = 'none';
+
+    if (!send) return;
+    const mime = _voiceMime || 'audio/webm';
+    const ext = _voiceExt || 'webm';
+    const blob = new Blob(chunks, { type: mime });
+    if (blob.size < 512) return;
+
+    const btn = document.getElementById('btnMic');
+    const orig = btn ? btn.innerHTML : '';
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; }
+    try {
+        const up = await uploadVoice(blob, ext);
+        await postMessageWithAttachment({ text: '', attachmentId: up.id });
+    } catch (e) {
+        alert(`Voice upload failed: ${e.message}`);
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+    }
+}
+
+(function wireVoice() {
+    const btn = document.getElementById('btnMic');
+    if (btn) btn.addEventListener('click', startVoiceRecording);
+    const stopBtn = document.getElementById('btnVoiceStop');
+    if (stopBtn) stopBtn.addEventListener('click', () => stopVoiceRecording(true));
+    const cancelBtn = document.getElementById('btnVoiceCancel');
+    if (cancelBtn) cancelBtn.addEventListener('click', () => stopVoiceRecording(false));
+})();
+
+// Extend appendMessage so historical messages with attachments render too
+const _origAppendMessageForAttach = appendMessage;
+appendMessage = function(role, text, followUps = [], attachment = null) {
+    if (attachment) {
+        appendAttachmentBubble(role, { content: text, attachment });
+        return;
+    }
+    return _origAppendMessageForAttach(role, text, followUps);
+};
+
+
+// ============================================================================
+// NOTIFICATIONS — in-app toasts + browser Notification API
+// ============================================================================
+
+const _notifySeen = new Set();
+
+async function requestNotificationPermission() {
+    // # NOTIFY
+    if (!('Notification' in window)) return 'unsupported';
+    if (Notification.permission === 'granted') return 'granted';
+    if (Notification.permission === 'denied') return 'denied';
+    try {
+        const p = await Notification.requestPermission();
+        return p;
+    } catch (_) { return 'denied'; }
+}
+
+function toast(title, body, opts = {}) {
+    // in-app toast (always shown)
+    let tray = document.getElementById('toastTray');
+    if (!tray) {
+        tray = document.createElement('div');
+        tray.id = 'toastTray';
+        tray.className = 'toast-tray';
+        document.body.appendChild(tray);
+    }
+    const el = document.createElement('div');
+    el.className = 'toast';
+    el.innerHTML = `
+        <div class="toast-icon"><i class="fa-solid ${opts.icon || 'fa-bell'}"></i></div>
+        <div class="toast-body">
+            <div class="toast-title">${escapeHtml(title || '')}</div>
+            ${body ? `<div class="toast-text">${escapeHtml(body)}</div>` : ''}
+        </div>
+        <button class="toast-close"><i class="fa-solid fa-xmark"></i></button>
+    `;
+    tray.appendChild(el);
+    const remove = () => { try { el.remove(); } catch (_) {} };
+    el.querySelector('.toast-close').addEventListener('click', remove);
+    if (opts.onClick) {
+        el.addEventListener('click', (ev) => {
+            if (ev.target.closest('.toast-close')) return;
+            try { opts.onClick(); } catch (_) {}
+            remove();
+        });
+    }
+    setTimeout(remove, opts.ttl || 6000);
+}
+
+function browserNotify(title, body, opts = {}) {
+    if (!('Notification' in window)) return;
+    if (Notification.permission !== 'granted') return;
+    if (document.visibilityState === 'visible') return;  // only when hidden
+    try {
+        const n = new Notification(title, {
+            body,
+            icon: '/app/icons/icon-192.png',
+            tag: opts.tag || ('acd-' + Math.random().toString(36).slice(2, 8)),
+            silent: false,
+        });
+        if (opts.onClick) {
+            n.addEventListener('click', () => {
+                try { window.focus(); } catch (_) {}
+                try { opts.onClick(); } catch (_) {}
+            });
+        }
+    } catch (_) {}
+}
+
+function notify(title, body, opts = {}) {
+    const key = opts.dedupeKey;
+    if (key) {
+        if (_notifySeen.has(key)) return;
+        _notifySeen.add(key);
+        if (_notifySeen.size > 200) {
+            const iter = _notifySeen.values();
+            for (let i = 0; i < 50; i++) { _notifySeen.delete(iter.next().value); }
+        }
+    }
+    toast(title, body, opts);
+    browserNotify(title, body, opts);
+}
+
+// Wire into the room WebSocket payload — extended handler
+const _origOpenRoomSocketForNotify = openRoomSocket;
+openRoomSocket = function(roomId) {
+    _origOpenRoomSocketForNotify(roomId);
+
+    // attach a second listener that adds notification logic
+    if (_roomSocket) {
+        _roomSocket.addEventListener('message', (ev) => {
+            let payload;
+            try { payload = JSON.parse(ev.data); } catch (_) { return; }
+            if (payload.room_id !== currentRoomId) {
+                // different room — notify
+                if (payload.type === 'user_message' && payload.message) {
+                    const m = payload.message;
+                    if (currentUser && m.user_id === currentUser.id) return;
+                    notify(
+                        m.full_name || m.phone || 'New message',
+                        (m.content || '').slice(0, 90),
+                        {
+                            icon: 'fa-comment',
+                            dedupeKey: 'msg-' + m.id,
+                            onClick: () => {
+                                const rid = payload.room_id;
+                                if (rid) { currentRoomId = rid; openRoom(rid); }
+                            },
+                        },
+                    );
+                } else if (payload.type === 'ai_message') {
+                    notify(
+                        'Accodite',
+                        'AI responded in a room you are in',
+                        { icon: 'fa-brain', dedupeKey: 'ai-' + (payload.message?.id || Date.now()) },
+                    );
+                }
+                return;
+            }
+        });
+    }
+};
+
+// Ask for permission after login (non-blocking)
+const _origHandleAuthSuccessForNotify = handleAuthSuccess;
+handleAuthSuccess = async function(data) {
+    await _origHandleAuthSuccessForNotify(data);
+    setTimeout(() => { requestNotificationPermission(); }, 1500);
+};
+
+// Also verify permission isn't stale on every app boot
+setTimeout(() => { requestNotificationPermission(); }, 2500);
+
+
+// ============================================================================
+// THREAD RENDERING + AUTHOR AVATARS
+// ============================================================================
+
+function _avatarHtml(user, size = 28) {
+    const url = user && user.avatar_url
+        ? (_apiBase() + user.avatar_url)
+        : null;
+    const name = escapeHtml((user && (user.full_name || user.phone)) || '?');
+    const initial = name.trim().charAt(0).toUpperCase() || '?';
+    if (url) {
+        return `<span class="msg-avatar" style="width:${size}px;height:${size}px;">
+                  <img src="${url}" alt="${name}" loading="lazy" />
+                </span>`;
+    }
+    return `<span class="msg-avatar msg-avatar-fallback" style="width:${size}px;height:${size}px;">${initial}</span>`;
+}
+
+function renderMessageItem(m, { mine = false } = {}) {
+    // # THREAD-RENDER
+    const chatBox = document.getElementById('chatBox');
+    if (!chatBox) return;
+    const div = document.createElement('div');
+    div.className = `message ${m.role === 'ai' ? 'ai' : (mine ? 'user' : 'other')}`;
+    div.dataset.messageId = m.id;
+
+    // Thread reference
+    if (m.replies_to) {
+        const ref = document.createElement('div');
+        ref.className = 'thread-ref';
+        ref.innerHTML = `<i class="fa-solid fa-arrow-turn-up"></i>
+            <span>replying to <strong>${escapeHtml(m.replies_to_author || 'message')}</strong>
+            <span class="thread-preview">${escapeHtml(m.replies_to_preview || '')}</span></span>`;
+        div.appendChild(ref);
+    }
+
+    // Author row (name + avatar)
+    if (m.role !== 'ai') {
+        const head = document.createElement('div');
+        head.className = 'msg-head';
+        head.innerHTML = `
+            ${_avatarHtml({ avatar_url: m.avatar_url, full_name: m.full_name, phone: m.phone })}
+            <span class="msg-author">${escapeHtml(m.full_name || m.phone || '')}</span>
+        `;
+        div.appendChild(head);
+    } else {
+        const head = document.createElement('div');
+        head.className = 'msg-head';
+        head.innerHTML = `
+            <span class="msg-avatar ai-avatar" style="width:28px;height:28px;"><i class="fa-solid fa-brain"></i></span>
+            <span class="msg-author ai-author">Accodite</span>
+        `;
+        div.appendChild(head);
+    }
+
+    // Content
+    if (m.content && m.content !== '[attachment]') {
+        const p = document.createElement('div');
+        p.className = 'frame-prose';
+        p.textContent = m.content;
+        div.appendChild(p);
+    }
+
+    // Attachment
+    if (m.attachment) {
+        div.appendChild(renderAttachment(m.attachment));
+    }
+
+    chatBox.appendChild(div);
+    chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+// Hook openRoom to use the new renderer
+const _origOpenRoomThread = openRoom;
+openRoom = async function(id) {
+    // do the fetch + clear ourselves so we can use the new renderer
+    currentRoomId = id;
+    renderRoomBar();
+    updateActiveTitle();
+    updateInviteButtonVisibility();
+    const chatBox = document.getElementById('chatBox');
+    chatBox.innerHTML = '';
+    try {
+        const msgs = await api(`/rooms/${id}/messages`);
+        if (!msgs.length) {
+            appendMessage('ai', 'Workspace ready. Say something to begin.');
+        } else {
+            const meId = currentUser && currentUser.id;
+            msgs.forEach(m => renderMessageItem(m, { mine: meId && m.user_id === meId }));
+        }
+    } catch (e) {
+        appendMessage('ai', `Could not load room: ${e.message}`);
+    }
+    openRoomSocket(id);
+    updateInputVisibility();
+};
+
+// Hook WS handler to use the new renderer for cross-member messages
+const _origOpenRoomSocketThread = openRoomSocket;
+openRoomSocket = function(roomId) {
+    _origOpenRoomSocketThread(roomId);
+    if (!_roomSocket) return;
+    _roomSocket.addEventListener('message', (ev) => {
+        let payload;
+        try { payload = JSON.parse(ev.data); } catch (_) { return; }
+        if (payload.room_id !== currentRoomId) return;
+        if (payload.type === 'user_message' && payload.message) {
+            const m = payload.message;
+            const mine = currentUser && m.user_id === currentUser.id;
+            if (mine) return;   // already rendered optimistically
+            renderMessageItem({
+                id: m.id,
+                user_id: m.user_id,
+                full_name: m.full_name,
+                avatar_url: m.avatar_url || null,
+                role: 'user',
+                content: m.content,
+                attachment: m.attachment,
+                replies_to: null,
+                created_at: m.created_at,
+            }, { mine: false });
+        }
+    });
+};
+
+
+// ============================================================================
+// PROFILE AVATAR (upload + display)
+// ============================================================================
+
+async function uploadAvatar(file) {
+    // # AVATAR-UPLOAD
+    const fd = new FormData();
+    fd.append('file', file, file.name || 'avatar.png');
+    const res = await fetch(_apiBase() + '/uploads/profile/avatar', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${authToken}` },
+        body: fd,
+    });
+    const txt = await res.text();
+    if (!res.ok) throw new Error(`${res.status} ${txt.slice(0, 200)}`);
+    return JSON.parse(txt);
+}
+
+function renderProfileAvatar(p) {
+    const url = p && p.avatar_url ? (_apiBase() + p.avatar_url) : null;
+    if (url) {
+        return `<div class="profile-avatar profile-avatar-img">
+                  <img src="${url}" alt="" onerror="this.style.display='none'" />
+                </div>`;
+    }
+    return `<div class="profile-avatar"><i class="fa-solid fa-user-circle"></i></div>`;
+}
+
+// Patch openProfile to render the avatar + upload button
+const _origOpenProfileAvatar = openProfile;
+openProfile = async function() {
+    const modal = document.getElementById('profileModal');
+    const body = document.getElementById('profileBody');
+    if (!modal || !body) return;
+    modal.style.display = 'flex';
+    body.innerHTML = '<p style="opacity:.6;">Loading…</p>';
+    try {
+        const p = await api('/auth/profile');
+        const orgs = (p.orgs || []).map(o => {
+            const status = o.brain_status || (o.ai_uid && !String(o.ai_uid).startsWith('org-pending-') ? 'active' : 'pending');
+            const brainLine = status === 'active'
+                ? `<div class="profile-org-meta" style="opacity:.62; word-break:break-all;">
+                       <span style="font-size:0.66rem; text-transform:uppercase; letter-spacing:0.06em; opacity:.6;">org brain</span>
+                       <div style="font-family:var(--font-mono); font-size:0.78rem; margin-top:0.15rem;">${escapeHtml(o.ai_uid || '—')}</div>
+                   </div>`
+                : `<div class="profile-org-meta" style="opacity:.55; font-style:italic;">org brain: not yet generated — create it in the dashboard</div>`;
+            return `
+                <div class="profile-org">
+                    <div class="profile-org-name">${escapeHtml(o.org_name || '')}</div>
+                    <div class="profile-org-meta">${escapeHtml(o.role || '')}${o.department ? ' · ' + escapeHtml(o.department) : ''}</div>
+                    <div class="profile-org-meta" style="opacity:.55;">${o.credential_active ? 'member active' : 'membership pending'}</div>
+                    ${brainLine}
+                </div>`;
+        }).join('') || '<p style="opacity:.5; font-size:0.8rem;">No organization memberships</p>';
+
+        body.innerHTML = `
+            <div class="profile-header">
+                ${renderProfileAvatar(p)}
+                <div>
+                    <div class="profile-name">${escapeHtml(p.full_name || '')}</div>
+                    <div class="profile-phone">${escapeHtml(p.phone || '')}</div>
+                    <button id="btnChangeAvatar" class="primary-btn secondary-btn" style="font-size:0.72rem; padding:0.35rem 0.75rem; margin-top:0.5rem;">
+                        <i class="fa-solid fa-camera"></i> Change avatar
+                    </button>
+                    <input type="file" id="avatarInput" accept="image/*" style="display:none;" />
+                </div>
+            </div>
+            <div class="profile-grid">
+                <div class="profile-kv"><span class="k">Country</span><span class="v">${escapeHtml(p.country || '')}</span></div>
+                <div class="profile-kv"><span class="k">Language</span><span class="v">${escapeHtml(p.language || '')}</span></div>
+                <div class="profile-kv"><span class="k">Temperament</span><span class="v">${escapeHtml(p.temperament || '')}</span></div>
+                <div class="profile-kv"><span class="k">Account type</span><span class="v">${escapeHtml(p.account_type || 'regular')}</span></div>
+                <div class="profile-kv"><span class="k">Start row</span><span class="v">${escapeHtml(String(p.start_row ?? '—'))}</span></div>
+                <div class="profile-kv"><span class="k">Start col</span><span class="v">${escapeHtml(String(p.start_col ?? '—'))}</span></div>
+                <div class="profile-kv"><span class="k">Brain UID</span><span class="v">${escapeHtml(p.personal_ai_uid || '—')}</span></div>
+                <div class="profile-kv"><span class="k">Joined</span><span class="v">${p.created_at ? new Date(p.created_at).toLocaleString() : '—'}</span></div>
+            </div>
+            <h4 style="margin-top:1rem;"><i class="fa-solid fa-sitemap"></i> Organizations</h4>
+            <div style="margin-top:0.5rem;">${orgs}</div>
+        `;
+
+        // wire the avatar upload
+        const btn = document.getElementById('btnChangeAvatar');
+        const inp = document.getElementById('avatarInput');
+        if (btn && inp) {
+            btn.addEventListener('click', () => inp.click());
+            inp.addEventListener('change', async () => {
+                const f = inp.files && inp.files[0];
+                inp.value = '';
+                if (!f) return;
+                btn.disabled = true;
+                const orig = btn.innerHTML;
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Uploading…';
+                try {
+                    const r = await uploadAvatar(f);
+                    currentUser = Object.assign({}, currentUser || {}, { avatar_url: r.avatar_url });
+                    localStorage.setItem('coMpaNeoN_user', JSON.stringify(currentUser));
+                    openProfile();
+                } catch (e) {
+                    alert(`Avatar upload failed: ${e.message}`);
+                    btn.disabled = false;
+                    btn.innerHTML = orig;
+                }
+            });
+        }
+    } catch (e) {
+        body.innerHTML = `<p style="color:#f3a9c1;">${escapeHtml(e.message)}</p>`;
+    }
+};
+
+
+// ============================================================================
+// SEARCH PANEL
+// ============================================================================
+
+let _searchTimer = null;
+
+async function runSearch() {
+    // # SEARCH-PANEL
+    const q = (document.getElementById('searchInput').value || '').trim();
+    const scope = document.getElementById('searchScope').value || 'all';
+    const box = document.getElementById('searchResults');
+    if (q.length < 2) {
+        box.innerHTML = '<p style="opacity:.55; padding:0.75rem;">Type at least 2 characters.</p>';
+        return;
+    }
+    box.innerHTML = '<p style="opacity:.6; padding:0.75rem;">Searching…</p>';
+    try {
+        const data = await api(`/search?q=${encodeURIComponent(q)}&scope=${encodeURIComponent(scope)}`);
+        const results = data.results || [];
+        if (!results.length) {
+            box.innerHTML = '<p style="opacity:.5; padding:0.75rem;">No results.</p>';
+            return;
+        }
+        box.innerHTML = results.map(r => `
+            <div class="search-item" data-source="${escapeHtml(r.source)}"${r.room_id ? ` data-room="${escapeHtml(r.room_id)}"` : ''}>
+                <div class="search-item-head">
+                    <span class="search-badge search-badge-${escapeHtml(r.source)}">${escapeHtml(r.source)}</span>
+                    <span class="search-title">${escapeHtml(r.title || '')}</span>
+                </div>
+                <div class="search-snippet">${escapeHtml(r.snippet || '')}</div>
+            </div>
+        `).join('');
+        box.querySelectorAll('.search-item').forEach(el => {
+            el.addEventListener('click', () => {
+                if (el.dataset.room) {
+                    document.getElementById('searchPanel').style.display = 'none';
+                    openRoom(el.dataset.room);
+                }
+            });
+        });
+    } catch (e) {
+        box.innerHTML = `<p style="color:#f3a9c1; padding:0.75rem;">${escapeHtml(e.message)}</p>`;
+    }
+}
+
+function openSearchPanel() {
+    hideAllPanels();
+    const panel = document.getElementById('searchPanel');
+    if (!panel) return;
+    panel.style.display = 'block';
+    setTimeout(() => document.getElementById('searchInput')?.focus(), 50);
+}
+
+(function wireSearch() {
+    const inp = document.getElementById('searchInput');
+    if (inp) {
+        inp.addEventListener('input', () => {
+            clearTimeout(_searchTimer);
+            _searchTimer = setTimeout(runSearch, 300);
+        });
+        inp.addEventListener('keydown', e => { if (e.key === 'Enter') runSearch(); });
+    }
+    const scopeSel = document.getElementById('searchScope');
+    if (scopeSel) scopeSel.addEventListener('change', runSearch);
+    const close = document.getElementById('btnCloseSearch');
+    if (close) close.addEventListener('click', () => {
+        document.getElementById('searchPanel').style.display = 'none';
+    });
+})();
+
+// Rebind the nav "research" icon to open the search panel
+(function rebindResearchToSearch() {
+    const link = document.querySelector('.bottom-nav .nav-link[data-action="research"]');
+    if (!link) return;
+    const clone = link.cloneNode(true);
+    link.parentNode.replaceChild(clone, link);
+    clone.addEventListener('click', (e) => {
+        e.preventDefault();
+        document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+        clone.classList.add('active');
+        openSearchPanel();
+    });
+    // swap icon to a magnifier if the icon was something else
+    const i = clone.querySelector('i');
+    if (i) i.className = 'fa-solid fa-magnifying-glass';
+})();

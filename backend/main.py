@@ -92,6 +92,22 @@ try:
     print("[ACCD] org rooms router mounted at /orgs/{id}/rooms")
 except Exception as _e:
     print(f"[ACCD] org rooms router not mounted: {_e}")
+    print("[ACCD] org rooms router mounted at /orgs/{id}/rooms")
+
+try:
+    from uploads import router as _uploads_router
+    app.include_router(_uploads_router)
+    print("[ACCD] uploads router mounted at /uploads/*")
+except Exception as _e:
+    print(f"[ACCD] uploads router not mounted: {_e}")
+    print("[ACCD] uploads router mounted at /uploads/*")
+
+try:
+    from search import router as _search_router
+    app.include_router(_search_router)
+    print("[ACCD] search router mounted at /search")
+except Exception as _e:
+    print(f"[ACCD] search router not mounted: {_e}")
 
 # WEIGHTS-RELAY
 try:
@@ -726,6 +742,7 @@ async def profile(user: User = Depends(get_current_user)):
             "start_col": user.start_col,
             "account_type": getattr(user, "account_type", "regular"),
             "personal_ai_uid": getattr(user, "personal_ai_uid", None),
+            "avatar_url": getattr(user, "avatar_url", None),
             "created_at": user.created_at.isoformat() if user.created_at else None,
             "orgs": orgs,
         }

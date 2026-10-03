@@ -177,6 +177,15 @@ class User(Base):
     # RELATIONSHIPS
     # ---------------------------------------------------------------
 
+    # ---------------------------------------------------------------
+    # PROFILE AVATAR
+    # ---------------------------------------------------------------
+
+    avatar_url = Column(
+        String(500),
+        nullable=True,
+    )
+
     organizations = relationship(
         "OrganizationMembership",
         back_populates="user",
@@ -901,6 +910,31 @@ class Message(Base):
     # RELATIONSHIPS
     # ---------------------------------------------------------------
 
+    # ---------------------------------------------------------------
+    # ATTACHMENT (image / voice note / file) — links to Artifact
+    # ---------------------------------------------------------------
+
+    attachment_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("artifacts.id"),
+        nullable=True,
+        index=True,
+    )
+
+    # ---------------------------------------------------------------
+    # THREADING — link a reply (usually the AI's) to its trigger
+    # ---------------------------------------------------------------
+
+    replies_to = Column(
+        UUID(as_uuid=True),
+        ForeignKey("messages.id"),
+        nullable=True,
+        index=True,
+    )
+
+    # ---------------------------------------------------------------
+    # ATTACHMENT (image / voice note / file) — links to Artifact
+    # ---------------------------------------------------------------
     workspace = relationship(
         "Workspace",
         back_populates="messages",

@@ -1768,3 +1768,336 @@ html, body {
         rgba(79, 140, 255, 0.18) 100%);
     border-color: rgba(125, 211, 208, 0.4);
 }
+
+/* Attach buttons in the input row */
+.input-area .attach-btn {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    flex: 0 0 auto;
+}
+
+/* Attachment rendering inside a message bubble */
+.attachment { margin-top: 0.5rem; }
+.attachment-image {
+    max-width: 100%;
+    max-height: 320px;
+    border-radius: 0.6rem;
+    border: 1px solid var(--border);
+    cursor: zoom-in;
+    display: block;
+}
+.attachment-audio {
+    width: 100%;
+    max-width: 320px;
+    height: 36px;
+    margin-top: 0.2rem;
+}
+.msg-author {
+    font-size: 0.72rem;
+    opacity: 0.62;
+    margin-bottom: 0.25rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+/* Voice recording overlay */
+.voice-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(6px);
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+}
+.voice-overlay-inner {
+    background: var(--panel-solid);
+    border: 1px solid rgba(125, 211, 208, 0.35);
+    border-radius: 1rem;
+    padding: 1.5rem 1.75rem;
+    text-align: center;
+    max-width: 340px;
+    width: 100%;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6),
+                0 0 40px rgba(79,140,255,0.15);
+}
+.voice-dot {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: #ef4444;
+    margin: 0 auto 0.75rem;
+    animation: voice-pulse 1s ease-in-out infinite;
+}
+@keyframes voice-pulse {
+    0%   { transform: scale(1);   opacity: 0.7; }
+    50%  { transform: scale(1.3); opacity: 1;   }
+    100% { transform: scale(1);   opacity: 0.7; }
+}
+.voice-time {
+    font-family: var(--font-mono);
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--aqua-bright);
+    margin-bottom: 0.35rem;
+}
+.voice-hint {
+    font-size: 0.78rem;
+    opacity: 0.6;
+    margin-bottom: 1.25rem;
+}
+.voice-actions { display: flex; gap: 0.5rem; }
+
+/* ============================================================
+   TOAST NOTIFICATIONS
+   ============================================================ */
+
+.toast-tray {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    max-width: 340px;
+    pointer-events: none;
+}
+.toast {
+    pointer-events: auto;
+    display: grid;
+    grid-template-columns: 38px 1fr auto;
+    align-items: center;
+    gap: 0.7rem;
+    background: var(--panel-solid);
+    border: 1px solid rgba(125, 211, 208, 0.32);
+    border-radius: 0.75rem;
+    padding: 0.7rem 0.85rem;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.5),
+                0 0 30px rgba(79,140,255,0.14);
+    animation: toast-in 0.2s ease;
+    cursor: pointer;
+}
+.toast:hover {
+    border-color: rgba(125, 211, 208, 0.55);
+}
+@keyframes toast-in {
+    from { opacity: 0; transform: translateX(20px); }
+    to   { opacity: 1; transform: none; }
+}
+.toast-icon {
+    width: 38px; height: 38px;
+    display: grid; place-items: center;
+    background: linear-gradient(275deg,
+        rgba(124, 30, 63, 0.28) 0%,
+        rgba(125, 211, 208, 0.22) 100%);
+    border-radius: 0.6rem;
+    color: var(--aqua-bright);
+    font-size: 1rem;
+}
+.toast-title {
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 0.1rem;
+}
+.toast-text {
+    font-size: 0.78rem;
+    opacity: 0.7;
+    word-break: break-word;
+}
+.toast-close {
+    background: transparent;
+    border: none;
+    color: var(--text-faint);
+    cursor: pointer;
+    font-size: 0.8rem;
+    padding: 0.3rem;
+}
+.toast-close:hover { color: var(--text); }
+
+/* Author label inside a room message */
+.msg-author {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    opacity: 0.68;
+    margin-bottom: 0.25rem;
+    color: var(--aqua-bright);
+}
+
+/* ============================================================
+   MESSAGE HEADS + THREADS
+   ============================================================ */
+
+.msg-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.35rem;
+}
+.msg-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    overflow: hidden;
+    flex: 0 0 auto;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(125, 211, 208, 0.28);
+}
+.msg-avatar img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    display: block;
+}
+.msg-avatar-fallback {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--aqua-bright);
+    background: linear-gradient(275deg,
+        rgba(124, 30, 63, 0.35) 0%,
+        rgba(125, 211, 208, 0.28) 100%);
+}
+.ai-avatar {
+    background: linear-gradient(275deg,
+        rgba(79, 140, 255, 0.30) 0%,
+        rgba(125, 211, 208, 0.24) 100%);
+    color: var(--aqua-bright);
+    font-size: 0.85rem;
+}
+.ai-author { color: var(--aqua-bright); }
+
+.message.other {
+    align-self: flex-start;
+    background: var(--charcoal);
+    border: 1px solid var(--border);
+    border-left: 2px solid var(--neon-blue);
+}
+
+.thread-ref {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.5rem;
+    margin-bottom: 0.5rem;
+    background: rgba(125, 211, 208, 0.06);
+    border-left: 2px solid var(--aqua);
+    border-radius: 0.4rem;
+    font-size: 0.72rem;
+    opacity: 0.85;
+}
+.thread-ref i { color: var(--aqua-bright); font-size: 0.68rem; }
+.thread-preview {
+    display: block;
+    opacity: 0.55;
+    font-style: italic;
+    font-size: 0.7rem;
+    margin-top: 0.1rem;
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Profile avatar image variant */
+.profile-avatar.profile-avatar-img {
+    overflow: hidden;
+    background: linear-gradient(275deg,
+        rgba(124, 30, 63, 0.30) 0%,
+        rgba(125, 211, 208, 0.24) 100%);
+    border: 1px solid rgba(125, 211, 208, 0.35);
+    padding: 0;
+}
+.profile-avatar.profile-avatar-img img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+/* Search panel */
+.search-row {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+.search-row input {
+    flex: 1;
+    padding: 0.75rem 0.95rem;
+    background: rgba(0,0,0,0.3);
+    border: 1px solid var(--border);
+    border-radius: 0.6rem;
+    color: var(--text);
+    font-family: var(--font-sans);
+    outline: none;
+}
+.search-row input:focus {
+    border-color: var(--neon-blue);
+    box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.16);
+}
+.search-row select {
+    padding: 0.6rem 0.75rem;
+    background: rgba(0,0,0,0.3);
+    border: 1px solid var(--border);
+    border-radius: 0.6rem;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    outline: none;
+}
+.search-results {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+.search-item {
+    padding: 0.75rem 0.9rem;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border);
+    border-radius: 0.6rem;
+    margin-bottom: 0.5rem;
+    cursor: pointer;
+    transition: all 0.14s ease;
+}
+.search-item:hover {
+    background: linear-gradient(275deg,
+        rgba(124, 30, 63, 0.18) 0%,
+        rgba(79, 140, 255, 0.14) 100%);
+    border-color: rgba(125, 211, 208, 0.34);
+}
+.search-item-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.3rem;
+}
+.search-badge {
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.06);
+    color: var(--aqua-bright);
+}
+.search-badge-grid      { background: rgba(79, 140, 255, 0.20); }
+.search-badge-message   { background: rgba(124, 30, 63, 0.30); }
+.search-badge-artifact  { background: rgba(125, 211, 208, 0.20); }
+.search-title {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: 0.85rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.search-snippet {
+    font-size: 0.78rem;
+    opacity: 0.68;
+    line-height: 1.45;
+    word-break: break-word;
+}

@@ -2204,3 +2204,25 @@ body.modal-open .sidebar-backdrop {
 @media (hover: none) {
     .msg-reply-btn { opacity: 0.5; }
 }
+
+/* Threaded AI reply: visually nest under the invoker's message */
+.message.threaded-reply {
+    margin-left: 2.2rem;
+    border-left: 2px solid var(--aqua);
+    padding-left: 0.85rem;
+    background: linear-gradient(90deg,
+        rgba(125, 211, 208, 0.05) 0%,
+        rgba(255,255,255,0.03) 100%);
+}
+.message.threaded-reply::before {
+    content: "";
+    position: absolute;
+    left: -2px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: linear-gradient(180deg,
+        var(--aqua) 0%,
+        rgba(125, 211, 208, 0.15) 100%);
+    border-radius: 2px;
+}

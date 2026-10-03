@@ -3546,3 +3546,77 @@ openRoom = async function(id) {
     setReplyTo(null);
     return _origOpenRoomReset(id);
 };
+
+
+// ============================================================================
+// AI-INDENT — visual swipe-reply for threaded AI responses
+// ============================================================================
+
+// Extend renderMessageItem so an AI message with replies_to gets a class
+// that indents it under the referenced message.
+const _origRenderMessageItemIndent = renderMessageItem;
+renderMessageItem = function(m, opts = {}) {
+    // call the base renderer
+    _origRenderMessageItemIndent(m, opts);
+    // find the bubble just rendered
+    const chatBox = document.getElementById('chatBox');
+    const el = chatBox && chatBox.lastElementChild;
+    if (!el || !el.classList.contains('message')) return;
+    if (m && m.replies_to && m.role === 'ai') {
+        el.classList.add('threaded-reply');
+        el.dataset.repliesTo = m.replies_to;
+        // make sure the thread-ref shows the invoker's name when we have it
+        const ref = el.querySelector('.thread-ref');
+        if (ref) {
+            const nameSpan = ref.querySelector('strong');
+            if (nameSpan && m.replies_to_author) {
+                nameSpan.textContent = m.replies_to_author;
+            }
+        }
+    }
+};
+
+// WS handler: propagate replies_to_author / preview from the payload
+const _origOpenRoomSocketIndent = openRoomSocket;
+openRoomSocket = function(roomId) {
+    _origOpenRoomSocketIndent(roomId);
+    if (!_roomSocket) return;
+    _roomSocket.addEventListener('message', (ev) => {
+        let payload;
+        try { payload = JSON.parse(ev.data); } catch (_) { return; }
+        if (payload.room_id !== currentRoomId) return;
+        if (payload.type === 'ai_message' && payload.message) {
+            const m = payload.message;
+            const id = m.id;
+            if (id && _renderedIds.has(id)) return;
+            if (id) _renderedIds.add(id);
+            const frames = payload.frames || [];
+            const wrapped = {
+                id,
+                role: 'ai',
+                content: m.content,
+                full_name: 'Accodite',
+                replies_to: m.replies_to,
+                replies_to_author: m.replies_to_author,
+                replies_to_preview: m.replies_to_preview,
+            };
+            if (frames.length) {
+                // use frame rendering path then attach thread info
+                appendFrameMessage('ai', frames, []);
+                const chatBox = document.getElementById('chatBox');
+                const el = chatBox && chatBox.lastElementChild;
+                if (el && el.classList.contains('message') && wrapped.replies_to) {
+                    el.classList.add('threaded-reply');
+                    const ref = document.createElement('div');
+                    ref.className = 'thread-ref';
+                    ref.innerHTML = `<i class="fa-solid fa-arrow-turn-up"></i>
+                        <span>replying to <strong>${escapeHtml(wrapped.replies_to_author || 'message')}</strong>
+                        <span class="thread-preview">${escapeHtml((wrapped.replies_to_preview || '').slice(0,80))}</span></span>`;
+                    el.insertBefore(ref, el.firstChild);
+                }
+            } else if (m.content) {
+                renderMessageItem(wrapped, { mine: false });
+            }
+        }
+    });
+};

@@ -602,6 +602,25 @@ async def send_message_to_room(
                     return generate_from_prompt(prompt, 128, 0.7)
                 except Exception:
                     return prompt
+            # PSTM-AUTO-SWIPE: read the invoker's private working memory so
+            # the AI takes context from *their* PSTM, not the room's shared pool
+            _pstm_context = None
+            try:
+                from integration import get_state
+                _pstm = get_state().get("pstm")
+                _actor = user.phone or str(user.id)
+                if _pstm is not None:
+                    _state = _pstm.as_dict(str(ws_row.id), _actor) or {}
+                    _pstm_context = {
+                        "draft":        _state.get("draft") or "",
+                        "scratchpad":   _state.get("scratchpad") or "",
+                        "suggestions":  (_state.get("suggestions") or [])[-5:],
+                        "extras":       _state.get("extras") or {},
+                        "actor":        _actor,
+                    }
+            except Exception as e:
+                print(f"[rooms] pstm read failed: {type(e).__name__}: {e}")
+
             out = handle_generate(
                 workspace_id=str(ws_row.id),
                 user_id=user.phone or str(user.id),
@@ -609,6 +628,8 @@ async def send_message_to_room(
                 member_count=1 if is_personal else 2,
                 generate_fn=_gen,
                 brain_uid=getattr(ws_row, "brain_uid", None),
+                ref_message_id=str(msg.id),     # PSTM-AUTO-SWIPE: always thread
+                pstm_context=_pstm_context,
             )
             frames = out.get("frames") or []
             ai_text = out.get("raw") or ""
@@ -638,13 +659,16 @@ async def send_message_to_room(
         ai_payload = {
             "type": "ai_message",
             "room_id": str(ws_row.id),
-            "invoked_by": str(user.id),          # STRICT-GATE: skip dup on invoker
+            "invoked_by": str(user.id),
             "message": {
                 "id": ai_msg_id,
                 "user_id": str(user.id),
+                "full_name": "Accodite",
                 "role": "ai",
                 "content": ai_text,
-                "replies_to": str(msg.id),        # STRICT-GATE: thread to trigger
+                "replies_to": str(msg.id),
+                "replies_to_author": user.full_name or user.phone,
+                "replies_to_preview": (content or "")[:100],
                 "created_at": None,
             },
             "frames": frames,

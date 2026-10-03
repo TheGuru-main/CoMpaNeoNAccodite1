@@ -368,6 +368,7 @@ def handle_generate(
     mode: Optional[str] = None,
     mode_policy: Optional[dict] = None,
     brain_uid: Optional[str] = None,   # BRAIN-PIPE
+    pstm_context: Optional[dict] = None,   # PSTM-CONTEXT
 ):
     """
     Full pipeline for a generate request.
@@ -472,6 +473,7 @@ def handle_generate(
         "summary": summary,
         "raw": ai_text,
         "brain_uid": brain_uid,
+        "pstm_used": bool(pstm_context),
     }
 
 

@@ -3373,3 +3373,176 @@ document.addEventListener('keydown', (e) => {
         try { closeSidebar(); } catch (_) {}
     }
 });
+
+
+// ============================================================================
+// REPLY STATE + DEDUP + STRICT AI ECHO SKIP
+// ============================================================================
+
+let _replyTo = null;                 // { id, author, preview }
+const _renderedIds = new Set();      // message ids already shown
+
+function setReplyTo(ref) {
+    // ref = { id, author, preview } or null
+    _replyTo = ref;
+    const bar = document.getElementById('replyBar');
+    if (!bar) {
+        const el = document.createElement('div');
+        el.id = 'replyBar';
+        el.className = 'reply-bar';
+        el.style.display = 'none';
+        el.innerHTML = `
+            <div class="reply-bar-inner">
+                <i class="fa-solid fa-reply"></i>
+                <div class="reply-bar-text">
+                    <div class="reply-bar-who"></div>
+                    <div class="reply-bar-preview"></div>
+                </div>
+                <button class="reply-bar-cancel" title="Cancel reply"><i class="fa-solid fa-xmark"></i></button>
+            </div>`;
+        const footer = document.getElementById('inputArea');
+        if (footer && footer.parentNode) {
+            footer.parentNode.insertBefore(el, footer);
+        } else {
+            document.body.appendChild(el);
+        }
+        el.querySelector('.reply-bar-cancel').addEventListener('click', () => setReplyTo(null));
+    }
+    if (_replyTo) {
+        bar.querySelector('.reply-bar-who').textContent = 'Replying to ' + (_replyTo.author || 'message');
+        bar.querySelector('.reply-bar-preview').textContent = (_replyTo.preview || '').slice(0, 80);
+        bar.style.display = '';
+    } else {
+        bar.style.display = 'none';
+    }
+}
+
+// Attach a reply chip to every rendered message
+function _attachReplyAffordance(el, m) {
+    if (!el || !m || !m.id) return;
+    el.dataset.messageId = m.id;
+    el.style.cursor = 'pointer';
+    el.addEventListener('dblclick', (ev) => {
+        ev.preventDefault();
+        setReplyTo({
+            id: m.id,
+            author: m.full_name || m.phone || (m.role === 'ai' ? 'Accodite' : 'user'),
+            preview: (m.content || '').slice(0, 100),
+        });
+    });
+    // mobile: tap the small reply icon that appears on hover/focus
+    if (!el.querySelector('.msg-reply-btn')) {
+        const btn = document.createElement('button');
+        btn.className = 'msg-reply-btn';
+        btn.title = 'Reply';
+        btn.innerHTML = '<i class="fa-solid fa-reply"></i>';
+        btn.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            setReplyTo({
+                id: m.id,
+                author: m.full_name || m.phone || (m.role === 'ai' ? 'Accodite' : 'user'),
+                preview: (m.content || '').slice(0, 100),
+            });
+        });
+        el.appendChild(btn);
+    }
+}
+
+// Wrap renderMessageItem to dedup + attach reply chip
+const _origRenderMessageItemReply = renderMessageItem;
+renderMessageItem = function(m, opts = {}) {
+    if (m && m.id) {
+        if (_renderedIds.has(m.id)) return;
+        _renderedIds.add(m.id);
+    }
+    _origRenderMessageItemReply(m, opts);
+    // attach reply affordance to the last message bubble
+    const chatBox = document.getElementById('chatBox');
+    const last = chatBox && chatBox.lastElementChild;
+    if (last && last.classList.contains('message')) {
+        _attachReplyAffordance(last, m);
+    }
+};
+
+// Wrap appendMessage/appendFrameMessage similarly so AI responses also get reply chips
+const _origAppendMessageReply = appendMessage;
+appendMessage = function(role, text, followUps = [], attachment = null) {
+    return _origAppendMessageReply(role, text, followUps, attachment);
+};
+
+// Update sendMessage to include ref_message_id + clear reply bar
+const _origSendMessageReply = sendMessage;
+sendMessage = async function(text, isFirst = false) {
+    const body = { content: text };
+    if (_replyTo && _replyTo.id) body.ref_message_id = _replyTo.id;
+    if (!currentRoomId) { return _origSendMessageReply(text, isFirst); }
+    if (!text.trim() && !_replyTo) return;
+
+    // optimistic user bubble
+    const optimistic = {
+        id: 'local-' + Date.now(),
+        role: 'user',
+        content: text,
+        full_name: (currentUser && currentUser.full_name) || '',
+        avatar_url: (currentUser && currentUser.avatar_url) || null,
+        replies_to: _replyTo ? _replyTo.id : null,
+        replies_to_author: _replyTo ? _replyTo.author : null,
+        replies_to_preview: _replyTo ? _replyTo.preview : null,
+    };
+    _renderedIds.add(optimistic.id);
+    renderMessageItem(optimistic, { mine: true });
+
+    // clear reply state
+    setReplyTo(null);
+
+    try {
+        const data = await api(`/rooms/${currentRoomId}/messages`, 'POST', body);
+        // bind the real id to the optimistic bubble so WS duplicates are skipped
+        if (data && data.id) {
+            _renderedIds.add(data.id);
+            const el = document.querySelector(`.message[data-message-id="${optimistic.id}"]`);
+            if (el) el.dataset.messageId = data.id;
+        }
+        if (data && data.frames && data.frames.length > 0) {
+            appendFrameMessage('ai', data.frames, []);
+        }
+    } catch (e) {
+        appendMessage('ai', `Send failed: ${e.message}`);
+    }
+};
+
+// WS handler: skip AI message on invoker + dedup
+const _origOpenRoomSocketReply = openRoomSocket;
+openRoomSocket = function(roomId) {
+    _origOpenRoomSocketReply(roomId);
+    if (!_roomSocket) return;
+    _roomSocket.addEventListener('message', (ev) => {
+        let payload;
+        try { payload = JSON.parse(ev.data); } catch (_) { return; }
+        if (payload.room_id !== currentRoomId) return;
+
+        if (payload.type === 'ai_message') {
+            // STRICT-GATE: skip the echo for the member who triggered it
+            if (payload.invoked_by && currentUser && payload.invoked_by === currentUser.id) {
+                return;
+            }
+            const id = payload.message && payload.message.id;
+            if (id && _renderedIds.has(id)) return;
+            if (id) _renderedIds.add(id);
+            const frames = payload.frames || [];
+            if (frames.length) {
+                appendFrameMessage('ai', frames, []);
+            } else if (payload.message && payload.message.content) {
+                appendMessage('ai', payload.message.content);
+            }
+        }
+    });
+};
+
+// reset dedup on room switch
+const _origOpenRoomReset = openRoom;
+openRoom = async function(id) {
+    _renderedIds.clear();
+    setReplyTo(null);
+    return _origOpenRoomReset(id);
+};

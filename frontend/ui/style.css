@@ -2138,3 +2138,69 @@ body.modal-open .sidebar-backdrop {
     opacity: 0;
     pointer-events: none;
 }
+
+/* Reply bar above the input */
+.reply-bar {
+    padding: 0.5rem 1rem;
+    background: rgba(79, 140, 255, 0.06);
+    border-top: 1px solid rgba(125, 211, 208, 0.24);
+    border-bottom: 1px solid rgba(125, 211, 208, 0.24);
+}
+.reply-bar-inner {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.reply-bar-inner > i {
+    color: var(--aqua-bright);
+    font-size: 0.9rem;
+}
+.reply-bar-text { flex: 1; min-width: 0; }
+.reply-bar-who {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--aqua-bright);
+    font-weight: 600;
+}
+.reply-bar-preview {
+    font-size: 0.75rem;
+    opacity: 0.65;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.reply-bar-cancel {
+    background: transparent;
+    border: none;
+    color: var(--text-faint);
+    cursor: pointer;
+    padding: 0.3rem;
+    font-size: 0.85rem;
+}
+.reply-bar-cancel:hover { color: var(--text); }
+
+/* Reply affordance on each message */
+.message { position: relative; }
+.msg-reply-btn {
+    position: absolute;
+    top: 0.4rem;
+    right: 0.4rem;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--border);
+    border-radius: 0.4rem;
+    color: var(--text-faint);
+    width: 24px;
+    height: 24px;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    font-size: 0.65rem;
+    opacity: 0;
+    transition: opacity 0.14s ease, color 0.14s ease;
+}
+.message:hover .msg-reply-btn { opacity: 1; }
+.msg-reply-btn:hover { color: var(--aqua-bright); border-color: rgba(125, 211, 208, 0.4); }
+/* On touch devices, always visible */
+@media (hover: none) {
+    .msg-reply-btn { opacity: 0.5; }
+}

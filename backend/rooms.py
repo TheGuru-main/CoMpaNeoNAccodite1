@@ -91,8 +91,9 @@ class RenameRoomReq(BaseModel):
 
 
 class SendMessageReq(BaseModel):
-    content: str = Field("", max_length=20000)         # ATTACH: may be empty
+    content: str = Field("", max_length=20000)
     attachment_id: Optional[str] = None
+    ref_message_id: Optional[str] = None               # STRICT-GATE: reply / highlight
 
 
 class InviteMemberReq(BaseModel):
@@ -514,12 +515,20 @@ async def send_message_to_room(
                 _att_uuid = _uuid_att.UUID(req.attachment_id)
             except Exception:
                 _att_uuid = None
+        import uuid as _uuid_ref
+        _ref_uuid = None
+        if req.ref_message_id:
+            try:
+                _ref_uuid = _uuid_ref.UUID(req.ref_message_id)
+            except Exception:
+                _ref_uuid = None
         msg = Message(
             workspace_id=ws_row.id,
             user_id=user.id,
             role="user",
             content=content or "[attachment]",
             attachment_id=_att_uuid,
+            replies_to=_ref_uuid,
         )
         db.add(msg)
         db.commit()
@@ -548,18 +557,25 @@ async def send_message_to_room(
             try: await _ROOM_HUB.broadcast(str(ws_row.id), user_payload)
             except Exception as e: print(f"[rooms] broadcast user failed: {e}")
 
-        # 3) EXPLICIT-AI-GATE: decide whether the AI runs
-        is_personal = ws_row.workspace_type == "personal_brainstorm"
-        should_invoke = is_personal
-        if not is_personal:
+        # 3) STRICT-GATE: only personal rooms with ONE member auto-fire.
+        #    A personal_brainstorm shared with others becomes a group and
+        #    must wait for @AI / highlight / reply.
+        real_count = _member_count(db, ws_row)
+        is_private_brainstorm = (
+            ws_row.workspace_type == "personal_brainstorm" and real_count <= 1
+        )
+        should_invoke = is_private_brainstorm
+        if not should_invoke:
             try:
                 from agent.trigger import ModeAwareTriggerParser
                 parser = ModeAwareTriggerParser()
                 trig = parser.parse(
-                    member_count=2,                       # force GROUP mode
+                    member_count=max(real_count, 2),
                     actor_id=user.phone or str(user.id),
                     workspace_id=str(ws_row.id),
                     text=content,
+                    ref_message_id=req.ref_message_id,
+                    ref_is_ai=False,     # client sets this for AI msgs, defaults to False
                 )
                 should_invoke = trig is not None
             except Exception as e:
@@ -622,11 +638,13 @@ async def send_message_to_room(
         ai_payload = {
             "type": "ai_message",
             "room_id": str(ws_row.id),
+            "invoked_by": str(user.id),          # STRICT-GATE: skip dup on invoker
             "message": {
                 "id": ai_msg_id,
                 "user_id": str(user.id),
                 "role": "ai",
                 "content": ai_text,
+                "replies_to": str(msg.id),        # STRICT-GATE: thread to trigger
                 "created_at": None,
             },
             "frames": frames,

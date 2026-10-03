@@ -1363,13 +1363,25 @@ async function openProfile() {
     body.innerHTML = '<p style="opacity:.6;">Loading…</p>';
     try {
         const p = await api('/auth/profile');
-        const orgs = (p.orgs || []).map(o => `
-            <div class="profile-org">
-                <div class="profile-org-name">${escapeHtml(o.org_name || '')}</div>
-                <div class="profile-org-meta">${escapeHtml(o.role || '')}${o.department ? ' · ' + escapeHtml(o.department) : ''}${o.title ? ' · ' + escapeHtml(o.title) : ''}</div>
-                <div class="profile-org-meta" style="opacity:.55;">${o.credential_active ? 'active' : 'pending'}</div>
-            </div>
-        `).join('') || '<p style="opacity:.5; font-size:0.8rem;">No organization memberships</p>';
+        // PROFILE-ORG-BRAIN
+        const orgs = (p.orgs || []).map(o => {
+            const status = o.brain_status || (o.ai_uid ? 'active' : 'pending');
+            const brainLine = status === 'active'
+                ? `<div class="profile-org-meta" style="opacity:.6; word-break:break-all;">
+                       <span class="k" style="font-size:0.68rem; text-transform:uppercase; letter-spacing:0.05em; opacity:.6;">org brain</span>
+                       <div style="font-family:var(--font-mono); font-size:0.78rem; margin-top:0.15rem;">${escapeHtml(o.ai_uid || '—')}</div>
+                   </div>`
+                : `<div class="profile-org-meta" style="opacity:.55; font-style:italic;">
+                       org brain: not yet generated — create it in the dashboard
+                   </div>`;
+            return `
+                <div class="profile-org">
+                    <div class="profile-org-name">${escapeHtml(o.org_name || '')}</div>
+                    <div class="profile-org-meta">${escapeHtml(o.role || '')}${o.department ? ' · ' + escapeHtml(o.department) : ''}${o.title ? ' · ' + escapeHtml(o.title) : ''}</div>
+                    <div class="profile-org-meta" style="opacity:.55;">${o.credential_active ? 'member active' : 'membership pending'}</div>
+                    ${brainLine}
+                </div>`;
+        }).join('') || '<p style="opacity:.5; font-size:0.8rem;">No organization memberships</p>';
 
         body.innerHTML = `
             <div class="profile-header">

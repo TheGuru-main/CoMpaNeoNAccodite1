@@ -684,14 +684,21 @@ async def profile(user: User = Depends(get_current_user)):
             OrganizationMembership.user_id == user.id
         ).all()
         orgs = []
+        # ORG-BRAIN-IN-PROFILE
         for m in memberships:
             org = db.query(Organization).filter(
                 Organization.id == m.organization_id
             ).first()
+            _org_cred = getattr(org, "worker_credential", None) if org else None
+            _org_uid = getattr(org, "ai_uid", None) if org else None
+            _pending = (not _org_cred) or (
+                isinstance(_org_uid, str) and _org_uid.startswith("org-pending-")
+            )
             orgs.append({
                 "org_id": str(m.organization_id),
                 "org_name": org.name if org else None,
-                "ai_uid": org.ai_uid if org else None,
+                "ai_uid": _org_uid,
+                "brain_status": "pending" if _pending else "active",
                 "role": m.role,
                 "department": getattr(m, "department", None),
                 "title": getattr(m, "title", None),

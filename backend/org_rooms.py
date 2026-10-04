@@ -172,3 +172,76 @@ async def list_org_rooms(
         return [_serialize(db, w, org) for w in q.all()]
     finally:
         db.close()
+
+
+# ============================================================================
+# PATCH-ORG-ROOM / DELETE-ORG-ROOM
+# ============================================================================
+
+class RenameOrgRoomReq(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+
+
+@router.patch("/{org_id}/rooms/{room_id}")
+async def rename_org_room(
+    org_id: str,
+    room_id: str,
+    req: RenameOrgRoomReq,
+    user: User = Depends(get_current_user),
+):
+    """Rename an org room. Requires admin / dept_head / manager in the org."""
+    db = SessionLocal()
+    try:
+        m = _membership(db, user.id, org_id)
+        if m is None:
+            raise HTTPException(403, "not a member of this organization")
+        if m.role not in {ROLE_CEO, ROLE_C_SUITE, ROLE_HR, ROLE_DEPT_HEAD, ROLE_MANAGER}:
+            raise HTTPException(403, f"role '{m.role}' cannot rename rooms")
+
+        ws = db.query(Workspace).filter(
+            Workspace.id == room_id,
+            Workspace.organization_id == org_id,
+        ).first()
+        if ws is None:
+            raise HTTPException(404, "room not found")
+
+        ws.project_name = req.name.strip()
+        from datetime import datetime as _dt
+        ws.updated_at = _dt.utcnow()
+        db.commit()
+        return {"ok": True, "id": str(ws.id), "name": ws.project_name}
+    finally:
+        db.close()
+
+
+@router.delete("/{org_id}/rooms/{room_id}")
+async def delete_org_room(
+    org_id: str,
+    room_id: str,
+    user: User = Depends(get_current_user),
+):
+    """Delete an org room. CEO / HR only (dept_head can delete in their dept)."""
+    db = SessionLocal()
+    try:
+        m = _membership(db, user.id, org_id)
+        if m is None:
+            raise HTTPException(403, "not a member of this organization")
+        if m.role not in {ROLE_CEO, ROLE_C_SUITE, ROLE_HR, ROLE_DEPT_HEAD}:
+            raise HTTPException(403, f"role '{m.role}' cannot delete rooms")
+
+        ws = db.query(Workspace).filter(
+            Workspace.id == room_id,
+            Workspace.organization_id == org_id,
+        ).first()
+        if ws is None:
+            raise HTTPException(404, "room not found")
+
+        if hasattr(Workspace, "deleted_at"):
+            from datetime import datetime as _dt
+            ws.deleted_at = _dt.utcnow()
+        else:
+            db.delete(ws)
+        db.commit()
+        return {"ok": True, "id": str(room_id)}
+    finally:
+        db.close()

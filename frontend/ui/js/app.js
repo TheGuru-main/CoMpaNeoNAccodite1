@@ -4565,3 +4565,151 @@ document.addEventListener('contextmenu', (e) => {
 });
 
 console.log('[acd] MSG-ACTIONS installed');
+
+
+// ============================================================================
+// SIDEBAR-MENU — triple-dot per workspace with role-gated actions
+// ============================================================================
+
+function _canManageRoom(room) {
+    if (!room) return false;
+    // own brainstorm / own group / created the room
+    if (currentUser && room.user_id && room.user_id === currentUser.id) return true;
+    // org roles
+    const role = (currentUser && currentUser.role) || currentRole || 'member';
+    if (['owner','ceo','c_suite','hr','dept_head','manager'].includes(role)) return true;
+    return false;
+}
+
+function _openRoomSidebarMenu(room, el) {
+    let menu = document.getElementById('roomSidebarMenu');
+    if (!menu) {
+        menu = document.createElement('div');
+        menu.id = 'roomSidebarMenu';
+        menu.className = 'msg-actions-menu';
+        menu.style.display = 'none';
+        document.body.appendChild(menu);
+    }
+
+    const canManage = _canManageRoom(room);
+    const items = [];
+    if (canManage) {
+        items.push({ act: 'rename', icon: 'fa-pen',   label: 'Rename' });
+        items.push({ act: 'delete', icon: 'fa-trash', label: 'Delete', danger: true });
+    }
+    items.push({ act: 'copy',   icon: 'fa-link',  label: 'Copy room name' });
+
+    menu.innerHTML = items.map(it => `
+        <button class="msg-action${it.danger ? ' danger' : ''}" data-act="${it.act}">
+            <i class="fa-solid ${it.icon}"></i> <span>${it.label}</span>
+        </button>
+    `).join('');
+
+    const rect = el.getBoundingClientRect();
+    menu.style.left = Math.min(window.innerWidth - 200, Math.max(8, rect.left - 140)) + 'px';
+    menu.style.top  = Math.min(window.innerHeight - 200, rect.top + 8) + 'px';
+    menu.style.display = 'flex';
+
+    const close = () => { menu.style.display = 'none'; };
+    setTimeout(() => document.addEventListener('click', close, { once: true }), 30);
+
+    menu.querySelectorAll('[data-act]').forEach(btn => {
+        btn.addEventListener('click', async (ev) => {
+            ev.stopPropagation();
+            close();
+            const act = btn.dataset.act;
+
+            if (act === 'copy') {
+                try { await navigator.clipboard.writeText(room.project_name || ''); } catch (_) {}
+                return;
+            }
+
+            if (act === 'rename') {
+                const next = prompt('Rename workspace:', room.project_name || '');
+                if (next === null || next === room.project_name) return;
+                const trimmed = next.trim();
+                if (!trimmed) return;
+                try {
+                    const orgTypes = new Set(['department','team','meeting','organization']);
+                    if (orgTypes.has(room.workspace_type) && room.organization_id) {
+                        await api(`/orgs/${room.organization_id}/rooms/${room.id}`, 'PATCH', { name: trimmed });
+                    } else {
+                        await api(`/rooms/${room.id}`, 'PATCH', { project_name: trimmed });
+                    }
+                    await loadRooms();
+                    showToast(`Renamed to "${trimmed}"`);
+                } catch (e) { alert('Rename failed: ' + e.message); }
+                return;
+            }
+
+            if (act === 'delete') {
+                if (!confirm(`Delete workspace "${room.project_name}"?`)) return;
+                try {
+                    const orgTypes = new Set(['department','team','meeting','organization']);
+                    if (orgTypes.has(room.workspace_type) && room.organization_id) {
+                        await api(`/orgs/${room.organization_id}/rooms/${room.id}`, 'DELETE');
+                    } else {
+                        await api(`/rooms/${room.id}`, 'DELETE');
+                    }
+                    if (currentRoomId === room.id) {
+                        currentRoomId = null;
+                        showHomeState();
+                    }
+                    await loadRooms();
+                    showToast(`Deleted "${room.project_name}"`);
+                } catch (e) { alert('Delete failed: ' + e.message); }
+            }
+        });
+    });
+}
+
+function showToast(msg) {
+    let tray = document.getElementById('toastTray');
+    if (!tray) {
+        tray = document.createElement('div');
+        tray.id = 'toastTray';
+        tray.className = 'toast-tray';
+        document.body.appendChild(tray);
+    }
+    const el = document.createElement('div');
+    el.className = 'toast';
+    el.innerHTML = `<div class="toast-icon"><i class="fa-solid fa-check"></i></div>
+        <div class="toast-body"><div class="toast-title">${escapeHtml(msg)}</div></div>`;
+    tray.appendChild(el);
+    setTimeout(() => el.remove(), 2500);
+}
+
+// Inject triple-dot buttons into every sidebar room item
+function _injectSidebarTripleDots() {
+    const bar = document.getElementById('roomList');
+    if (!bar) return;
+    bar.querySelectorAll('.side-item').forEach(item => {
+        if (item.querySelector('.side-kebab')) return;
+        const roomId = item.dataset.room;
+        const room = (typeof roomList !== 'undefined') ? roomList.find(r => r.id === roomId) : null;
+        if (!room) return;
+
+        const kebab = document.createElement('button');
+        kebab.className = 'side-kebab';
+        kebab.title = 'Workspace options';
+        kebab.innerHTML = '<i class="fa-solid fa-ellipsis-vertical"></i>';
+        kebab.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            _openRoomSidebarMenu(room, kebab);
+        });
+        item.appendChild(kebab);
+    });
+}
+
+// Wrap renderRoomBar to inject after every render
+const _origRenderRoomBarMenu = renderRoomBar;
+renderRoomBar = function() {
+    const r = _origRenderRoomBarMenu();
+    setTimeout(_injectSidebarTripleDots, 0);
+    return r;
+};
+
+setTimeout(_injectSidebarTripleDots, 300);
+setTimeout(_injectSidebarTripleDots, 900);
+
+console.log('[acd] SIDEBAR-MENU installed');

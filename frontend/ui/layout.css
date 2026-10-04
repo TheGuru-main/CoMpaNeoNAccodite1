@@ -1092,3 +1092,42 @@ body.light-mode .msg-actions-menu {
     background: #ffffff;
     box-shadow: 0 12px 32px rgba(24, 20, 32, 0.15);
 }
+
+/* ============================================================================
+   SIDEBAR KEBAB — triple-dot on every workspace row
+   ============================================================================ */
+
+.side-item {
+    position: relative;
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.5rem;
+}
+.side-item .side-item-name { flex: 1 1 auto; }
+
+.side-kebab {
+    flex: 0 0 auto;
+    background: transparent;
+    border: none;
+    color: var(--text-faint);
+    padding: 0.2rem 0.3rem;
+    border-radius: 0.35rem;
+    cursor: pointer;
+    font-size: 0.75rem;
+    opacity: 0;
+    transition: opacity 0.14s ease, background 0.14s ease, color 0.14s ease;
+}
+.side-item:hover .side-kebab { opacity: 0.7; }
+.side-kebab:hover {
+    opacity: 1 !important;
+    color: var(--aqua-bright);
+    background: rgba(125, 211, 208, 0.12);
+}
+/* touch devices: always visible faintly */
+@media (hover: none) {
+    .side-kebab { opacity: 0.4; }
+}
+body.light-mode .side-kebab:hover {
+    background: rgba(44, 92, 197, 0.10);
+    color: var(--neon-blue-bright);
+}

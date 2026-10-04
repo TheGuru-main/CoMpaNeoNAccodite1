@@ -471,9 +471,52 @@ body.light-mode .search-row select {
 .theme-toggle {
     position: relative;
 }
-.theme-toggle .fa-sun,
 .theme-toggle .fa-moon {
-    transition: transform 0.25s ease;
+    transition: transform 0.25s ease, color 0.25s ease;
 }
-body.light-mode .theme-toggle .fa-sun { display: none; }
-body:not(.light-mode) .theme-toggle .fa-moon { display: none; }
+body.light-mode .theme-toggle .fa-moon {
+    color: #12121a;
+    transform: rotate(180deg);
+}
+body:not(.light-mode) .theme-toggle .fa-moon {
+    color: var(--aqua-bright);
+    transform: rotate(0deg);
+}
+
+/* ============================================================================
+   INPUT-ALWAYS — the input row is visible on main screen in every context
+   ============================================================================ */
+
+/* input row reset — no stray padding, sits directly above nav */
+body.logged-in #mainScreen > .input-area,
+body.logged-in #mainScreen .input-area {
+    padding: 0.75rem 1rem !important;
+    padding-bottom: 0.75rem !important;
+    margin: 0 !important;
+    position: relative !important;
+    bottom: auto !important;
+    flex: 0 0 auto !important;
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    z-index: 20 !important;
+    background: rgba(12, 12, 16, 0.96) !important;
+    border-top: 1px solid var(--border) !important;
+}
+
+body.light-mode.logged-in #mainScreen > .input-area,
+body.light-mode.logged-in #mainScreen .input-area {
+    background: rgba(255, 255, 255, 0.96) !important;
+    border-top-color: rgba(0, 0, 0, 0.10) !important;
+}
+
+/* chat box: full remaining height so it scrolls BEFORE the input */
+body.logged-in #mainScreen > .chat-box,
+body.logged-in #mainScreen .chat-box {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+}

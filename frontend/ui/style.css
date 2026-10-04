@@ -2258,7 +2258,7 @@ body.modal-open .sidebar-backdrop {
         rgba(79, 140, 255, 0.22) 100%);
 }
 /* Push the input bar so it doesn't sit under the fixed nav */
-#mainScreen > .input-area { padding-bottom: 5rem; }
+/* input-area padding reset — nav sits below it */
 /* Make sure auth screen doesn't have the nav floating over it */
 #authScreen.active ~ .bottom-nav-fixed,
 .screen:not(#mainScreen).active ~ .bottom-nav-fixed { display: none !important; }

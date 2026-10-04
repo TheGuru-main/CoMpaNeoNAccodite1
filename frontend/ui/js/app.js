@@ -4003,3 +4003,139 @@ try {
 } catch (_) {}
 
 console.log('[acd] theme toggle installed');
+
+
+// ============================================================================
+// INPUT-HOME-ROOM — input row visible both in rooms and on the home screen
+// ============================================================================
+
+function _forceInputVisibleAnywhere() {
+    // # INPUT-HOME-ROOM
+    const ms = document.getElementById('mainScreen');
+    if (!ms || !ms.classList.contains('active')) return;
+
+    const ia = ms.querySelector(':scope > .input-area');
+    if (!ia) return;
+
+    // always show the input row on the main screen
+    ia.style.setProperty('display', 'flex', 'important');
+    ia.style.setProperty('visibility', 'visible', 'important');
+    ia.style.setProperty('opacity', '1', 'important');
+    ia.style.setProperty('flex', '0 0 auto', 'important');
+    ia.style.setProperty('position', 'relative', 'important');
+    ia.style.setProperty('bottom', 'auto', 'important');
+    ia.style.setProperty('width', '100%', 'important');
+    ia.style.setProperty('box-sizing', 'border-box', 'important');
+    ia.style.setProperty('padding', '0.75rem 1rem', 'important');
+    ia.style.setProperty('margin', '0', 'important');
+    ia.style.setProperty('z-index', '20', 'important');
+
+    // adjust placeholder depending on room context
+    const input = ia.querySelector('input#promptInput') || ia.querySelector('input');
+    if (input) {
+        if (!currentRoomId) {
+            input.placeholder = 'Start a brainstorm — type to open a new room';
+        } else {
+            const room = (typeof roomList !== 'undefined')
+                ? roomList.find(r => r.id === currentRoomId) : null;
+            const isPersonal = room && room.workspace_type === 'personal_brainstorm';
+            input.placeholder = isPersonal
+                ? 'Type a message…'
+                : 'Type a message…  (@AI to invoke the agent)';
+        }
+    }
+}
+
+// Run on a schedule and on key events
+setTimeout(_forceInputVisibleAnywhere, 100);
+setTimeout(_forceInputVisibleAnywhere, 600);
+setTimeout(_forceInputVisibleAnywhere, 1500);
+
+const _origShowScreenIA = showScreen;
+showScreen = function(id) {
+    _origShowScreenIA(id);
+    setTimeout(_forceInputVisibleAnywhere, 40);
+    setTimeout(_forceInputVisibleAnywhere, 300);
+};
+
+const _origOpenRoomIA = openRoom;
+openRoom = async function(id) {
+    const r = await _origOpenRoomIA(id);
+    setTimeout(_forceInputVisibleAnywhere, 40);
+    return r;
+};
+
+// Override showHomeState to also re-show the input row
+const _origShowHomeStateIA = showHomeState;
+showHomeState = function() {
+    _origShowHomeStateIA();
+    setTimeout(_forceInputVisibleAnywhere, 40);
+};
+
+// Watch mainScreen for class changes
+try {
+    const ms = document.getElementById('mainScreen');
+    if (ms && typeof MutationObserver !== 'undefined') {
+        new MutationObserver(() => {
+            setTimeout(_forceInputVisibleAnywhere, 20);
+        }).observe(ms, { attributes: true, attributeFilter: ['class', 'style'] });
+    }
+} catch (_) {}
+
+// Typing in the input while on home auto-creates a personal brainstorm
+(function wireHomeInput() {
+    const inp = document.getElementById('promptInput');
+    const btn = document.getElementById('btnSend');
+    if (!inp) return;
+
+    // Intercept Enter when there's no active room
+    inp.addEventListener('keydown', async (e) => {
+        if (e.key !== 'Enter' || e.shiftKey) return;
+        if (currentRoomId) return;         // sendMessage handles it normally
+        if (!inp.value.trim()) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const text = inp.value.trim();
+        inp.value = '';
+        try {
+            const room = await api('/rooms', 'POST', {
+                workspace_type: 'personal_brainstorm',
+                project_name: text.slice(0, 60) || 'Quick brainstorm',
+            });
+            currentRoomId = room.id;
+            await loadRooms();
+            await openRoom(room.id);
+            // send the text into the freshly created room
+            setTimeout(() => sendMessage(text), 100);
+        } catch (err) {
+            alert('Could not start workspace: ' + err.message);
+        }
+    }, true);
+
+    // Same for the send button
+    if (btn) {
+        btn.addEventListener('click', async (e) => {
+            if (currentRoomId) return;     // let normal handler run
+            if (!inp.value.trim()) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const text = inp.value.trim();
+            inp.value = '';
+            try {
+                const room = await api('/rooms', 'POST', {
+                    workspace_type: 'personal_brainstorm',
+                    project_name: text.slice(0, 60) || 'Quick brainstorm',
+                });
+                currentRoomId = room.id;
+                await loadRooms();
+                await openRoom(room.id);
+                setTimeout(() => sendMessage(text), 100);
+            } catch (err) {
+                alert('Could not start workspace: ' + err.message);
+            }
+        }, true);
+    }
+})();
+
+window.forceInputVisibleAnywhere = _forceInputVisibleAnywhere;
+console.log('[acd] input-home-room installed');

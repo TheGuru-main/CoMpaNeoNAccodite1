@@ -331,3 +331,38 @@ body.logged-in #mainScreen .home-welcome-centered {
 
 /* Do NOT hide the nav merely because some script removed .logged-in */
 #authScreen.active ~ .bottom-nav-fixed { display: none !important; }
+
+/* ============================================================================
+   ROUTER-V2 — full-screen panels that never stack
+   ============================================================================ */
+
+/* every panel is a full-screen overlay that scrolls its own content */
+#searchPanel,
+#docsPanel,
+#dmPanel {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: var(--total-nav) !important;
+    z-index: 45 !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    background: rgba(12, 12, 16, 0.98) !important;
+    padding: 1rem !important;
+    box-sizing: border-box !important;
+}
+
+/* inner content wrappers also scroll if they are tall */
+#searchPanel .search-results,
+#docsPanel .docs-results,
+#dmPanel .dm-list,
+#dmPanel .dm-thread {
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    max-height: 100% !important;
+}
+
+/* training modal still uses .modal */
+#trainingModal { z-index: 100 !important; }

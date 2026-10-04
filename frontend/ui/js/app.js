@@ -3836,3 +3836,114 @@ openRoom = async function(id) {
 // expose for debugging
 window.forceLayout = forceLayout;
 console.log('[acd] layout force installed');
+
+
+// ============================================================================
+// ROUTER-V2 — one function, one job per tab. Nothing stacks.
+// ============================================================================
+
+function _hideAllPanelsHard() {
+    // hide every overlay panel and modal except the nav
+    const ids = [
+        'searchPanel', 'docsPanel', 'dmPanel',
+        'trainingModal', 'profileModal', 'newRoomModal', 'inviteModal'
+    ];
+    ids.forEach(id => {
+        const e = document.getElementById(id);
+        if (e) e.style.setProperty('display', 'none', 'important');
+    });
+}
+
+function _showPanelHard(id, displayMode = 'block') {
+    _hideAllPanelsHard();
+    const el = document.getElementById(id);
+    if (el) el.style.setProperty('display', displayMode, 'important');
+}
+
+// --- unique render per tab ---
+
+function acdShowHome() {
+    // hide all overlay panels, then show home state in the chat area
+    _hideAllPanelsHard();
+    if (typeof showHomeState === 'function') showHomeState();
+    // ensure mainScreen's chat box is on top
+    const ms = document.getElementById('mainScreen');
+    if (ms) ms.style.setProperty('display', 'flex', 'important');
+}
+
+function acdShowSearch() {
+    _showPanelHard('searchPanel');
+    // render fresh
+    const inp = document.getElementById('searchInput');
+    if (inp) {
+        setTimeout(() => inp.focus(), 60);
+    }
+    const box = document.getElementById('searchResults');
+    if (box && !box.dataset.rendered) {
+        box.innerHTML = '<p style="opacity:.55; padding:0.75rem;">Type to search across everything in this instance.</p>';
+    }
+}
+
+function acdShowDocs() {
+    _showPanelHard('docsPanel');
+    // if the loader exists, call it after showing so the container is visible
+    if (typeof openDocuments === 'function') {
+        try { openDocuments(); } catch (e) { console.warn('[acd] docs render failed:', e); }
+    } else {
+        const box = document.getElementById('docsResults');
+        if (box) box.innerHTML = '<p style="opacity:.55; padding:0.75rem;">Documents load when the loader is available.</p>';
+    }
+}
+
+function acdShowDM() {
+    _showPanelHard('dmPanel');
+    // reset to list view
+    const list = document.getElementById('dmList');
+    const thread = document.getElementById('dmThread');
+    if (list) list.style.display = '';
+    if (thread) thread.style.display = 'none';
+    if (typeof loadDMConversations === 'function') {
+        try { loadDMConversations(); } catch (e) { console.warn('[acd] dm load failed:', e); }
+    }
+}
+
+function acdShowTrain() {
+    _showPanelHard('trainingModal', 'flex');
+    // the modal content has its own load
+    if (typeof openTrainingModal === 'function') {
+        try { openTrainingModal(); } catch (e) { console.warn('[acd] train load failed:', e); }
+    }
+}
+
+// --- THE nav dispatcher ---
+
+window.acdNav = function(action, el) {
+    console.log('[acdNav] →', action);
+
+    // set active state on the nav
+    document.querySelectorAll('.bottom-nav .nav-link').forEach(l => l.classList.remove('active'));
+    if (el) el.classList.add('active');
+
+    try {
+        switch (action) {
+            case 'home':      acdShowHome();  break;
+            case 'research':  acdShowSearch(); break;
+            case 'workspace': acdShowDocs();  break;
+            case 'messages':  acdShowDM();    break;
+            case 'train':     acdShowTrain(); break;
+            default:          acdShowHome();
+        }
+    } catch (e) {
+        console.warn('[acdNav] dispatch error:', action, e);
+    }
+    return false;
+};
+
+// Reassert after a tick (defends against any async DOM restoration)
+window.acdShowHome = acdShowHome;
+window.acdShowSearch = acdShowSearch;
+window.acdShowDocs = acdShowDocs;
+window.acdShowDM = acdShowDM;
+window.acdShowTrain = acdShowTrain;
+
+console.log('[acd] ROUTER-V2 installed');

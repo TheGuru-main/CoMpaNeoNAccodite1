@@ -1185,6 +1185,8 @@ async function sendMessage(text, isFirst=false) {
             await loadRooms();
             data = await api(`/rooms/${currentRoomId}/messages`, 'POST', { content: text });
         }
+        // AI-DEDUP-V2: mark ai_msg_id rendered so WS echo is skipped
+        if (data && data.ai_msg_id) _renderedIds.add(data.ai_msg_id);
         if (data && data.frames && data.frames.length > 0) {
             appendFrameMessage('ai', data.frames, []);
         } else if (data && data.content) {
@@ -3503,6 +3505,8 @@ sendMessage = async function(text, isFirst = false) {
             const el = document.querySelector(`.message[data-message-id="${optimistic.id}"]`);
             if (el) el.dataset.messageId = data.id;
         }
+        // AI-DEDUP-V2: mark ai_msg_id rendered so WS echo is skipped
+        if (data && data.ai_msg_id) _renderedIds.add(data.ai_msg_id);
         if (data && data.frames && data.frames.length > 0) {
             appendFrameMessage('ai', data.frames, []);
         }

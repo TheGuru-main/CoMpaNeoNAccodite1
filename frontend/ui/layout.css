@@ -367,106 +367,6 @@ body.logged-in #mainScreen .home-welcome-centered {
 /* training modal still uses .modal */
 #trainingModal { z-index: 100 !important; }
 
-/* ============================================================================
-   LIGHT MODE — theme override via body.light-mode
-   Only the base colors change; accents stay recognizable.
-   ============================================================================ */
-
-body.light-mode {
-    --bg: #f4f5f8;
-    --bg-2: #e8eaf0;
-    --panel: rgba(255, 255, 255, 0.85);
-    --panel-solid: #ffffff;
-    --charcoal: #eaecf2;
-    --charcoal-2: #dde0e8;
-
-    --border: rgba(0, 0, 0, 0.10);
-    --border-strong: rgba(0, 0, 0, 0.20);
-
-    --text: #12121a;
-    --text-dim: rgba(18, 18, 26, 0.70);
-    --text-faint: rgba(18, 18, 26, 0.45);
-
-    /* accents stay but darken slightly for contrast on light bg */
-    --neon-blue: #3a6fd8;
-    --neon-blue-bright: #2c5cbf;
-    --neon-blue-glow: rgba(58, 111, 216, 0.30);
-
-    --burgundy: #6b1635;
-    --burgundy-bright: #8a1e42;
-    --burgundy-glow: rgba(138, 30, 66, 0.28);
-
-    --aqua: #3fa5a2;
-    --aqua-bright: #2e8784;
-    --aqua-glow: rgba(63, 165, 162, 0.28);
-}
-
-/* surface backgrounds that were hardcoded dark */
-body.light-mode .top-header,
-body.light-mode .bottom-nav,
-body.light-mode .bottom-nav.bottom-nav-fixed,
-body.light-mode .input-area,
-body.light-mode .header-nav {
-    background: rgba(255, 255, 255, 0.92) !important;
-}
-body.light-mode #bubbleCanvas {
-    background: radial-gradient(ellipse at 50% 0%,
-        rgba(58, 111, 216, 0.10) 0%,
-        #f4f5f8 45%,
-        #e8eaf0 100%) !important;
-}
-body.light-mode .message.ai {
-    background: #ffffff;
-    border: 1px solid var(--border);
-    color: var(--text);
-}
-body.light-mode .message.user {
-    color: #fdf2f6;
-}
-body.light-mode .modal-content,
-body.light-mode .cred-box,
-body.light-mode .auth-container {
-    background: var(--panel-solid);
-    border-color: var(--border);
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.10);
-}
-body.light-mode .search-item,
-body.light-mode .org-row,
-body.light-mode .dm-item,
-body.light-mode .side-item,
-body.light-mode .invite-result,
-body.light-mode .doc-item,
-body.light-mode .reply-card,
-body.light-mode .profile-org {
-    background: #ffffff;
-    border-color: var(--border);
-}
-body.light-mode .frame-error {
-    background: rgba(168, 54, 92, 0.10);
-    color: #6b1635;
-}
-body.light-mode .status-pill {
-    background: rgba(0, 0, 0, 0.04);
-    border-color: var(--border);
-    color: var(--text);
-}
-body.light-mode .code-block {
-    background: #f6f8fa;
-    border-color: #d0d7de;
-    color: #12121a;
-}
-body.light-mode .auth-view input,
-body.light-mode .input-area input,
-body.light-mode .modal input,
-body.light-mode .modal select,
-body.light-mode .modal textarea,
-body.light-mode .search-row input,
-body.light-mode .search-row select {
-    background: #ffffff;
-    border-color: var(--border);
-    color: var(--text);
-}
-
 /* Theme toggle button */
 .theme-toggle {
     position: relative;
@@ -519,4 +419,463 @@ body.logged-in #mainScreen .chat-box {
     min-height: 0 !important;
     overflow-y: auto !important;
     -webkit-overflow-scrolling: touch !important;
+}
+
+/* ============================================================================
+   LIGHT MODE v2 — soft gradient canvas, warm-cool accents, real depth
+   Keeps the burgundy · aqua mist · neon blue identity, adapted for light.
+   ============================================================================ */
+
+body.light-mode {
+    /* --- background: soft linear gradient (warm ivory → cool mist) --- */
+    --bg:          #fbfaf7;
+    --bg-2:        #f1f0ec;
+    --bg-grad-top:    #fdfcf9;
+    --bg-grad-mid:    #f6f4ef;
+    --bg-grad-bottom: #eaeef0;
+
+    /* --- surfaces --- */
+    --panel:        rgba(255, 255, 255, 0.82);
+    --panel-solid:  #ffffff;
+    --charcoal:     #f3f2ee;      /* used as light "message" surface */
+    --charcoal-2:   #e6e5e0;
+
+    --border:        rgba(24, 20, 32, 0.10);
+    --border-strong: rgba(24, 20, 32, 0.22);
+
+    /* --- text: high contrast, warm dark --- */
+    --text:       #1a1722;         /* near-black with warmth */
+    --text-dim:   #4a4555;         /* 2nd tier readable */
+    --text-faint: #8b8694;         /* 3rd tier, still legible */
+
+    /* --- neon blue: deeper for light bg --- */
+    --neon-blue:        #2c5cc5;
+    --neon-blue-bright: #1e48a8;
+    --neon-blue-glow:   rgba(44, 92, 197, 0.22);
+
+    /* --- burgundy: warm, slightly dark for legibility --- */
+    --burgundy:        #8c2340;
+    --burgundy-bright: #a82e52;
+    --burgundy-deep:   #5c1628;
+    --burgundy-glow:   rgba(168, 46, 82, 0.22);
+
+    /* --- aqua mist: fresh, deeper for contrast --- */
+    --aqua:        #2e8f8c;
+    --aqua-bright: #1f6e6b;
+    --aqua-deep:   #145150;
+    --aqua-glow:   rgba(46, 143, 140, 0.22);
+
+    --green: #1f8b4c;
+    --red:   #c0303a;
+}
+
+/* ---------------------------------------------------------------------------
+   GRADIENT CANVAS — replaces the flat bg with a soft three-stop wash
+   --------------------------------------------------------------------------- */
+html body.light-mode,
+html body.light-mode .app {
+    background:
+        linear-gradient(275deg,
+            #fdfcf9 0%,
+            #f5f3ee 35%,
+            #ebeef1 70%,
+            #e6ebee 100%) !important;
+    background-attachment: fixed !important;
+    color: var(--text) !important;
+}
+
+body.light-mode #bubbleCanvas {
+    background:
+        linear-gradient(275deg,
+            rgba(46, 143, 140, 0.06) 0%,
+            rgba(44, 92, 197, 0.05) 45%,
+            rgba(140, 35, 64, 0.04) 100%) !important;
+}
+
+/* ---------------------------------------------------------------------------
+   SURFACES — white with soft depth, not flat
+   --------------------------------------------------------------------------- */
+body.light-mode .top-header,
+body.light-mode .bottom-nav,
+body.light-mode .bottom-nav.bottom-nav-fixed,
+body.light-mode .header-nav {
+    background: rgba(255, 255, 255, 0.88) !important;
+    border-color: var(--border) !important;
+    box-shadow: 0 1px 0 rgba(24, 20, 32, 0.04),
+                0 8px 24px rgba(24, 20, 32, 0.04) !important;
+    backdrop-filter: blur(14px) !important;
+    -webkit-backdrop-filter: blur(14px) !important;
+}
+
+body.light-mode .input-area {
+    background: rgba(255, 255, 255, 0.94) !important;
+    border-top-color: var(--border) !important;
+    box-shadow: 0 -6px 20px rgba(24, 20, 32, 0.05) !important;
+}
+
+body.light-mode .auth-container,
+body.light-mode .modal-content {
+    background: #ffffff !important;
+    border: 1px solid rgba(24, 20, 32, 0.08) !important;
+    box-shadow:
+        0 24px 60px rgba(24, 20, 32, 0.12),
+        0 0 0 1px rgba(255, 255, 255, 0.6) inset,
+        0 0 80px rgba(44, 92, 197, 0.05) !important;
+}
+
+/* ---------------------------------------------------------------------------
+   MESSAGE BUBBLES — distinct user vs ai, readable, with real depth
+   --------------------------------------------------------------------------- */
+body.light-mode .message.ai {
+    background: #ffffff !important;
+    color: var(--text) !important;
+    border: 1px solid rgba(24, 20, 32, 0.08) !important;
+    border-left: 2px solid var(--aqua) !important;
+    box-shadow: 0 2px 8px rgba(24, 20, 32, 0.05) !important;
+}
+body.light-mode .message.ai .frame-prose {
+    color: var(--text) !important;
+}
+body.light-mode .message.user {
+    background: linear-gradient(275deg,
+        #8c2340 0%,
+        #a82e52 100%) !important;
+    color: #fff7fa !important;
+    border: 1px solid rgba(92, 22, 40, 0.35) !important;
+    box-shadow: 0 4px 16px rgba(140, 35, 64, 0.22) !important;
+}
+body.light-mode .message.other {
+    background: #ffffff !important;
+    color: var(--text) !important;
+    border: 1px solid rgba(24, 20, 32, 0.08) !important;
+    border-left: 2px solid var(--neon-blue) !important;
+}
+
+body.light-mode .msg-author {
+    color: var(--aqua-bright) !important;
+    opacity: 0.9 !important;
+}
+body.light-mode .ai-author {
+    color: var(--neon-blue-bright) !important;
+}
+body.light-mode .msg-avatar {
+    background: rgba(46, 143, 140, 0.10) !important;
+    border-color: rgba(46, 143, 140, 0.30) !important;
+}
+body.light-mode .msg-avatar-fallback {
+    background: linear-gradient(275deg,
+        rgba(140, 35, 64, 0.14) 0%,
+        rgba(46, 143, 140, 0.16) 100%) !important;
+    color: var(--burgundy) !important;
+}
+body.light-mode .ai-avatar {
+    background: linear-gradient(275deg,
+        rgba(44, 92, 197, 0.14) 0%,
+        rgba(46, 143, 140, 0.14) 100%) !important;
+    color: var(--neon-blue-bright) !important;
+}
+
+/* ---------------------------------------------------------------------------
+   INPUTS — white surfaces, dark text, crisp focus
+   --------------------------------------------------------------------------- */
+body.light-mode .input-area input,
+body.light-mode .auth-view input,
+body.light-mode .modal input,
+body.light-mode .modal select,
+body.light-mode .modal textarea,
+body.light-mode .search-row input,
+body.light-mode .search-row select,
+body.light-mode .dm-compose-row input,
+body.light-mode .dm-compose-row select,
+body.light-mode .org-add-row input {
+    background: #ffffff !important;
+    color: var(--text) !important;
+    border: 1px solid rgba(24, 20, 32, 0.14) !important;
+}
+body.light-mode .input-area input::placeholder,
+body.light-mode .auth-view input::placeholder {
+    color: rgba(24, 20, 32, 0.42) !important;
+}
+body.light-mode .input-area input:focus,
+body.light-mode .auth-view input:focus,
+body.light-mode .modal input:focus,
+body.light-mode .modal select:focus {
+    border-color: var(--neon-blue) !important;
+    box-shadow: 0 0 0 3px rgba(44, 92, 197, 0.14) !important;
+}
+
+/* ---------------------------------------------------------------------------
+   LISTS, CARDS, PANELS
+   --------------------------------------------------------------------------- */
+body.light-mode .search-item,
+body.light-mode .org-row,
+body.light-mode .dm-item,
+body.light-mode .side-item,
+body.light-mode .invite-result,
+body.light-mode .doc-item,
+body.light-mode .reply-card,
+body.light-mode .profile-org,
+body.light-mode .admin-row,
+body.light-mode .workspace-tab,
+body.light-mode .room-item,
+body.light-mode .room-chip,
+body.light-mode .org-tab,
+body.light-mode .invite-tab {
+    background: #ffffff !important;
+    color: var(--text) !important;
+    border-color: rgba(24, 20, 32, 0.08) !important;
+}
+body.light-mode .org-row-title,
+body.light-mode .doc-name,
+body.light-mode .search-title,
+body.light-mode .profile-name,
+body.light-mode .dm-phone {
+    color: var(--text) !important;
+}
+body.light-mode .org-row-sub,
+body.light-mode .doc-meta,
+body.light-mode .search-snippet,
+body.light-mode .dm-last {
+    color: var(--text-dim) !important;
+    opacity: 1 !important;
+}
+
+/* active states — burgundy → blue gradient tint stays readable */
+body.light-mode .side-item.active,
+body.light-mode .room-item.active,
+body.light-mode .workspace-tab.active,
+body.light-mode .org-tab.active,
+body.light-mode .invite-tab.active,
+body.light-mode .nav-link.active {
+    background: linear-gradient(275deg,
+        rgba(140, 35, 64, 0.12) 0%,
+        rgba(44, 92, 197, 0.12) 100%) !important;
+    color: var(--text) !important;
+    border-color: rgba(44, 92, 197, 0.35) !important;
+}
+
+/* ---------------------------------------------------------------------------
+   CODE BLOCKS — light theme, but with a readable soft palette
+   --------------------------------------------------------------------------- */
+body.light-mode .code-block {
+    background: #fbfaf6 !important;
+    border: 1px solid #e2e0da !important;
+    border-left: 2px solid var(--aqua) !important;
+    color: #1a1722 !important;
+    box-shadow: 0 2px 8px rgba(24, 20, 32, 0.05) !important;
+}
+body.light-mode .code-keyword    { color: #8c2340 !important; font-weight: 700; }
+body.light-mode .code-builtin    { color: #2c5cc5 !important; }
+body.light-mode .code-func_def   { color: #6d28d9 !important; }
+body.light-mode .code-func_call  { color: #1f6e6b !important; }
+body.light-mode .code-class_def  { color: #b45309 !important; }
+body.light-mode .code-string     { color: #166534 !important; }
+body.light-mode .code-number     { color: #1e48a8 !important; }
+body.light-mode .code-operator   { color: #8c2340 !important; }
+body.light-mode .code-punct      { color: #3b3546 !important; }
+body.light-mode .code-type_annot { color: #166534 !important; }
+body.light-mode .code-ident_var  { color: #1a1722 !important; }
+
+/* ---------------------------------------------------------------------------
+   STATUS PILLS, FRAMES, NOTIFICATIONS
+   --------------------------------------------------------------------------- */
+body.light-mode .status-pill {
+    background: #ffffff !important;
+    border-color: rgba(24, 20, 32, 0.10) !important;
+    color: var(--text) !important;
+}
+body.light-mode .status-pill.pending {
+    background: linear-gradient(275deg,
+        rgba(44, 92, 197, 0.10) 0%,
+        rgba(46, 143, 140, 0.10) 100%) !important;
+    border-color: rgba(44, 92, 197, 0.30) !important;
+    color: var(--neon-blue-bright) !important;
+}
+body.light-mode .status-pill.ok {
+    background: rgba(31, 139, 76, 0.10) !important;
+    border-color: rgba(31, 139, 76, 0.30) !important;
+    color: var(--green) !important;
+}
+body.light-mode .status-pill.err {
+    background: rgba(192, 48, 58, 0.10) !important;
+    border-color: rgba(192, 48, 58, 0.30) !important;
+    color: var(--red) !important;
+}
+body.light-mode .frame-error {
+    background: rgba(140, 35, 64, 0.08) !important;
+    color: var(--burgundy) !important;
+}
+
+body.light-mode .toast {
+    background: #ffffff !important;
+    color: var(--text) !important;
+    border-color: rgba(24, 20, 32, 0.10) !important;
+    box-shadow: 0 12px 30px rgba(24, 20, 32, 0.14) !important;
+}
+body.light-mode .toast-icon {
+    background: linear-gradient(275deg,
+        rgba(140, 35, 64, 0.14) 0%,
+        rgba(46, 143, 140, 0.16) 100%) !important;
+    color: var(--aqua-bright) !important;
+}
+
+/* ---------------------------------------------------------------------------
+   SIDEBAR
+   --------------------------------------------------------------------------- */
+body.light-mode .sidebar {
+    background: #ffffff !important;
+    border-right: 1px solid rgba(24, 20, 32, 0.08) !important;
+    box-shadow: 4px 0 30px rgba(24, 20, 32, 0.10) !important;
+}
+body.light-mode .sidebar-header {
+    background: #fbfaf6 !important;
+    border-bottom-color: rgba(24, 20, 32, 0.08) !important;
+}
+body.light-mode .sidebar-title {
+    color: var(--aqua-bright) !important;
+}
+body.light-mode .side-section {
+    border-bottom-color: rgba(24, 20, 32, 0.06) !important;
+}
+body.light-mode .side-header {
+    color: var(--text-dim) !important;
+}
+body.light-mode .side-header i { color: var(--aqua-bright) !important; }
+body.light-mode .side-empty { color: var(--text-faint) !important; }
+
+/* ---------------------------------------------------------------------------
+   BUTTONS — primary gradient stays vivid, secondary becomes clean
+   --------------------------------------------------------------------------- */
+body.light-mode .primary-btn {
+    background: linear-gradient(275deg,
+        #2c5cc5 0%,
+        #2e8f8c 100%) !important;
+    color: #ffffff !important;
+    box-shadow: 0 6px 22px rgba(44, 92, 197, 0.28) !important;
+}
+body.light-mode .primary-btn.secondary-btn {
+    background: #ffffff !important;
+    color: var(--text) !important;
+    border: 1px solid rgba(24, 20, 32, 0.14) !important;
+    box-shadow: none !important;
+}
+body.light-mode .primary-btn.secondary-btn:hover {
+    background: linear-gradient(275deg,
+        rgba(140, 35, 64, 0.08) 0%,
+        rgba(44, 92, 197, 0.08) 100%) !important;
+    border-color: rgba(44, 92, 197, 0.35) !important;
+}
+
+body.light-mode .send-btn {
+    background: linear-gradient(275deg,
+        #2c5cc5 0%,
+        #2e8f8c 100%) !important;
+    color: #ffffff !important;
+    box-shadow: 0 4px 16px rgba(44, 92, 197, 0.32) !important;
+}
+
+/* icon buttons get a cleaner look */
+body.light-mode .icon-btn {
+    background: #ffffff !important;
+    border: 1px solid rgba(24, 20, 32, 0.10) !important;
+    color: var(--text-dim) !important;
+}
+body.light-mode .icon-btn:hover {
+    color: var(--neon-blue-bright) !important;
+    background: linear-gradient(275deg,
+        rgba(140, 35, 64, 0.06) 0%,
+        rgba(44, 92, 197, 0.08) 100%) !important;
+    border-color: rgba(44, 92, 197, 0.32) !important;
+}
+
+/* ---------------------------------------------------------------------------
+   HOME WELCOME — text stays legible, gradient stays visible
+   --------------------------------------------------------------------------- */
+body.light-mode .home-welcome h2 {
+    background: linear-gradient(275deg,
+        var(--neon-blue-bright) 0%,
+        var(--aqua-bright) 100%) !important;
+    -webkit-background-clip: text !important;
+    background-clip: text !important;
+    color: transparent !important;
+}
+body.light-mode .home-welcome p {
+    color: var(--text-dim) !important;
+    opacity: 1 !important;
+}
+body.light-mode .home-welcome-time {
+    color: var(--text-faint) !important;
+    opacity: 1 !important;
+}
+body.light-mode .home-welcome-icon {
+    background: linear-gradient(275deg,
+        rgba(140, 35, 64, 0.10) 0%,
+        rgba(46, 143, 140, 0.14) 100%) !important;
+    border-color: rgba(46, 143, 140, 0.28) !important;
+    color: var(--aqua-bright) !important;
+}
+body.light-mode .home-action {
+    background: #ffffff !important;
+    border: 1px solid rgba(24, 20, 32, 0.10) !important;
+    color: var(--text) !important;
+}
+body.light-mode .home-action i { color: var(--aqua-bright) !important; }
+body.light-mode .home-action:hover {
+    background: linear-gradient(275deg,
+        rgba(140, 35, 64, 0.06) 0%,
+        rgba(44, 92, 197, 0.08) 100%) !important;
+    border-color: rgba(44, 92, 197, 0.32) !important;
+}
+
+/* ---------------------------------------------------------------------------
+   AUTH SCREEN
+   --------------------------------------------------------------------------- */
+body.light-mode .auth-container h1 {
+    background: linear-gradient(275deg,
+        var(--neon-blue-bright) 0%,
+        var(--aqua-bright) 100%) !important;
+    -webkit-background-clip: text !important;
+    background-clip: text !important;
+    color: transparent !important;
+}
+body.light-mode .auth-container h1 i {
+    color: var(--aqua-bright) !important;
+    -webkit-text-fill-color: var(--aqua-bright) !important;
+}
+body.light-mode .auth-sub { color: var(--text-dim) !important; }
+body.light-mode .auth-back { color: var(--text-faint) !important; }
+body.light-mode .auth-back:hover { color: var(--neon-blue-bright) !important; }
+
+body.light-mode .auth-choice {
+    background: #ffffff !important;
+    border: 1px solid rgba(24, 20, 32, 0.08) !important;
+}
+body.light-mode .auth-choice:hover {
+    background: linear-gradient(275deg,
+        rgba(140, 35, 64, 0.08) 0%,
+        rgba(44, 92, 197, 0.10) 100%) !important;
+    border-color: rgba(46, 143, 140, 0.35) !important;
+    box-shadow: 0 8px 24px rgba(44, 92, 197, 0.10) !important;
+}
+body.light-mode .auth-choice-icon {
+    background: linear-gradient(275deg,
+        rgba(140, 35, 64, 0.12) 0%,
+        rgba(46, 143, 140, 0.14) 100%) !important;
+    border-color: rgba(46, 143, 140, 0.20) !important;
+    color: var(--aqua-bright) !important;
+}
+body.light-mode .auth-choice-label { color: var(--text) !important; }
+body.light-mode .auth-choice-sub { color: var(--text-faint) !important; }
+
+/* ---------------------------------------------------------------------------
+   THEME TOGGLE — readable in both themes
+   --------------------------------------------------------------------------- */
+body.light-mode .theme-toggle {
+    color: var(--text) !important;
+}
+body.light-mode .theme-toggle .fa-moon {
+    color: var(--neon-blue-bright) !important;
+}
+body:not(.light-mode) .theme-toggle .fa-moon {
+    color: var(--aqua-bright) !important;
 }

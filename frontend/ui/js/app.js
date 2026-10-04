@@ -4238,3 +4238,88 @@ try {
 
 window.pinInputRow = _pinInputRow;
 console.log('[acd] input pin-fixed installed');
+
+
+// ============================================================================
+// FORCE-INPUT-ALWAYS — the input row is NEVER hidden on the main screen.
+// Overrides every earlier patch that touched input visibility.
+// No CSS involved — inline styles with !important, set by JS.
+// ============================================================================
+
+(function forceInputAlways() {
+    // # FORCE-INPUT-ALWAYS
+
+    window.updateInputVisibility = function() {
+        const ms = document.getElementById('mainScreen');
+        if (!ms || !ms.classList.contains('active')) return;
+
+        // find the input row (works whether it lives in mainScreen or body)
+        let ia = ms.querySelector('.input-area');
+        if (!ia) ia = document.querySelector('.input-area');
+        if (!ia) return;
+
+        const navH = 64;
+        const light = document.body.classList.contains('light-mode');
+
+        ia.style.setProperty('position', 'fixed', 'important');
+        ia.style.setProperty('bottom', navH + 'px', 'important');
+        ia.style.setProperty('left', '0', 'important');
+        ia.style.setProperty('right', '0', 'important');
+        ia.style.setProperty('top', 'auto', 'important');
+        ia.style.setProperty('display', 'flex', 'important');
+        ia.style.setProperty('visibility', 'visible', 'important');
+        ia.style.setProperty('opacity', '1', 'important');
+        ia.style.setProperty('z-index', '9000', 'important');
+        ia.style.setProperty('width', '100vw', 'important');
+        ia.style.setProperty('box-sizing', 'border-box', 'important');
+        ia.style.setProperty('padding', '0.75rem 1rem', 'important');
+        ia.style.setProperty('margin', '0', 'important');
+        ia.style.setProperty('align-items', 'center', 'important');
+        ia.style.setProperty('gap', '0.5rem', 'important');
+        ia.style.setProperty('flex-wrap', 'nowrap', 'important');
+        ia.style.setProperty('overflow', 'hidden', 'important');
+        ia.style.setProperty('background',
+            light ? 'rgba(255,255,255,0.96)' : 'rgba(12,12,16,0.96)', 'important');
+        ia.style.setProperty('border-top',
+            '1px solid ' + (light ? 'rgba(24,20,32,0.10)' : 'rgba(255,255,255,0.09)'),
+            'important');
+
+        const inner = ia.querySelector('input');
+        if (inner) {
+            inner.style.setProperty('flex', '1 1 auto', 'important');
+            inner.style.setProperty('min-width', '0', 'important');
+        }
+        ia.querySelectorAll('.send-btn, .attach-btn, .icon-btn').forEach(b => {
+            b.style.setProperty('flex', '0 0 auto', 'important');
+            b.style.setProperty('display', 'grid', 'important');
+            b.style.setProperty('visibility', 'visible', 'important');
+        });
+
+        // chat box: pad bottom so messages don't hide behind input + nav
+        const cb = ms.querySelector('.chat-box');
+        if (cb) {
+            cb.style.setProperty('padding-bottom', (navH + 72) + 'px', 'important');
+        }
+    };
+
+    // run now and on a schedule
+    window.updateInputVisibility();
+    setTimeout(window.updateInputVisibility, 100);
+    setTimeout(window.updateInputVisibility, 400);
+    setTimeout(window.updateInputVisibility, 1000);
+    setTimeout(window.updateInputVisibility, 2000);
+
+    window.addEventListener('resize', window.updateInputVisibility);
+    window.addEventListener('orientationchange', () => setTimeout(window.updateInputVisibility, 100));
+
+    // watch for any DOM change on mainScreen
+    try {
+        const ms = document.getElementById('mainScreen');
+        if (ms && typeof MutationObserver !== 'undefined') {
+            new MutationObserver(() => window.updateInputVisibility())
+                .observe(ms, { attributes: true, attributeFilter: ['class', 'style'] });
+        }
+    } catch (_) {}
+
+    console.log('[acd] FORCE-INPUT-ALWAYS installed');
+})();

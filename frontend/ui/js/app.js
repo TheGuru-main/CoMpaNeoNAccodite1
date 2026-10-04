@@ -1552,12 +1552,13 @@ function updateInputVisibility() {
     const room = roomList.find(r => r.id === currentRoomId);
 
     if (!currentRoomId || !room) {
-        if (inputArea) inputArea.style.display = 'none';
-        if (chips) chips.style.display = 'none';
+        // INPUT-HARD-DISPLAY
+        if (inputArea) inputArea.style.setProperty('display', 'none', 'important');
+        if (chips) chips.style.setProperty('display', 'none', 'important');
         return;
     }
 
-    if (inputArea) inputArea.style.display = '';
+    if (inputArea) inputArea.style.setProperty('display', 'flex', 'important');
     if (chips) {
         const isPrivate = room.workspace_type === 'personal_brainstorm';
         chips.style.display = isPrivate ? 'none' : '';
@@ -1711,11 +1712,12 @@ function updateInputVisibility() {
     const room = roomList.find(r => r.id === currentRoomId);
 
     if (!onMain || !currentRoomId) {
-        if (inputArea) inputArea.style.display = 'none';
-        if (chips) chips.style.display = 'none';
+        // INPUT-HARD-DISPLAY
+        if (inputArea) inputArea.style.setProperty('display', 'none', 'important');
+        if (chips) chips.style.setProperty('display', 'none', 'important');
         return;
     }
-    if (inputArea) inputArea.style.display = 'flex';
+    if (inputArea) inputArea.style.setProperty('display', 'flex', 'important');
     if (chips) {
         const isPrivate = room && room.workspace_type === 'personal_brainstorm';
         chips.style.display = isPrivate ? 'none' : 'flex';
@@ -3947,3 +3949,66 @@ window.acdShowDM = acdShowDM;
 window.acdShowTrain = acdShowTrain;
 
 console.log('[acd] ROUTER-V2 installed');
+
+
+// ============================================================================
+// INPUT-HARD-DISPLAY — final guard, runs after every other patch
+// ============================================================================
+
+function _forceInputVisible() {
+    const ms = document.getElementById('mainScreen');
+    if (!ms || !ms.classList.contains('active')) return;
+    const ia = ms.querySelector(':scope > .input-area');
+    if (!ia) return;
+    const room = (typeof roomList !== 'undefined' && Array.isArray(roomList))
+        ? roomList.find(r => r.id === currentRoomId)
+        : null;
+    const showIt = !!currentRoomId && !!room;
+    ia.style.setProperty('display', showIt ? 'flex' : 'none', 'important');
+    if (showIt) {
+        ia.style.setProperty('visibility', 'visible', 'important');
+        ia.style.setProperty('opacity', '1', 'important');
+        ia.style.setProperty('flex', '0 0 auto', 'important');
+        ia.style.setProperty('position', 'relative', 'important');
+        ia.style.setProperty('bottom', 'auto', 'important');
+        ia.style.setProperty('width', '100%', 'important');
+        ia.style.setProperty('z-index', '10', 'important');
+    }
+}
+
+// Re-assert at multiple points after page load to defeat stacked patches
+setTimeout(_forceInputVisible, 150);
+setTimeout(_forceInputVisible, 600);
+setTimeout(_forceInputVisible, 1500);
+
+// Wrap showScreen and openRoom
+if (typeof showScreen === 'function') {
+    const _origShowScreenInput = showScreen;
+    showScreen = function(id) {
+        _origShowScreenInput(id);
+        setTimeout(_forceInputVisible, 40);
+    };
+}
+if (typeof openRoom === 'function') {
+    const _origOpenRoomInput = openRoom;
+    openRoom = async function(id) {
+        const r = await _origOpenRoomInput(id);
+        setTimeout(_forceInputVisible, 40);
+        return r;
+    };
+}
+
+// Watch the DOM for mainScreen class changes
+try {
+    const ms = document.getElementById('mainScreen');
+    if (ms && typeof MutationObserver !== 'undefined') {
+        const obs = new MutationObserver(() => {
+            setTimeout(_forceInputVisible, 20);
+        });
+        obs.observe(ms, { attributes: true, attributeFilter: ['class', 'style'] });
+    }
+} catch (_) {}
+
+// Expose
+window.forceInputVisible = _forceInputVisible;
+console.log('[acd] input hard-display installed');

@@ -1,0 +1,291 @@
+/* ============================================================================
+   Accodite — single authoritative layout layer
+   Loaded AFTER style.css so it wins the cascade. Only layout is defined here;
+   colors, fonts, animations, and components live in style.css.
+   ============================================================================ */
+
+:root {
+    --nav-h: 64px;
+    --safe-b: env(safe-area-inset-bottom, 0px);
+    --total-nav: calc(var(--nav-h) + var(--safe-b));
+}
+
+/* -------------------------------------------------------------------------
+   DOCUMENT — locked, no page scroll anywhere
+   ------------------------------------------------------------------------- */
+html,
+body {
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    overscroll-behavior: none !important;
+}
+
+/* Fallback for browsers that don't understand dvh */
+@supports not (height: 100dvh) {
+    html, body {
+        height: 100vh !important;
+        max-height: 100vh !important;
+    }
+}
+
+body {
+    /* kill any leftover body-level flex or display rules */
+    display: block !important;
+}
+
+.app {
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
+    position: relative;
+}
+
+@supports not (height: 100dvh) {
+    .app {
+        height: 100vh !important;
+        max-height: 100vh !important;
+    }
+}
+
+/* -------------------------------------------------------------------------
+   SCREENS — one screen at a time, fills the viewport
+   ------------------------------------------------------------------------- */
+.screen {
+    display: none !important;
+}
+.screen.active {
+    display: flex !important;
+    flex-direction: column !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    overflow: hidden !important;
+}
+
+@supports not (height: 100dvh) {
+    .screen.active {
+        height: 100vh !important;
+        max-height: 100vh !important;
+    }
+}
+
+/* AUTH — the form can scroll internally, page cannot */
+#authScreen.active {
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 2rem;
+}
+
+/* -------------------------------------------------------------------------
+   MAIN SCREEN — subtract the fixed nav, chat scrolls internally
+   ------------------------------------------------------------------------- */
+#mainScreen.active {
+    display: flex !important;
+    flex-direction: column !important;
+    height: calc(100dvh - var(--total-nav)) !important;
+    max-height: calc(100dvh - var(--total-nav)) !important;
+    overflow: hidden !important;
+}
+
+@supports not (height: 100dvh) {
+    #mainScreen.active {
+        height: calc(100vh - var(--total-nav)) !important;
+        max-height: calc(100vh - var(--total-nav)) !important;
+    }
+}
+
+#mainScreen > .top-header,
+#mainScreen .top-header {
+    flex: 0 0 auto !important;
+    position: relative !important;
+    top: auto !important;
+}
+
+#mainScreen > .room-chips,
+#mainScreen .room-chips {
+    flex: 0 0 auto !important;
+    position: relative !important;
+}
+
+#mainScreen > .reply-bar,
+#mainScreen .reply-bar {
+    flex: 0 0 auto !important;
+}
+
+#mainScreen > .chat-box,
+#mainScreen .chat-box {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    max-height: 100% !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    touch-action: pan-y !important;
+}
+
+#mainScreen > .input-area,
+#mainScreen .input-area {
+    flex: 0 0 auto !important;
+    padding-bottom: 0.75rem !important;
+    margin-top: 0 !important;
+    position: relative !important;
+    bottom: auto !important;
+}
+
+/* Panels inside mainScreen are full-cover overlays between header and nav */
+#mainScreen > .research-panel,
+#mainScreen .research-panel {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: var(--total-nav) !important;
+    z-index: 40 !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* -------------------------------------------------------------------------
+   ORG SCREEN — fixed header + tabs, scrollable body
+   ------------------------------------------------------------------------- */
+#orgScreen.active {
+    display: flex !important;
+    flex-direction: column !important;
+    height: calc(100dvh - var(--total-nav)) !important;
+    max-height: calc(100dvh - var(--total-nav)) !important;
+    overflow: hidden !important;
+}
+
+@supports not (height: 100dvh) {
+    #orgScreen.active {
+        height: calc(100vh - var(--total-nav)) !important;
+        max-height: calc(100vh - var(--total-nav)) !important;
+    }
+}
+
+#orgScreen > .top-header,
+#orgScreen .top-header {
+    flex: 0 0 auto !important;
+    position: relative !important;
+}
+
+#orgScreen > .org-tabs,
+#orgScreen .org-tabs {
+    flex: 0 0 auto !important;
+    position: relative !important;
+    top: auto !important;
+}
+
+#orgScreen > .org-body,
+#orgScreen .org-body {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+}
+
+/* -------------------------------------------------------------------------
+   BOTTOM NAV — fixed to the viewport, always visible when logged in
+   ------------------------------------------------------------------------- */
+.bottom-nav.bottom-nav-fixed,
+.bottom-nav {
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    top: auto !important;
+    height: var(--total-nav) !important;
+    padding: 0 0 var(--safe-b) 0 !important;
+    margin: 0 !important;
+    z-index: 60 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-around !important;
+    background: rgba(12, 12, 16, 0.96) !important;
+    border-top: 1px solid var(--border) !important;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    box-sizing: border-box !important;
+}
+
+.bottom-nav.bottom-nav-fixed .nav-link,
+.bottom-nav .nav-link {
+    color: var(--text-faint);
+    font-size: 1.15rem;
+    padding: 0.55rem 1.1rem;
+    border-radius: 0.6rem;
+    text-decoration: none;
+    transition: all 0.14s ease;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.bottom-nav .nav-link.active {
+    color: var(--aqua-bright);
+    background: linear-gradient(275deg,
+        rgba(124, 30, 63, 0.28) 0%,
+        rgba(79, 140, 255, 0.22) 100%);
+}
+
+/* Hide the nav outside the app — auth and any non-main screen */
+body:not(.logged-in) .bottom-nav,
+body:not(.logged-in) .bottom-nav-fixed,
+body:not(.logged-in) .bottom-nav.bottom-nav-fixed {
+    display: none !important;
+}
+
+/* -------------------------------------------------------------------------
+   INPUT ROW — never push the send button off
+   ------------------------------------------------------------------------- */
+.input-area {
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.5rem !important;
+    flex-wrap: nowrap !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+}
+
+.input-area input {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+}
+
+.input-area .send-btn,
+.input-area .attach-btn,
+.input-area .icon-btn {
+    flex: 0 0 auto !important;
+}
+
+/* -------------------------------------------------------------------------
+   MODALS always win over nav
+   ------------------------------------------------------------------------- */
+.modal {
+    z-index: 100 !important;
+}
+.toast-tray {
+    z-index: 200 !important;
+}
+
+/* -------------------------------------------------------------------------
+   HOME CENTER — welcome fills the chat area, centered
+   ------------------------------------------------------------------------- */
+#mainScreen .chat-box > .home-welcome,
+.home-welcome-centered {
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 2rem 1.5rem;
+}

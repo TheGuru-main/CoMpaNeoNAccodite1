@@ -879,3 +879,112 @@ body.light-mode .theme-toggle .fa-moon {
 body:not(.light-mode) .theme-toggle .fa-moon {
     color: var(--aqua-bright) !important;
 }
+
+/* ============================================================================
+   INPUT-FIXED — the message input row is pinned just above the bottom nav
+   Removes all dependency on flex ordering, mainScreen height, or chat-box
+   overflow. Works in every room type (brainstorm, group, dept, team, meeting,
+   org), on home, in DMs.
+   ============================================================================ */
+
+body.logged-in #mainScreen.active > .input-area,
+body.logged-in #mainScreen.active .input-area {
+    position: fixed !important;
+    bottom: var(--total-nav) !important;
+    left: 0 !important;
+    right: 0 !important;
+    top: auto !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0.75rem 1rem !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    box-sizing: border-box !important;
+    z-index: 55 !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.5rem !important;
+    flex-wrap: nowrap !important;
+    overflow: hidden !important;
+    background: rgba(12, 12, 16, 0.96) !important;
+    border-top: 1px solid var(--border) !important;
+    backdrop-filter: blur(14px) !important;
+    -webkit-backdrop-filter: blur(14px) !important;
+    box-shadow: 0 -6px 20px rgba(0, 0, 0, 0.35) !important;
+}
+
+body.light-mode.logged-in #mainScreen.active > .input-area,
+body.light-mode.logged-in #mainScreen.active .input-area {
+    background: rgba(255, 255, 255, 0.96) !important;
+    border-top-color: rgba(24, 20, 32, 0.10) !important;
+    box-shadow: 0 -6px 20px rgba(24, 20, 32, 0.06) !important;
+}
+
+/* Input + buttons in that row */
+body.logged-in #mainScreen.active .input-area input {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+    background: rgba(0, 0, 0, 0.32) !important;
+    color: var(--text) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius) !important;
+    padding: 0.85rem 1.05rem !important;
+    font-family: var(--font-sans) !important;
+}
+body.light-mode.logged-in #mainScreen.active .input-area input {
+    background: #ffffff !important;
+    border-color: rgba(24, 20, 32, 0.14) !important;
+    color: var(--text) !important;
+}
+
+body.logged-in #mainScreen.active .input-area .send-btn,
+body.logged-in #mainScreen.active .input-area .attach-btn,
+body.logged-in #mainScreen.active .input-area .icon-btn {
+    flex: 0 0 auto !important;
+}
+
+/* chat box gets bottom padding so content never hides behind the input + nav */
+body.logged-in #mainScreen.active > .chat-box,
+body.logged-in #mainScreen.active .chat-box {
+    padding-bottom: 96px !important;
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+}
+
+/* mainScreen keeps its full height (minus nav) — input is out of the flow now */
+body.logged-in #mainScreen.active {
+    height: calc(100dvh - var(--total-nav)) !important;
+    max-height: calc(100dvh - var(--total-nav)) !important;
+    overflow: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+@supports not (height: 100dvh) {
+    body.logged-in #mainScreen.active {
+        height: calc(100vh - var(--total-nav)) !important;
+        max-height: calc(100vh - var(--total-nav)) !important;
+    }
+}
+
+/* panels (search / docs / DM) sit above the input, not behind it */
+body.logged-in #searchPanel,
+body.logged-in #docsPanel,
+body.logged-in #dmPanel {
+    bottom: calc(var(--total-nav) + 64px) !important;
+}
+
+/* Reply bar, when present, sits just above the input row */
+body.logged-in .reply-bar {
+    position: fixed !important;
+    bottom: calc(var(--total-nav) + 64px) !important;
+    left: 0 !important;
+    right: 0 !important;
+    z-index: 54 !important;
+    margin: 0 !important;
+    background: rgba(12, 12, 16, 0.94) !important;
+    border-top: 1px solid var(--border) !important;
+}

@@ -4139,3 +4139,102 @@ try {
 
 window.forceInputVisibleAnywhere = _forceInputVisibleAnywhere;
 console.log('[acd] input-home-room installed');
+
+
+// ============================================================================
+// INPUT-PIN-FIXED — force the input row to fixed position above the nav
+// Same rules as layout.css, applied inline with !important so no residual
+// stylesheet can move, hide, or shrink it.
+// ============================================================================
+
+function _pinInputRow() {
+    // # INPUT-PIN-FIXED
+    const ms = document.getElementById('mainScreen');
+    if (!ms || !ms.classList.contains('active')) return;
+
+    const ia = ms.querySelector(':scope > .input-area');
+    if (!ia) return;
+
+    const navH = 64;
+    const navEl = document.querySelector('.bottom-nav');
+    const realNavH = navEl ? Math.round(navEl.getBoundingClientRect().height) : navH;
+
+    ia.style.setProperty('position', 'fixed', 'important');
+    ia.style.setProperty('bottom', realNavH + 'px', 'important');
+    ia.style.setProperty('left', '0', 'important');
+    ia.style.setProperty('right', '0', 'important');
+    ia.style.setProperty('top', 'auto', 'important');
+    ia.style.setProperty('height', 'auto', 'important');
+    ia.style.setProperty('margin', '0', 'important');
+    ia.style.setProperty('padding', '0.75rem 1rem', 'important');
+    ia.style.setProperty('width', '100vw', 'important');
+    ia.style.setProperty('box-sizing', 'border-box', 'important');
+    ia.style.setProperty('display', 'flex', 'important');
+    ia.style.setProperty('visibility', 'visible', 'important');
+    ia.style.setProperty('opacity', '1', 'important');
+    ia.style.setProperty('align-items', 'center', 'important');
+    ia.style.setProperty('gap', '0.5rem', 'important');
+    ia.style.setProperty('z-index', '55', 'important');
+    ia.style.setProperty('flex-wrap', 'nowrap', 'important');
+    ia.style.setProperty('overflow', 'hidden', 'important');
+
+    // inner input shrinks; buttons stay
+    const inner = ia.querySelector('input#promptInput') || ia.querySelector('input');
+    if (inner) {
+        inner.style.setProperty('flex', '1 1 auto', 'important');
+        inner.style.setProperty('min-width', '0', 'important');
+    }
+    ia.querySelectorAll('.send-btn, .attach-btn, .icon-btn').forEach(b => {
+        b.style.setProperty('flex', '0 0 auto', 'important');
+    });
+
+    // chat box: pad the bottom so messages don't hide behind the input + nav
+    const cb = ms.querySelector(':scope > .chat-box');
+    if (cb) {
+        cb.style.setProperty('padding-bottom', (realNavH + 68) + 'px', 'important');
+        cb.style.setProperty('overflow-y', 'auto', 'important');
+    }
+}
+
+// run on load and on every important event
+setTimeout(_pinInputRow, 100);
+setTimeout(_pinInputRow, 400);
+setTimeout(_pinInputRow, 1000);
+
+window.addEventListener('resize', () => setTimeout(_pinInputRow, 40));
+window.addEventListener('orientationchange', () => setTimeout(_pinInputRow, 60));
+
+// wrap the screen / room transitions
+const _origShowScreenPin = showScreen;
+showScreen = function(id) {
+    _origShowScreenPin(id);
+    setTimeout(_pinInputRow, 40);
+    setTimeout(_pinInputRow, 250);
+};
+
+const _origOpenRoomPin = openRoom;
+openRoom = async function(id) {
+    const r = await _origOpenRoomPin(id);
+    setTimeout(_pinInputRow, 40);
+    setTimeout(_pinInputRow, 250);
+    return r;
+};
+
+const _origShowHomeStatePin = showHomeState;
+showHomeState = function() {
+    _origShowHomeStatePin();
+    setTimeout(_pinInputRow, 40);
+};
+
+// watch mainScreen for class/style changes
+try {
+    const ms = document.getElementById('mainScreen');
+    if (ms && typeof MutationObserver !== 'undefined') {
+        new MutationObserver(() => {
+            setTimeout(_pinInputRow, 20);
+        }).observe(ms, { attributes: true, attributeFilter: ['class', 'style'] });
+    }
+} catch (_) {}
+
+window.pinInputRow = _pinInputRow;
+console.log('[acd] input pin-fixed installed');

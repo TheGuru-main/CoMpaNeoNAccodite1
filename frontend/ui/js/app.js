@@ -3686,3 +3686,153 @@ openRoomSocket = function(roomId) {
     console.log('[hardboot] applied. Navs on page:',
         document.querySelectorAll('.bottom-nav').length);
 })();
+
+
+// ============================================================================
+// ACD-NAV-GLOBAL — the single source of truth for nav clicks
+// Called inline from the HTML. Not affected by any CSS or DOM cloning.
+// ============================================================================
+
+window.acdNav = function(action, el) {
+    // # ACD-NAV-GLOBAL
+    console.log('[acdNav]', action);
+
+    // active state
+    document.querySelectorAll('.bottom-nav .nav-link').forEach(l => l.classList.remove('active'));
+    if (el) el.classList.add('active');
+
+    try {
+        if (action === 'home') {
+            if (typeof showHomeState === 'function') showHomeState();
+        } else if (action === 'research') {
+            if (typeof hideAllPanels === 'function') hideAllPanels();
+            if (typeof openSearchPanel === 'function') openSearchPanel();
+        } else if (action === 'workspace') {
+            if (typeof hideAllPanels === 'function') hideAllPanels();
+            if (typeof openDocuments === 'function') openDocuments();
+        } else if (action === 'messages') {
+            if (typeof hideAllPanels === 'function') hideAllPanels();
+            if (typeof openDMPanel === 'function') openDMPanel();
+        } else if (action === 'train') {
+            if (typeof hideAllPanels === 'function') hideAllPanels();
+            if (typeof openTrainingModal === 'function') openTrainingModal();
+        }
+    } catch (e) {
+        console.warn('[acdNav] failed:', action, e);
+    }
+    return false;
+};
+
+// Also handle Enter/Space activation for accessibility
+document.addEventListener('click', (e) => {
+    const link = e.target.closest('.bottom-nav .nav-link');
+    if (!link) return;
+    // If inline onclick exists, let it run. Otherwise fall back to this.
+    if (link.getAttribute('onclick')) return;
+    e.preventDefault();
+    window.acdNav(link.dataset.action || 'home', link);
+}, false);
+
+
+// ============================================================================
+// LAYOUT-INLINE — force the critical layout with inline styles
+// Inline styles beat every stylesheet, so this always wins.
+// ============================================================================
+
+function forceLayout() {
+    // # LAYOUT-INLINE
+    const navH = 64;
+    const vh = window.innerHeight;
+
+    // html + body locked
+    try {
+        document.documentElement.style.setProperty('height', vh + 'px', 'important');
+        document.documentElement.style.setProperty('overflow', 'hidden', 'important');
+        document.body.style.setProperty('height', vh + 'px', 'important');
+        document.body.style.setProperty('overflow', 'hidden', 'important');
+    } catch (_) {}
+
+    // app container
+    const app = document.querySelector('.app');
+    if (app) {
+        app.style.setProperty('height', vh + 'px', 'important');
+        app.style.setProperty('overflow', 'hidden', 'important');
+        app.style.setProperty('display', 'flex', 'important');
+        app.style.setProperty('flex-direction', 'column', 'important');
+    }
+
+    // main screen
+    const ms = document.getElementById('mainScreen');
+    if (ms) {
+        const isActive = ms.classList.contains('active');
+        ms.style.setProperty('height', (vh - navH) + 'px', 'important');
+        ms.style.setProperty('max-height', (vh - navH) + 'px', 'important');
+        ms.style.setProperty('display', isActive ? 'flex' : 'none', 'important');
+        ms.style.setProperty('flex-direction', 'column', 'important');
+        ms.style.setProperty('overflow', 'hidden', 'important');
+
+        // header auto
+        const hdr = ms.querySelector('.top-header');
+        if (hdr) {
+            hdr.style.setProperty('flex', '0 0 auto', 'important');
+            hdr.style.setProperty('position', 'relative', 'important');
+        }
+        // room chips auto
+        const chips = ms.querySelector('.room-chips');
+        if (chips) chips.style.setProperty('flex', '0 0 auto', 'important');
+
+        // chat box — the ONLY thing that scrolls
+        const cb = ms.querySelector('.chat-box');
+        if (cb) {
+            cb.style.setProperty('flex', '1 1 auto', 'important');
+            cb.style.setProperty('min-height', '0', 'important');
+            cb.style.setProperty('overflow-y', 'auto', 'important');
+            cb.style.setProperty('overflow-x', 'hidden', 'important');
+            cb.style.setProperty('-webkit-overflow-scrolling', 'touch', 'important');
+        }
+
+        // input row always visible on main
+        const ia = ms.querySelector('.input-area');
+        if (ia) {
+            ia.style.setProperty('flex', '0 0 auto', 'important');
+            ia.style.setProperty('display', currentRoomId ? 'flex' : 'none', 'important');
+            ia.style.setProperty('width', '100%', 'important');
+            ia.style.setProperty('box-sizing', 'border-box', 'important');
+            ia.style.setProperty('padding-bottom', '0.75rem', 'important');
+        }
+    }
+
+    // nav pinned
+    document.querySelectorAll('.bottom-nav, .bottom-nav-fixed').forEach(nav => {
+        nav.style.setProperty('display', 'flex', 'important');
+        nav.style.setProperty('position', 'fixed', 'important');
+        nav.style.setProperty('left', '0', 'important');
+        nav.style.setProperty('right', '0', 'important');
+        nav.style.setProperty('bottom', '0', 'important');
+        nav.style.setProperty('height', navH + 'px', 'important');
+        nav.style.setProperty('z-index', '60', 'important');
+    });
+}
+
+// run on boot
+setTimeout(forceLayout, 100);
+// run on resize / orientation
+window.addEventListener('resize', () => setTimeout(forceLayout, 50));
+// run whenever the screen changes
+const _origShowScreenLayout = showScreen;
+showScreen = function(id) {
+    _origShowScreenLayout(id);
+    setTimeout(forceLayout, 30);
+};
+
+// re-run whenever openRoom is called (toggles input)
+const _origOpenRoomLayout = openRoom;
+openRoom = async function(id) {
+    const r = await _origOpenRoomLayout(id);
+    setTimeout(forceLayout, 30);
+    return r;
+};
+
+// expose for debugging
+window.forceLayout = forceLayout;
+console.log('[acd] layout force installed');

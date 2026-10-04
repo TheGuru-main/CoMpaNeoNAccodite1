@@ -3624,3 +3624,65 @@ openRoomSocket = function(roomId) {
         }
     });
 };
+
+
+// ============================================================================
+// HARD-BOOT — runs LAST, unconditionally fixes state
+// Earlier patches (bootVisibility at ~line 1809) remove .logged-in and
+// nothing puts it back if showScreen already ran. This restores it.
+// ============================================================================
+
+(function hardBootStateFix() {
+    // # HARD-BOOT
+    const hasToken = (typeof authToken !== 'undefined' && authToken);
+    const mainEl = document.getElementById('mainScreen');
+    const onMain = mainEl && mainEl.classList.contains('active');
+
+    console.log('[hardboot] token:', !!hasToken, 'mainActive:', !!onMain);
+
+    if (!hasToken) return;
+
+    // 1) force body.logged-in when we're on the main screen
+    if (onMain) {
+        document.body.classList.add('logged-in');
+    } else {
+        // if not on main yet, put them there
+        try { showScreen('mainScreen'); } catch (_) {}
+        document.body.classList.add('logged-in');
+    }
+
+    // 2) force the nav visible by inline styles (beats every stylesheet)
+    document.querySelectorAll('.bottom-nav, .bottom-nav-fixed').forEach(nav => {
+        nav.style.setProperty('display', 'flex', 'important');
+        nav.style.setProperty('visibility', 'visible', 'important');
+        nav.style.setProperty('opacity', '1', 'important');
+        nav.style.setProperty('position', 'fixed', 'important');
+        nav.style.setProperty('left', '0', 'important');
+        nav.style.setProperty('right', '0', 'important');
+        nav.style.setProperty('bottom', '0', 'important');
+        nav.style.setProperty('height', '64px', 'important');
+        nav.style.setProperty('z-index', '60', 'important');
+    });
+
+    // 3) if on main and no room is open, show the home greeting
+    if (onMain && (typeof currentRoomId === 'undefined' || !currentRoomId)) {
+        try {
+            if (typeof showHomeState === 'function') showHomeState();
+        } catch (e) {
+            console.warn('[hardboot] showHomeState failed:', e);
+        }
+    }
+
+    // 4) reassert after a tick in case something async strips the class
+    setTimeout(() => {
+        if (authToken) {
+            document.body.classList.add('logged-in');
+            document.querySelectorAll('.bottom-nav').forEach(nav => {
+                nav.style.setProperty('display', 'flex', 'important');
+            });
+        }
+    }, 300);
+
+    console.log('[hardboot] applied. Navs on page:',
+        document.querySelectorAll('.bottom-nav').length);
+})();

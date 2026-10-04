@@ -289,3 +289,45 @@ body:not(.logged-in) .bottom-nav.bottom-nav-fixed {
     text-align: center;
     padding: 2rem 1.5rem;
 }
+
+/* ============================================================================
+   HARD FORCE — final rules, applied last, win all conflicts
+   ============================================================================ */
+
+/* When logged in, the nav and input row are always visible, always on top */
+body.logged-in .bottom-nav,
+body.logged-in .bottom-nav.bottom-nav-fixed {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    transform: none !important;
+    pointer-events: auto !important;
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    height: var(--total-nav) !important;
+    z-index: 60 !important;
+}
+
+/* The input row sits above the nav, never behind it */
+body.logged-in #mainScreen > .input-area {
+    position: relative !important;
+    z-index: 55 !important;
+    padding-bottom: 0.75rem !important;
+}
+
+/* Home welcome always centers in the chat area */
+body.logged-in #mainScreen .chat-box > .home-welcome,
+body.logged-in #mainScreen .home-welcome-centered {
+    min-height: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    text-align: center !important;
+    padding: 2rem 1.5rem !important;
+}
+
+/* Do NOT hide the nav merely because some script removed .logged-in */
+#authScreen.active ~ .bottom-nav-fixed { display: none !important; }

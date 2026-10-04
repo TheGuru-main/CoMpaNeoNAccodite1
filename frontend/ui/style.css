@@ -2226,3 +2226,209 @@ body.modal-open .sidebar-backdrop {
         rgba(125, 211, 208, 0.15) 100%);
     border-radius: 2px;
 }
+
+/* Fixed bottom nav — always visible, above the chat view */
+.bottom-nav.bottom-nav-fixed {
+    display: flex !important;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 45;
+    padding: 0.55rem 0 0.75rem;
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0));
+    border-top: 1px solid var(--border);
+    background: rgba(12, 12, 16, 0.96);
+    backdrop-filter: blur(14px);
+    justify-content: space-around;
+}
+.bottom-nav.bottom-nav-fixed .nav-link {
+    color: var(--text-faint);
+    font-size: 1.15rem;
+    padding: 0.5rem 1.1rem;
+    border-radius: 0.6rem;
+    text-decoration: none;
+    transition: all 0.14s ease;
+}
+.bottom-nav.bottom-nav-fixed .nav-link:hover { color: var(--text-dim); }
+.bottom-nav.bottom-nav-fixed .nav-link.active {
+    color: var(--aqua-bright);
+    background: linear-gradient(275deg,
+        rgba(124, 30, 63, 0.28) 0%,
+        rgba(79, 140, 255, 0.22) 100%);
+}
+/* Push the input bar so it doesn't sit under the fixed nav */
+#mainScreen > .input-area { padding-bottom: 5rem; }
+/* Make sure auth screen doesn't have the nav floating over it */
+#authScreen.active ~ .bottom-nav-fixed,
+.screen:not(#mainScreen).active ~ .bottom-nav-fixed { display: none !important; }
+
+/* ============================================================
+   ONE-SCREEN LAYOUT — no page scroll, everything fits
+   header + chat (scrolls) + input + nav in 100vh
+   ============================================================ */
+
+:root {
+    --nav-h: 68px;                /* fixed bottom nav height */
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* lock the document itself — no page-level scrolling */
+html, body {
+    height: 100%;
+    max-height: 100vh;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    overscroll-behavior: none;
+}
+
+.app {
+    height: 100vh;
+    min-height: 100vh;
+    max-height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+/* every screen fills the viewport exactly */
+.screen {
+    display: none;
+}
+.screen.active {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    max-height: 100vh;
+    overflow: hidden;
+}
+
+/* ---- AUTH: form scrolls if it doesn't fit, but page doesn't scroll ---- */
+#authScreen.active {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 1rem;
+}
+
+/* ---- MAIN: header fixed, chat scrolls, input + nav fixed ---- */
+#mainScreen.active {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - var(--nav-h) - var(--safe-bottom));
+    max-height: calc(100vh - var(--nav-h) - var(--safe-bottom));
+    overflow: hidden;
+}
+
+/* top header is auto-height */
+#mainScreen > .top-header {
+    flex: 0 0 auto;
+}
+
+/* room chips row is auto-height */
+#mainScreen > .room-chips {
+    flex: 0 0 auto;
+}
+
+/* the chat body: the ONLY element that scrolls */
+#mainScreen > .chat-box {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    padding-bottom: 1rem;
+}
+
+/* hide any research/docs/DM panel gracefully when not active */
+#mainScreen > .research-panel {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: calc(var(--nav-h) + var(--safe-bottom));
+    z-index: 35;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* the reply bar (if present) sits above the input */
+#mainScreen > .reply-bar {
+    flex: 0 0 auto;
+}
+
+/* input row is auto-height, sits above the nav */
+#mainScreen > .input-area {
+    flex: 0 0 auto;
+    padding-bottom: 0.75rem;
+}
+
+/* ---- ORG SCREEN ---- */
+#orgScreen.active {
+    height: 100vh;
+    max-height: 100vh;
+    overflow: hidden;
+}
+#orgScreen > .top-header {
+    flex: 0 0 auto;
+    position: sticky;
+    top: 0;
+    z-index: 20;
+}
+#orgScreen > .org-tabs {
+    flex: 0 0 auto;
+}
+#orgScreen > .org-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* ---- FIXED BOTTOM NAV ---- */
+.bottom-nav.bottom-nav-fixed {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: calc(var(--nav-h) + var(--safe-bottom));
+    padding-bottom: calc(0.75rem + var(--safe-bottom));
+    z-index: 50;
+    display: flex !important;
+    align-items: center;
+    justify-content: space-around;
+    border-top: 1px solid var(--border);
+    background: rgba(12, 12, 16, 0.96);
+    backdrop-filter: blur(14px);
+}
+.bottom-nav.bottom-nav-fixed .nav-link {
+    color: var(--text-faint);
+    font-size: 1.15rem;
+    padding: 0.55rem 1.1rem;
+    border-radius: 0.6rem;
+    text-decoration: none;
+    transition: all 0.14s ease;
+    line-height: 1;
+}
+.bottom-nav.bottom-nav-fixed .nav-link:hover { color: var(--text-dim); }
+.bottom-nav.bottom-nav-fixed .nav-link.active {
+    color: var(--aqua-bright);
+    background: linear-gradient(275deg,
+        rgba(124, 30, 63, 0.28) 0%,
+        rgba(79, 140, 255, 0.22) 100%);
+}
+
+/* nav visible only on app screens (main + org) */
+#authScreen.active ~ .bottom-nav-fixed { display: none !important; }
+body:not(.logged-in) .bottom-nav-fixed { display: none !important; }
+
+/* mobile: keep the visual viewport proper when the keyboard opens */
+@supports (height: 100dvh) {
+    html, body, .app, .screen.active { height: 100dvh; max-height: 100dvh; }
+    #mainScreen.active {
+        height: calc(100dvh - var(--nav-h) - var(--safe-bottom));
+        max-height: calc(100dvh - var(--nav-h) - var(--safe-bottom));
+    }
+    #orgScreen.active { height: 100dvh; max-height: 100dvh; }
+}

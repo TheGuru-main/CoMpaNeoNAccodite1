@@ -625,7 +625,7 @@ async def send_message_to_room(
                 workspace_id=str(ws_row.id),
                 user_id=user.phone or str(user.id),
                 prompt=content,
-                member_count=1 if is_personal else 2,
+                member_count=1 if is_private_brainstorm else 2,
                 generate_fn=_gen,
                 brain_uid=getattr(ws_row, "brain_uid", None),
                 ref_message_id=str(msg.id),     # PSTM-AUTO-SWIPE: always thread
@@ -677,9 +677,16 @@ async def send_message_to_room(
             try: await _ROOM_HUB.broadcast(str(ws_row.id), ai_payload)
             except Exception as e: print(f"[rooms] broadcast ai failed: {e}")
 
+        # AI-MSGID-RET: expose ai_msg_id for client-side dedup so the
+        # WS broadcast doesn't render the same AI response twice
         return {
             "id": str(msg.id),
+            "ai_msg_id": ai_msg_id,
             "content": msg.content,
+            "attachment": (
+                {"id": str(msg.attachment_id), "url": f"/uploads/{msg.attachment_id}"}
+                if getattr(msg, "attachment_id", None) else None
+            ),
             "created_at": msg.created_at.isoformat() if msg.created_at else None,
             "ai_invoked": True,
             "frames": frames,

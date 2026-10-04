@@ -3941,3 +3941,65 @@ try {
 // Expose
 window.forceInputVisible = _forceInputVisible;
 console.log('[acd] input hard-display installed');
+
+
+// ============================================================================
+// THEME-TOGGLE — light / dark mode with localStorage persistence
+// ============================================================================
+
+function acdApplyTheme(theme) {
+    // # THEME-TOGGLE
+    const t = (theme === 'light') ? 'light' : 'dark';
+    if (t === 'light') {
+        document.body.classList.add('light-mode');
+    } else {
+        document.body.classList.remove('light-mode');
+    }
+    try { localStorage.setItem('acd_theme', t); } catch (_) {}
+    // keep the <meta> theme-color in sync for mobile browsers
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', t === 'light' ? '#f4f5f8' : '#0c0c10');
+}
+
+function acdToggleTheme() {
+    const isLight = document.body.classList.contains('light-mode');
+    acdApplyTheme(isLight ? 'dark' : 'light');
+}
+
+function acdBootTheme() {
+    let saved = null;
+    try { saved = localStorage.getItem('acd_theme'); } catch (_) {}
+    if (saved === 'light' || saved === 'dark') {
+        acdApplyTheme(saved);
+    } else {
+        // default: follow the OS preference on first visit
+        const prefersLight = window.matchMedia &&
+            window.matchMedia('(prefers-color-scheme: light)').matches;
+        acdApplyTheme(prefersLight ? 'light' : 'dark');
+    }
+}
+
+// wire the button (delegated so it survives header re-renders)
+document.addEventListener('click', (e) => {
+    const btn = e.target.closest('#btnTheme');
+    if (!btn) return;
+    e.preventDefault();
+    acdToggleTheme();
+}, false);
+
+// run on boot
+acdBootTheme();
+
+// if the OS preference changes, follow it when the user hasn't made a choice
+try {
+    if (window.matchMedia) {
+        const mq = window.matchMedia('(prefers-color-scheme: light)');
+        mq.addEventListener && mq.addEventListener('change', (ev) => {
+            let saved = null;
+            try { saved = localStorage.getItem('acd_theme'); } catch (_) {}
+            if (!saved) acdApplyTheme(ev.matches ? 'light' : 'dark');
+        });
+    }
+} catch (_) {}
+
+console.log('[acd] theme toggle installed');

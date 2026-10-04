@@ -366,3 +366,114 @@ body.logged-in #mainScreen .home-welcome-centered {
 
 /* training modal still uses .modal */
 #trainingModal { z-index: 100 !important; }
+
+/* ============================================================================
+   LIGHT MODE — theme override via body.light-mode
+   Only the base colors change; accents stay recognizable.
+   ============================================================================ */
+
+body.light-mode {
+    --bg: #f4f5f8;
+    --bg-2: #e8eaf0;
+    --panel: rgba(255, 255, 255, 0.85);
+    --panel-solid: #ffffff;
+    --charcoal: #eaecf2;
+    --charcoal-2: #dde0e8;
+
+    --border: rgba(0, 0, 0, 0.10);
+    --border-strong: rgba(0, 0, 0, 0.20);
+
+    --text: #12121a;
+    --text-dim: rgba(18, 18, 26, 0.70);
+    --text-faint: rgba(18, 18, 26, 0.45);
+
+    /* accents stay but darken slightly for contrast on light bg */
+    --neon-blue: #3a6fd8;
+    --neon-blue-bright: #2c5cbf;
+    --neon-blue-glow: rgba(58, 111, 216, 0.30);
+
+    --burgundy: #6b1635;
+    --burgundy-bright: #8a1e42;
+    --burgundy-glow: rgba(138, 30, 66, 0.28);
+
+    --aqua: #3fa5a2;
+    --aqua-bright: #2e8784;
+    --aqua-glow: rgba(63, 165, 162, 0.28);
+}
+
+/* surface backgrounds that were hardcoded dark */
+body.light-mode .top-header,
+body.light-mode .bottom-nav,
+body.light-mode .bottom-nav.bottom-nav-fixed,
+body.light-mode .input-area,
+body.light-mode .header-nav {
+    background: rgba(255, 255, 255, 0.92) !important;
+}
+body.light-mode #bubbleCanvas {
+    background: radial-gradient(ellipse at 50% 0%,
+        rgba(58, 111, 216, 0.10) 0%,
+        #f4f5f8 45%,
+        #e8eaf0 100%) !important;
+}
+body.light-mode .message.ai {
+    background: #ffffff;
+    border: 1px solid var(--border);
+    color: var(--text);
+}
+body.light-mode .message.user {
+    color: #fdf2f6;
+}
+body.light-mode .modal-content,
+body.light-mode .cred-box,
+body.light-mode .auth-container {
+    background: var(--panel-solid);
+    border-color: var(--border);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.10);
+}
+body.light-mode .search-item,
+body.light-mode .org-row,
+body.light-mode .dm-item,
+body.light-mode .side-item,
+body.light-mode .invite-result,
+body.light-mode .doc-item,
+body.light-mode .reply-card,
+body.light-mode .profile-org {
+    background: #ffffff;
+    border-color: var(--border);
+}
+body.light-mode .frame-error {
+    background: rgba(168, 54, 92, 0.10);
+    color: #6b1635;
+}
+body.light-mode .status-pill {
+    background: rgba(0, 0, 0, 0.04);
+    border-color: var(--border);
+    color: var(--text);
+}
+body.light-mode .code-block {
+    background: #f6f8fa;
+    border-color: #d0d7de;
+    color: #12121a;
+}
+body.light-mode .auth-view input,
+body.light-mode .input-area input,
+body.light-mode .modal input,
+body.light-mode .modal select,
+body.light-mode .modal textarea,
+body.light-mode .search-row input,
+body.light-mode .search-row select {
+    background: #ffffff;
+    border-color: var(--border);
+    color: var(--text);
+}
+
+/* Theme toggle button */
+.theme-toggle {
+    position: relative;
+}
+.theme-toggle .fa-sun,
+.theme-toggle .fa-moon {
+    transition: transform 0.25s ease;
+}
+body.light-mode .theme-toggle .fa-sun { display: none; }
+body:not(.light-mode) .theme-toggle .fa-moon { display: none; }

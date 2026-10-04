@@ -4323,3 +4323,245 @@ console.log('[acd] input pin-fixed installed');
 
     console.log('[acd] FORCE-INPUT-ALWAYS installed');
 })();
+
+
+// ============================================================================
+// MSG-ACTIONS — clean dedup + single WS listener + long-press menu
+// ============================================================================
+
+// --- 1. Fix HTTP-side AI render to check the dedup set FIRST ---
+
+const _origSendMessageActions = sendMessage;
+sendMessage = async function(text, isFirst = false) {
+    const body = { content: text };
+    if (_replyTo && _replyTo.id) body.ref_message_id = _replyTo.id;
+    if (!currentRoomId) { return _origSendMessageActions(text, isFirst); }
+    if (!text.trim() && !_replyTo) return;
+
+    // optimistic bubble
+    const optimistic = {
+        id: 'local-' + Date.now(),
+        role: 'user',
+        content: text,
+        full_name: (currentUser && currentUser.full_name) || '',
+        avatar_url: (currentUser && currentUser.avatar_url) || null,
+        replies_to: _replyTo ? _replyTo.id : null,
+        replies_to_author: _replyTo ? _replyTo.author : null,
+        replies_to_preview: _replyTo ? _replyTo.preview : null,
+    };
+    _renderedIds.add(optimistic.id);
+    renderMessageItem(optimistic, { mine: true });
+    setReplyTo(null);
+
+    try {
+        const data = await api(`/rooms/${currentRoomId}/messages`, 'POST', body);
+        if (data && data.id) {
+            _renderedIds.add(data.id);
+            const el = document.querySelector(`.message[data-message-id="${optimistic.id}"]`);
+            if (el) el.dataset.messageId = data.id;
+        }
+        if (data && data.frames && data.frames.length > 0) {
+            if (data.ai_msg_id && _renderedIds.has(data.ai_msg_id)) {
+                // WS already rendered this AI message — skip
+            } else {
+                if (data.ai_msg_id) _renderedIds.add(data.ai_msg_id);
+                appendFrameMessage('ai', data.frames, []);
+            }
+        }
+    } catch (e) {
+        appendMessage('ai', `Send failed: ${e.message}`);
+    }
+};
+
+// --- 2. Single WS listener per socket (guard with a WeakSet) ---
+
+const _wsWithListener = new WeakSet();
+
+function _attachRoomListener(ws, roomId) {
+    if (!ws || _wsWithListener.has(ws)) return;
+    _wsWithListener.add(ws);
+
+    ws.addEventListener('message', (ev) => {
+        let payload;
+        try { payload = JSON.parse(ev.data); } catch (_) { return; }
+        if (payload.room_id !== currentRoomId) return;
+
+        if (payload.type === 'user_message' && payload.message) {
+            const m = payload.message;
+            const mine = currentUser && m.user_id === currentUser.id;
+            if (mine) return;
+            if (m.id && _renderedIds.has(m.id)) return;
+            if (m.id) _renderedIds.add(m.id);
+            renderMessageItem({
+                id: m.id,
+                user_id: m.user_id,
+                full_name: m.full_name,
+                phone: m.phone,
+                avatar_url: m.avatar_url || null,
+                role: 'user',
+                content: m.content,
+                attachment: m.attachment,
+                replies_to: m.replies_to || null,
+                replies_to_author: m.replies_to_author || null,
+                replies_to_preview: m.replies_to_preview || null,
+                created_at: m.created_at,
+            }, { mine: false });
+        } else if (payload.type === 'ai_message' && payload.message) {
+            const m = payload.message;
+            // skip the invoker — they already have the HTTP response
+            if (payload.invoked_by && currentUser && payload.invoked_by === currentUser.id) return;
+            if (m.id && _renderedIds.has(m.id)) return;
+            if (m.id) _renderedIds.add(m.id);
+            const frames = payload.frames || [];
+            if (frames.length) {
+                appendFrameMessage('ai', frames, []);
+                const chatBox = document.getElementById('chatBox');
+                const el = chatBox && chatBox.lastElementChild;
+                if (el && el.classList.contains('message') && m.replies_to) {
+                    el.classList.add('threaded-reply');
+                    if (!el.querySelector('.thread-ref')) {
+                        const ref = document.createElement('div');
+                        ref.className = 'thread-ref';
+                        ref.innerHTML = `<i class="fa-solid fa-arrow-turn-up"></i>
+                            <span>replying to <strong>${escapeHtml(m.replies_to_author || 'message')}</strong>
+                            <span class="thread-preview">${escapeHtml((m.replies_to_preview || '').slice(0,80))}</span></span>`;
+                        el.insertBefore(ref, el.firstChild);
+                    }
+                }
+            } else if (m.content) {
+                renderMessageItem({
+                    id: m.id, role: 'ai', content: m.content,
+                    replies_to: m.replies_to,
+                    replies_to_author: m.replies_to_author,
+                    replies_to_preview: m.replies_to_preview,
+                }, { mine: false });
+            }
+        } else if (payload.type === 'edit_message' && payload.message) {
+            const el = document.querySelector(`.message[data-message-id="${payload.message.id}"]`);
+            if (el) {
+                const prose = el.querySelector('.frame-prose');
+                if (prose) prose.textContent = payload.message.content;
+            }
+        } else if (payload.type === 'delete_message' && payload.message_id) {
+            const el = document.querySelector(`.message[data-message-id="${payload.message_id}"]`);
+            if (el) el.remove();
+        }
+    });
+}
+
+// override openRoomSocket to attach only one listener per new socket
+const _origOpenRoomSocketActions = openRoomSocket;
+openRoomSocket = function(roomId) {
+    _origOpenRoomSocketActions(roomId);
+    if (_roomSocket) _attachRoomListener(_roomSocket, roomId);
+};
+
+// --- 3. Long-press menu ---
+
+function _ensureActionsMenu() {
+    let m = document.getElementById('msgActionsMenu');
+    if (m) return m;
+    m = document.createElement('div');
+    m.id = 'msgActionsMenu';
+    m.className = 'msg-actions-menu';
+    m.style.display = 'none';
+    document.body.appendChild(m);
+    return m;
+}
+
+function _openMessageMenu(msgEl, m) {
+    const menu = _ensureActionsMenu();
+    const mine = currentUser && m.user_id === currentUser.id;
+    const isAi = m.role === 'ai';
+
+    const items = [];
+    items.push({ action: 'reply',  icon: 'fa-reply',    label: 'Reply' });
+    if (!isAi) items.push({ action: 'copy', icon: 'fa-copy', label: 'Copy' });
+    if (mine) items.push({ action: 'edit', icon: 'fa-pen',  label: 'Edit' });
+    if (mine) items.push({ action: 'delete', icon: 'fa-trash', label: 'Delete', danger: true });
+
+    menu.innerHTML = items.map(it => `
+        <button class="msg-action${it.danger ? ' danger' : ''}" data-act="${it.action}">
+            <i class="fa-solid ${it.icon}"></i> <span>${it.label}</span>
+        </button>
+    `).join('');
+
+    const rect = msgEl.getBoundingClientRect();
+    menu.style.left = Math.min(window.innerWidth - 200, Math.max(12, rect.left)) + 'px';
+    menu.style.top  = Math.max(12, rect.top - 8) + 'px';
+    menu.style.display = 'flex';
+
+    const close = () => { menu.style.display = 'none'; };
+    setTimeout(() => document.addEventListener('click', close, { once: true }), 30);
+
+    menu.querySelectorAll('[data-act]').forEach(btn => {
+        btn.addEventListener('click', async (ev) => {
+            ev.stopPropagation();
+            close();
+            const act = btn.dataset.act;
+            if (act === 'reply') {
+                setReplyTo({
+                    id: m.id,
+                    author: m.full_name || m.phone || (isAi ? 'Accodite' : 'user'),
+                    preview: (m.content || '').slice(0, 100),
+                });
+                return;
+            }
+            if (act === 'copy') {
+                try { await navigator.clipboard.writeText(m.content || ''); } catch (_) {}
+                return;
+            }
+            if (act === 'edit') {
+                const next = prompt('Edit message:', m.content || '');
+                if (next === null || next === m.content) return;
+                try {
+                    await api(`/rooms/${currentRoomId}/messages/${m.id}`, 'PATCH', { content: next });
+                    const prose = msgEl.querySelector('.frame-prose');
+                    if (prose) prose.textContent = next;
+                } catch (e) { alert('Edit failed: ' + e.message); }
+                return;
+            }
+            if (act === 'delete') {
+                if (!confirm('Delete this message?')) return;
+                try {
+                    await api(`/rooms/${currentRoomId}/messages/${m.id}`, 'DELETE');
+                    msgEl.remove();
+                } catch (e) { alert('Delete failed: ' + e.message); }
+            }
+        });
+    });
+}
+
+// attach long-press / context-menu to every rendered message
+let _lpTimer = null;
+document.addEventListener('touchstart', (e) => {
+    const el = e.target.closest('.message');
+    if (!el) return;
+    clearTimeout(_lpTimer);
+    _lpTimer = setTimeout(() => {
+        const id = el.dataset.messageId;
+        if (!id) return;
+        const m = { id, content: (el.querySelector('.frame-prose') || {}).textContent || '',
+                    role: el.classList.contains('ai') ? 'ai' : 'user',
+                    user_id: currentUser && el.classList.contains('user') ? currentUser.id : null,
+                    full_name: currentUser && currentUser.full_name };
+        _openMessageMenu(el, m);
+    }, 550);
+}, { passive: true });
+
+document.addEventListener('touchend',    () => clearTimeout(_lpTimer), { passive: true });
+document.addEventListener('touchmove',   () => clearTimeout(_lpTimer), { passive: true });
+document.addEventListener('contextmenu', (e) => {
+    const el = e.target.closest('.message');
+    if (!el) return;
+    e.preventDefault();
+    const id = el.dataset.messageId;
+    if (!id) return;
+    const m = { id, content: (el.querySelector('.frame-prose') || {}).textContent || '',
+                role: el.classList.contains('ai') ? 'ai' : 'user',
+                user_id: currentUser && el.classList.contains('user') ? currentUser.id : null,
+                full_name: currentUser && currentUser.full_name };
+    _openMessageMenu(el, m);
+});
+
+console.log('[acd] MSG-ACTIONS installed');

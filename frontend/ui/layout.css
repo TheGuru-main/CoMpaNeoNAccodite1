@@ -1047,3 +1047,48 @@ body.light-mode #bubbleCanvas {
             rgba(46, 143, 140, 0.05) 0%,
             rgba(44, 92, 197, 0.04) 100%) !important;
 }
+
+/* Message actions menu — long-press / right-click */
+.msg-actions-menu {
+    position: fixed;
+    z-index: 500;
+    display: none;
+    flex-direction: column;
+    min-width: 160px;
+    padding: 0.35rem;
+    background: var(--panel-solid);
+    border: 1px solid var(--border-strong);
+    border-radius: 0.7rem;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(10px);
+}
+.msg-action {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.55rem 0.75rem;
+    background: transparent;
+    border: none;
+    border-radius: 0.5rem;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    cursor: pointer;
+    text-align: left;
+    width: 100%;
+    transition: background 0.12s ease;
+}
+.msg-action i { width: 14px; color: var(--aqua-bright); }
+.msg-action:hover {
+    background: linear-gradient(275deg,
+        rgba(124, 30, 63, 0.20) 0%,
+        rgba(79, 140, 255, 0.16) 100%);
+}
+.msg-action.danger i { color: var(--burgundy-bright); }
+.msg-action.danger:hover {
+    background: rgba(168, 54, 92, 0.18);
+}
+body.light-mode .msg-actions-menu {
+    background: #ffffff;
+    box-shadow: 0 12px 32px rgba(24, 20, 32, 0.15);
+}

@@ -944,3 +944,100 @@ async def search_contacts(
         return {"results": list(results.values())[:limit]}
     finally:
         db.close()
+
+
+# ============================================================================
+# MSG-EDIT / MSG-DELETE
+# ============================================================================
+
+class EditMessageReq(BaseModel):
+    content: str = Field(..., min_length=1, max_length=20000)
+
+
+@router.patch("/{room_id}/messages/{message_id}")
+async def edit_message(
+    room_id: str,
+    message_id: str,
+    req: EditMessageReq,
+    user: User = Depends(get_current_user),
+):
+    """Edit your own message. Admins/owners can edit any message."""
+    db = SessionLocal()
+    try:
+        ws_row = db.query(Workspace).filter(Workspace.id == room_id).first()
+        if ws_row is None:
+            raise HTTPException(404, "room not found")
+        if not _is_member(db, ws_row, user.id):
+            raise HTTPException(403, "not a member")
+
+        msg = db.query(Message).filter(Message.id == message_id).first()
+        if msg is None or msg.workspace_id != ws_row.id:
+            raise HTTPException(404, "message not found")
+
+        role = _role_for(db, user, ws_row.organization_id)
+        can_edit = (msg.user_id == user.id) or (role in {ROLE_CEO, ROLE_HR, ROLE_DEPT_HEAD, ROLE_MANAGER})
+        if not can_edit:
+            raise HTTPException(403, "cannot edit this message")
+
+        msg.content = req.content.strip()
+        db.commit()
+        db.refresh(msg)
+
+        # broadcast the edit
+        payload = {
+            "type": "edit_message",
+            "room_id": str(ws_row.id),
+            "message": {
+                "id": str(msg.id),
+                "content": msg.content,
+                "edited_at": None,
+            },
+        }
+        if _ROOM_HUB is not None:
+            try: await _ROOM_HUB.broadcast(str(ws_row.id), payload)
+            except Exception as e: print(f"[rooms] edit broadcast failed: {e}")
+
+        return {"ok": True, "id": str(msg.id), "content": msg.content}
+    finally:
+        db.close()
+
+
+@router.delete("/{room_id}/messages/{message_id}")
+async def delete_message(
+    room_id: str,
+    message_id: str,
+    user: User = Depends(get_current_user),
+):
+    """Delete your own message. Admins can delete any."""
+    db = SessionLocal()
+    try:
+        ws_row = db.query(Workspace).filter(Workspace.id == room_id).first()
+        if ws_row is None:
+            raise HTTPException(404, "room not found")
+        if not _is_member(db, ws_row, user.id):
+            raise HTTPException(403, "not a member")
+
+        msg = db.query(Message).filter(Message.id == message_id).first()
+        if msg is None or msg.workspace_id != ws_row.id:
+            raise HTTPException(404, "message not found")
+
+        role = _role_for(db, user, ws_row.organization_id)
+        can_delete = (msg.user_id == user.id) or (role in {ROLE_CEO, ROLE_HR, ROLE_DEPT_HEAD, ROLE_MANAGER})
+        if not can_delete:
+            raise HTTPException(403, "cannot delete this message")
+
+        db.delete(msg)
+        db.commit()
+
+        payload = {
+            "type": "delete_message",
+            "room_id": str(ws_row.id),
+            "message_id": str(message_id),
+        }
+        if _ROOM_HUB is not None:
+            try: await _ROOM_HUB.broadcast(str(ws_row.id), payload)
+            except Exception as e: print(f"[rooms] delete broadcast failed: {e}")
+
+        return {"ok": True, "id": str(message_id)}
+    finally:
+        db.close()

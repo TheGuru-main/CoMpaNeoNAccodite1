@@ -1545,27 +1545,7 @@ function showHome() {
 // INPUT + CHIP VISIBILITY
 // ============================================================================
 
-function updateInputVisibility() {
-    // # INPUT-VISIBILITY
-    const inputArea = document.getElementById('inputArea');
-    const chips = document.getElementById('roomChips');
-    const room = roomList.find(r => r.id === currentRoomId);
 
-    if (!currentRoomId || !room) {
-        // INPUT-HARD-DISPLAY
-        if (inputArea) inputArea.style.setProperty('display', 'none', 'important');
-        if (chips) chips.style.setProperty('display', 'none', 'important');
-        return;
-    }
-
-    if (inputArea) inputArea.style.setProperty('display', 'flex', 'important');
-    if (chips) {
-        const isPrivate = room.workspace_type === 'personal_brainstorm';
-        chips.style.display = isPrivate ? 'none' : '';
-        const cnt = document.getElementById('chipMemberCount');
-        if (cnt) cnt.textContent = String(room.member_count || 1);
-    }
-}
 
 // ============================================================================
 // DM: start conversation from phone
@@ -2073,62 +2053,11 @@ let inviteActiveTab = 'search';
 
 
 
-async function inviteSearch() {
-    const q = document.getElementById('inviteSearchInput').value.trim();
-    const box = document.getElementById('inviteSearchResults');
-    if (q.length < 2) {
-        box.innerHTML = '<p class="org-empty">Type a name or phone to search</p>';
-        return;
-    }
-    box.innerHTML = '<p style="opacity:.6;">Searching…</p>';
-    try {
-        const data = await api(`/contacts/search?q=${encodeURIComponent(q)}`);
-        if (!data.results || !data.results.length) {
-            box.innerHTML = '<p class="org-empty">None found</p>';
-            return;
-        }
-        box.innerHTML = data.results.map(r => `
-            <div class="invite-result" data-uid="${r.user_id}" data-phone="${escapeHtml(r.phone)}">
-                <div>
-                    <div class="org-row-title">${escapeHtml(r.full_name || '')}</div>
-                    <div class="org-row-sub">${escapeHtml(r.phone || '')}</div>
-                </div>
-                <button class="mini-btn ok"><i class="fa-solid fa-plus"></i></button>
-            </div>
-        `).join('');
-        box.querySelectorAll('.invite-result').forEach(el => el.addEventListener('click', async () => {
-            await inviteByPhone(el.dataset.phone);
-        }));
-    } catch (e) {
-        box.innerHTML = `<p style="color:#f3a9c1;">${escapeHtml(e.message)}</p>`;
-    }
-}
 
-async function inviteByPhone(phone) {
-    const box = document.getElementById('inviteSearchResults') || document.getElementById('invitePhoneResult');
-    try {
-        const data = await api(`/rooms/${currentRoomId}/members`, 'POST', { phone });
-        const msg = data.already_member ? 'Already a member.' : `Added ${phone}.`;
-        const ok = document.createElement('div');
-        ok.style.cssText = 'color:#86efac; font-size:0.8rem; padding:0.3rem 0;';
-        ok.textContent = msg;
-        box.appendChild(ok);
-    } catch (e) {
-        const err = document.createElement('div');
-        err.style.cssText = 'color:#f3a9c1; font-size:0.8rem; padding:0.3rem 0;';
-        err.textContent = e.message;
-        box.appendChild(err);
-    }
-}
 
-async function inviteByPhoneInput() {
-    const cc = document.getElementById('inviteCountryCode').value;
-    let raw = (document.getElementById('invitePhoneInput').value || '').replace(/\D/g, '');
-    if (raw.startsWith('0')) raw = raw.slice(1);
-    const phone = `+${cc}${raw}`;
-    if (phone.length < 8) { alert('Invalid phone'); return; }
-    await inviteByPhone(phone);
-}
+
+
+
 
 // ============================================================================
 // WIRING

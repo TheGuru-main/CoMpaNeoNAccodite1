@@ -988,3 +988,62 @@ body.logged-in .reply-bar {
     background: rgba(12, 12, 16, 0.94) !important;
     border-top: 1px solid var(--border) !important;
 }
+
+/* ============================================================================
+   OXBLOOD WASH — subtle warm-red tint in the whitespace
+   Dark mode: ox-blood pooling from the bottom-left
+   Light mode: same idea, very soft so surfaces stay clean
+   ============================================================================ */
+
+html body:not(.light-mode),
+html body:not(.light-mode) .app {
+    background:
+        radial-gradient(circle at 8% 92%,
+            rgba(74, 0, 0, 0.55) 0%,
+            rgba(74, 0, 0, 0.18) 22%,
+            transparent 48%),
+        radial-gradient(circle at 92% 8%,
+            rgba(79, 140, 255, 0.10) 0%,
+            transparent 42%),
+        linear-gradient(180deg,
+            #0c0c10 0%,
+            #0a0a12 60%,
+            #0b0509 100%) !important;
+    background-attachment: fixed !important;
+}
+
+html body.light-mode,
+html body.light-mode .app {
+    background:
+        radial-gradient(circle at 8% 92%,
+            rgba(140, 35, 64, 0.10) 0%,
+            transparent 48%),
+        radial-gradient(circle at 92% 8%,
+            rgba(44, 92, 197, 0.05) 0%,
+            transparent 42%),
+        linear-gradient(275deg,
+            #fdfcf9 0%,
+            #f6f4ef 40%,
+            #eceef0 100%) !important;
+    background-attachment: fixed !important;
+}
+
+/* bubble canvas picks up the same warmth instead of pure black */
+body:not(.light-mode) #bubbleCanvas {
+    background:
+        radial-gradient(ellipse at 8% 92%,
+            rgba(74, 0, 0, 0.18) 0%,
+            transparent 55%),
+        radial-gradient(ellipse at 50% 0%,
+            rgba(79, 140, 255, 0.10) 0%,
+            transparent 45%) !important;
+}
+body.light-mode #bubbleCanvas {
+    background:
+        radial-gradient(ellipse at 8% 92%,
+            rgba(140, 35, 64, 0.06) 0%,
+            transparent 55%),
+        linear-gradient(275deg,
+            rgba(46, 143, 140, 0.05) 0%,
+            rgba(44, 92, 197, 0.04) 100%) !important;
+}

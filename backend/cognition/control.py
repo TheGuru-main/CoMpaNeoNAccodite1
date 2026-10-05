@@ -40,7 +40,7 @@ from model.head_wire import (
 )
 
 
-LTM_READERS = {"owner", "ceo", "c_suite", "hr"}
+from org.roles import LTM_ACCESS_ROLES as LTM_READERS
 
 
 @dataclass

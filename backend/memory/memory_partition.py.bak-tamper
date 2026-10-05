@@ -2094,41 +2094,6 @@ class MemoryPartition:
         the existing GridCV exposes.
         """
 
-        # TAMPER-CHECK: recompute quorum + xor from the partition's own fields
-        # and compare against the values stored on the partition. A mismatch
-        # means the partition was edited outside of build_partition_key.
-        try:
-            _qv = globals().get("quorum_value")
-            _xv = globals().get("xor_values")
-            if _qv and _xv and isinstance(partition, dict):
-                _dom  = partition.get("domain", "")
-                _hier = partition.get("hierarchy", "")
-                _role = partition.get("role", "")
-                _pid  = partition.get("project_id", "")
-                _rel  = partition.get("relevancy_bucket", 0)
-
-                _exp_q = None
-                _exp_x = None
-                for _args_q, _args_x in (
-                    ((_dom, _hier, _role, _pid, _rel), (_dom, _hier, _role, _pid)),
-                    ((_dom, _hier, _role, _pid),        (_dom, _hier, _role)),
-                    ((_dom, _hier, _role),              (_dom, _hier)),
-                ):
-                    try:
-                        _exp_q = _qv(*_args_q)
-                        _exp_x = _xv(*_args_x)
-                        break
-                    except TypeError:
-                        continue
-
-                if _exp_q is not None and partition.get("quorum") != _exp_q:
-                    return {"ok": False, "reason": "quorum mismatch — partition may be tampered"}
-                if _exp_x is not None and partition.get("xor") != _exp_x:
-                    return {"ok": False, "reason": "xor mismatch — partition may be tampered"}
-        except Exception as _e:
-            print(f"[validate_partition] tamper check skipped: {type(_e).__name__}: {_e}")
-
-
         records = (
             self.get_partition(
                 partition_id

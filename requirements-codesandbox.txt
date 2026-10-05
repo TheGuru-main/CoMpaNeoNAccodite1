@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+pydantic
+sqlalchemy
+psycopg[binary]
+langdetect
+httpx
+beautifulsoup4
+lxml
+python-dotenv
+numpy

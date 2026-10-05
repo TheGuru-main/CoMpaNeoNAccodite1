@@ -502,7 +502,7 @@ class AIBrain(Base):
             Organizational AI context for a team room.
 
     The actual STM/LTM storage, relevance partitioning, GridCV,
-    GSP-XOR permutations, retrieval and physical storage routing
+    GSP-XOR quorum sharding, retrieval and physical storage routing
     remain outside this relational model and belong to MemoryGrid.
     """
 

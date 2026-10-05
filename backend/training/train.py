@@ -1043,3 +1043,99 @@ if __name__ == "__main__":
         memory_grid=MemoryGrid()
     )
          
+
+# ============================================================================
+# SEED-CRAWLER-AUTOSTART — fill the grid with external content before training
+# ============================================================================
+#
+# On import: waits a few seconds so the module finishes loading, then checks
+# whether the grid has enough content. If it's below a threshold, it fires
+# the seed crawler in a background thread.
+#
+# Nothing in train() or train_model() changes. This is a pre-flight that runs
+# once per process. Disable with ACCD_SEED_ENABLED=0.
+# ============================================================================
+
+import threading as _seed_threading
+import time as _seed_time
+
+SEED_ENABLED = os.environ.get("ACCD_SEED_ENABLED", "1") == "1"
+SEED_THRESHOLD = int(os.environ.get("ACCD_SEED_THRESHOLD", "20"))
+SEED_PER_LICENSE = int(os.environ.get("ACCD_SEED_PER_LICENSE", "3"))
+
+_seed_done = False
+_seed_lock = _seed_threading.Lock()
+
+
+def ensure_seed_crawl(*, force: bool = False):
+    """Run the seed crawl once if the grid is thin. Idempotent."""
+    global _seed_done
+    with _seed_lock:
+        if _seed_done and not force:
+            return {"skipped": True, "reason": "already ran"}
+        _seed_done = True
+
+    # resolve grid
+    grid = None
+    try:
+        from integration import get_state
+        grid = get_state().get("grid")
+    except Exception:
+        pass
+    if grid is None:
+        try:
+            grid = MemoryGrid()
+        except Exception:
+            return {"ok": False, "reason": "no grid"}
+
+    docs = getattr(grid, "documents", None)
+    current = len(docs) if docs else 0
+    if current >= SEED_THRESHOLD and not force:
+        print(f"[seed] skip (grid already has {current} docs)")
+        return {"ok": True, "skipped": True, "grid_count": current}
+
+    # import and run seed crawler
+    seed_crawl = None
+    for path in ("external.seed_crawler", "seed_crawler"):
+        try:
+            mod = __import__(path, fromlist=["seed_crawl"])
+            seed_crawl = getattr(mod, "seed_crawl", None)
+            if seed_crawl:
+                break
+        except ImportError:
+            continue
+    if seed_crawl is None:
+        print("[seed] seed_crawler module not importable")
+        return {"ok": False, "reason": "module missing"}
+
+    print(f"[seed] running (grid has {current} docs, threshold {SEED_THRESHOLD})")
+    try:
+        stats = seed_crawl(grid=grid, per_license=SEED_PER_LICENSE)
+        return {"ok": True, "stats": stats}
+    except Exception as e:
+        print(f"[seed] failed: {type(e).__name__}: {e}")
+        return {"ok": False, "reason": f"{type(e).__name__}: {e}"}
+
+
+def _seed_thread_main():
+    try:
+        _seed_time.sleep(3.0)   # let the module finish loading
+        ensure_seed_crawl()
+    except Exception as e:
+        print(f"[seed] daemon failed: {type(e).__name__}: {e}")
+
+
+def _seed_autostart():
+    if not SEED_ENABLED:
+        return
+    t = _seed_threading.Thread(
+        target=_seed_thread_main,
+        daemon=True,
+        name="seed-crawler",
+    )
+    t.start()
+
+try:
+    _seed_autostart()
+except Exception:
+    pass

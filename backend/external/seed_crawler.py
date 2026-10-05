@@ -362,6 +362,43 @@ def collect_seed_sequential(fetch_batch, declared_license_of, *, per_tier_cap=20
     return out
 
 
+# ASYNC-FETCH-FIX
+import asyncio as _aio
+import inspect as _inspect
+
+def _run_fetcher(fetcher, query):
+    """
+    Fetchers may be sync or async. Run either form and return the list.
+    Uses a single event loop for the whole seed crawl via _SEED_LOOP.
+    """
+    try:
+        res = fetcher(query)
+    except Exception as e:
+        raise
+
+    if _inspect.isawaitable(res):
+        loop = _get_seed_loop()
+        return loop.run_until_complete(res)
+    return res
+
+
+_SEED_LOOP = None
+
+def _get_seed_loop():
+    global _SEED_LOOP
+    if _SEED_LOOP is None or _SEED_LOOP.is_closed():
+        try:
+            _SEED_LOOP = _aio.get_event_loop()
+        except RuntimeError:
+            _SEED_LOOP = _aio.new_event_loop()
+            _aio.set_event_loop(_SEED_LOOP)
+    if _SEED_LOOP.is_running():
+        # already inside a running loop — use a fresh one for sync calls
+        new = _aio.new_event_loop()
+        return new
+    return _SEED_LOOP
+
+
 def seed_crawl(
     *,
     grid=None,
@@ -413,7 +450,7 @@ def seed_crawl(
             q = queries[i % len(queries)]
             stats["planned"] += 1
             try:
-                chunks = fetcher(q) or []
+                chunks = _run_fetcher(fetcher, q) or []
                 if not chunks:
                     failed += 1
                     continue
@@ -429,6 +466,7 @@ def seed_crawl(
                     except Exception as e:
                         failed += 1
                         stats["errors"].append(f"{domain}: add_document {e}")
+                        print(f"[seed-err] {domain}: {type(e).__name__}: {e}")  # SHOW-ERRORS
             except Exception as e:
                 failed += 1
                 stats["errors"].append(f"{domain}: {type(e).__name__}: {e}")

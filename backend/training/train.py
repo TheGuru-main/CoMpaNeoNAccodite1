@@ -1110,7 +1110,7 @@ def ensure_seed_crawl(*, force: bool = False):
 
     print(f"[seed] running (grid has {current} docs, threshold {SEED_THRESHOLD})")
     try:
-        stats = seed_crawl(grid=grid, per_license=SEED_PER_LICENSE)
+        stats = seed_crawl(grid=grid)
         return {"ok": True, "stats": stats}
     except Exception as e:
         print(f"[seed] failed: {type(e).__name__}: {e}")

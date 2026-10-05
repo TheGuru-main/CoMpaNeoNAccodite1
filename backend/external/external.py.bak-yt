@@ -1,4 +1,3 @@
-# # YOUTUBE-REMOVED
 """
 CoMpaNeoN External Source Adapter Layer
 ========================================
@@ -10,7 +9,7 @@ Responsibilities
 - Define external source directions/endpoints.
 - Provide normalized adapters for external APIs.
 - Support dictionaries, news, books, e-library, Wikipedia,
-  GitHub, financial sources and APITube.
+  GitHub, financial sources, APITube and YouTube.
 - Return normalized external documents to web_crawler.py.
 - Preserve source identity and provenance.
 - Detect language where possible.
@@ -227,14 +226,22 @@ EXTERNAL_SOURCES: Dict[str, Dict[str, Any]] = {
             "media_discovery",
         ],
     },
-    "scrapingbee": {
-        "name": "ScrapingBee",
-        "provider": "scrapingbee",
-        "base_url": "https://app.scrapingbee.com/api/v1/",
-        "environment_key": "SCRAPINGBEE_API_KEY",
-        "kind": "fallback",
-    },
 
+    "youtube": {
+        "type": "video",
+        "provider": "youtube",
+        "base_url": (
+            "https://www.googleapis.com/youtube/v3"
+        ),
+        "requires_key": True,
+        "environment_key": "YOUTUBE_API_KEY",
+        "capabilities": [
+            "video_search",
+            "video_metadata",
+            "channel_metadata",
+            "captions",
+        ],
+    },
 }
 
 
@@ -252,41 +259,6 @@ def normalize_source(
     return str(
         source or ""
     ).strip().lower()
-
-
-# SCRAPINGBEE-FALLBACK
-
-def _scrapingbee_available() -> bool:
-    import os
-    return bool(os.environ.get("SCRAPINGBEE_API_KEY", "").strip())
-
-
-async def fetch_scrapingbee(url: str, *, render_js: bool = True) -> dict:
-    """
-    Fallback fetcher for pages the standard fetchers can't reach.
-    Uses ScrapingBee when SCRAPINGBEE_API_KEY is configured.
-    Returns a normalized dict: {ok, url, text, source, error}.
-    """
-    if not _scrapingbee_available():
-        return {"ok": False, "url": url, "text": "",
-                "source": "scrapingbee",
-                "error": "SCRAPINGBEE_API_KEY not set"}
-    try:
-        try:
-            from external.scrapingbee import fetch_page
-        except ImportError:
-            from scrapingbee import fetch_page  # type: ignore
-        data = await fetch_page(url, render_js=render_js)
-        if isinstance(data, dict):
-            data.setdefault("ok", True)
-            data.setdefault("source", "scrapingbee")
-            return data
-        return {"ok": True, "url": url, "text": str(data),
-                "source": "scrapingbee", "error": None}
-    except Exception as e:
-        return {"ok": False, "url": url, "text": "",
-                "source": "scrapingbee",
-                "error": f"{type(e).__name__}: {e}"}
 
 
 def get_source(
@@ -1251,6 +1223,278 @@ async def fetch_financial_modelling_prep(
             }
 
 
+# ============================================================================
+# YOUTUBE
+# ============================================================================
+
+async def fetch_youtube_videos(
+    query: str,
+    limit: int = DEFAULT_LIMIT,
+) -> Dict[str, Any]:
+    """
+    Search YouTube and return normalized video documents.
+
+    This retrieves metadata through the YouTube Data API.
+
+    Transcript/subtitle acquisition is intentionally a separate step.
+    web_crawler.py can decide whether transcript retrieval is required.
+    """
+
+    api_key = os.getenv(
+        "YOUTUBE_API_KEY"
+    )
+
+    if not api_key:
+        return {
+            "documents": [],
+            "note": (
+                "YOUTUBE_API_KEY not set"
+            ),
+        }
+
+    source = get_source(
+        "youtube"
+    )
+
+    params = {
+        "part": "snippet",
+        "q": query,
+        "type": "video",
+        "maxResults": limit,
+        "key": api_key,
+    }
+
+    async with _client() as client:
+
+        try:
+
+            response = await client.get(
+                f"{source['base_url']}/search",
+                params=params,
+            )
+
+            if response.status_code != 200:
+                return {
+                    "documents": []
+                }
+
+            items = response.json().get(
+                "items",
+                []
+            )
+
+            documents = []
+
+            for item in items:
+
+                video_id = (
+                    item.get(
+                        "id",
+                        {}
+                    ).get(
+                        "videoId"
+                    )
+                )
+
+                snippet = item.get(
+                    "snippet",
+                    {}
+                )
+
+                title = snippet.get(
+                    "title",
+                    ""
+                )
+
+                description = snippet.get(
+                    "description",
+                    ""
+                )
+
+                content = (
+                    f"{title}\n"
+                    f"{description}"
+                )
+
+                documents.append(
+                    normalize_document(
+                        source="youtube",
+                        source_type="video",
+                        content=content,
+                        title=title,
+                        url=(
+                            f"https://www.youtube.com/"
+                            f"watch?v={video_id}"
+                        ),
+                        external_id=video_id,
+                        metadata={
+                            "channel_id": snippet.get(
+                                "channelId"
+                            ),
+                            "channel_title": snippet.get(
+                                "channelTitle"
+                            ),
+                            "published_at": snippet.get(
+                                "publishedAt"
+                            ),
+                            "thumbnails": snippet.get(
+                                "thumbnails",
+                                {}
+                            ),
+                            "transcript_available": False,
+                            "subtitles_available": False,
+                        },
+                    )
+                )
+
+            return {
+                "documents": documents
+            }
+
+        except Exception as exc:
+
+            return {
+                "documents": [],
+                "error": str(exc),
+            }
+
+
+# ============================================================================
+# YOUTUBE VIDEO METADATA
+# ============================================================================
+
+async def fetch_youtube_metadata(
+    video_id: str,
+) -> Dict[str, Any]:
+    """
+    Fetch detailed metadata for one YouTube video.
+    """
+
+    api_key = os.getenv(
+        "YOUTUBE_API_KEY"
+    )
+
+    if not api_key:
+        return {
+            "documents": [],
+            "note": (
+                "YOUTUBE_API_KEY not set"
+            ),
+        }
+
+    source = get_source(
+        "youtube"
+    )
+
+    params = {
+        "part": (
+            "snippet,"
+            "contentDetails,"
+            "statistics"
+        ),
+        "id": video_id,
+        "key": api_key,
+    }
+
+    async with _client() as client:
+
+        try:
+
+            response = await client.get(
+                f"{source['base_url']}/videos",
+                params=params,
+            )
+
+            if response.status_code != 200:
+                return {
+                    "documents": []
+                }
+
+            items = response.json().get(
+                "items",
+                []
+            )
+
+            if not items:
+                return {
+                    "documents": []
+                }
+
+            item = items[0]
+
+            snippet = item.get(
+                "snippet",
+                {}
+            )
+
+            content_details = item.get(
+                "contentDetails",
+                {}
+            )
+
+            statistics = item.get(
+                "statistics",
+                {}
+            )
+
+            title = snippet.get(
+                "title",
+                ""
+            )
+
+            description = snippet.get(
+                "description",
+                ""
+            )
+
+            content = (
+                f"{title}\n"
+                f"{description}"
+            )
+
+            return {
+                "documents": [
+                    normalize_document(
+                        source="youtube",
+                        source_type="video",
+                        content=content,
+                        title=title,
+                        url=(
+                            f"https://www.youtube.com/"
+                            f"watch?v={video_id}"
+                        ),
+                        external_id=video_id,
+                        metadata={
+                            "channel_id": snippet.get(
+                                "channelId"
+                            ),
+                            "channel_title": snippet.get(
+                                "channelTitle"
+                            ),
+                            "published_at": snippet.get(
+                                "publishedAt"
+                            ),
+                            "duration": content_details.get(
+                                "duration"
+                            ),
+                            "definition": content_details.get(
+                                "definition"
+                            ),
+                            "statistics": statistics,
+                            "caption_flag": content_details.get(
+                                "caption"
+                            ),
+                        },
+                    )
+                ]
+            }
+
+        except Exception as exc:
+
+            return {
+                "documents": [],
+                "error": str(exc),
+            }
 
 
 # ============================================================================
@@ -1462,6 +1706,7 @@ async def search_external(
     web_crawler.py can call:
 
         await search_external(
+            "youtube",
             query,
         )
 
@@ -1506,6 +1751,26 @@ async def search_external(
             query,
             **kwargs,
         )
+
+    if source == "youtube":
+        return await fetch_youtube_videos(
+            query,
+            **kwargs,
+        )
+
+    if source == "apitube":
+        return await fetch_apitube_videos(
+            query,
+            **kwargs,
+        )
+
+    raise ValueError(
+        f"Unsupported external source: "
+        f"{source}"
+    )
+
+
+# ============================================================================
 # SOURCE METADATA
 # ============================================================================
 

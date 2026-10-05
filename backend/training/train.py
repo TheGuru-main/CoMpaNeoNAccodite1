@@ -85,16 +85,22 @@ def iter_memorygrid_documents(
     if memory_grid is None:
         return
 
-    doc_store = getattr(
-        memory_grid,
-        "doc_store",
-        None,
-    )
+    # MG-DOCS-FIX-TRAIN: MemoryGrid stores documents in .documents (a dict),
+    # older branches used .doc_store. Try both, iterating dict values when
+    # we have a mapping.
+    _store = None
+    for _attr in ("documents", "doc_store", "_documents"):
+        _val = getattr(memory_grid, _attr, None)
+        if _val is not None:
+            _store = _val
+            break
 
-    if not doc_store:
+    if _store is None:
         return
 
-    for document in doc_store:
+    _iterable = _store.values() if hasattr(_store, "values") else _store
+
+    for document in _iterable:
 
         if not isinstance(
             document,

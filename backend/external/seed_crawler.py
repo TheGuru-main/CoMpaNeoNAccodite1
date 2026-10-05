@@ -109,37 +109,82 @@ DOMAIN_QUERIES: Dict[str, List[str]] = {
 
 def _call_adapter(name: str, **kwargs) -> Any:
     """
-    Import and call the named function from external.py.
-    Tolerates module paths ('external' or 'external.external') and
-    multiple call signatures.
+    Import and call an adapter.
+
+    Supports both synchronous and asynchronous adapters. Any coroutine
+    returned by an adapter is resolved before the result reaches
+    _normalize().
     """
+    aliases = {
+        "fetch_github": "fetch_github_ebooks",
+        "fetch_alpha_vantage": "fetch_alphavantage",
+        "fetch_fmp": "fetch_financial_modelling_prep",
+    }
+
+    actual_name = aliases.get(name, name)
+
     fn = None
+
+    # Normal external package/module locations.
     for path in ("external", "external.external"):
         try:
-            mod = __import__(path, fromlist=[name])
-            fn = getattr(mod, name, None)
+            mod = __import__(path, fromlist=[actual_name])
+            fn = getattr(mod, actual_name, None)
             if fn is not None:
                 break
         except ImportError:
             continue
+
+    # Datamuse lives in its own adapter module.
+    if fn is None and actual_name == "fetch_datamuse":
+        try:
+            from external.datamuse import fetch_datamuse
+            fn = fetch_datamuse
+        except ImportError:
+            try:
+                from datamuse import fetch_datamuse
+                fn = fetch_datamuse
+            except ImportError:
+                fn = None
+
     if fn is None:
         return None
 
-    # try kwarg-shape calls first, fall back to single positional
     attempts = [
         lambda: fn(**kwargs),
-        lambda: fn(kwargs.get("query") or kwargs.get("word") or kwargs.get("url") or ""),
+        lambda: fn(
+            kwargs.get("query")
+            or kwargs.get("word")
+            or kwargs.get("url")
+            or ""
+        ),
         lambda: fn(),
     ]
+
     for attempt in attempts:
         try:
-            return attempt()
+            result = attempt()
+
+            if _inspect.isawaitable(result):
+                loop = _get_seed_loop()
+
+                if loop.is_running():
+                    nested_loop = _aio.new_event_loop()
+                    try:
+                        return nested_loop.run_until_complete(result)
+                    finally:
+                        nested_loop.close()
+
+                return loop.run_until_complete(result)
+
+            return result
+
         except TypeError:
             continue
         except Exception as e:
             return {"__error__": f"{type(e).__name__}: {e}"}
-    return None
 
+    return None
 
 def _normalize(result: Any) -> List[str]:
     """Flatten any adapter result into a list of text chunks."""
@@ -176,7 +221,7 @@ def _normalize(result: Any) -> List[str]:
 # ============================================================================
 
 def _fetch_code(query: str) -> List[str]:
-    r = _call_adapter("fetch_github", query=query)
+    r = _call_adapter("fetch_github_ebooks", query=query)
     return _normalize(r)
 
 
@@ -201,9 +246,9 @@ def _fetch_news(query: str) -> List[str]:
 
 def _fetch_finance(query: str) -> List[str]:
     out = []
-    r1 = _call_adapter("fetch_alpha_vantage", query=query, symbol=query)
+    r1 = _call_adapter("fetch_alphavantage", query=query, symbol=query)
     out.extend(_normalize(r1))
-    r2 = _call_adapter("fetch_fmp", query=query, symbol=query)
+    r2 = _call_adapter("fetch_financial_modelling_prep", query=query, symbol=query)
     out.extend(_normalize(r2))
     return out
 
@@ -366,23 +411,30 @@ def collect_seed_sequential(fetch_batch, declared_license_of, *, per_tier_cap=20
 import asyncio as _aio
 import inspect as _inspect
 
+# FETCH-ERRORS
+import asyncio as _aio
+import inspect as _inspect
+import concurrent.futures as _cf
+
 def _run_fetcher(fetcher, query):
     """
     Fetchers may be sync or async. Run either form and return the list.
-    Uses a single event loop for the whole seed crawl via _SEED_LOOP.
+    Works whether or not we're already inside a running event loop.
     """
-    try:
-        res = fetcher(query)
-    except Exception as e:
-        raise
-
+    res = fetcher(query)
     if _inspect.isawaitable(res):
-        loop = _get_seed_loop()
-        return loop.run_until_complete(res)
+        def runner():
+            loop = _aio.new_event_loop()
+            try:
+                _aio.set_event_loop(loop)
+                return loop.run_until_complete(res)
+            finally:
+                try: loop.close()
+                except Exception: pass
+        with _cf.ThreadPoolExecutor(max_workers=1) as ex:
+            return ex.submit(runner).result()
     return res
 
-
-_SEED_LOOP = None
 
 def _get_seed_loop():
     global _SEED_LOOP
@@ -470,6 +522,7 @@ def seed_crawl(
             except Exception as e:
                 failed += 1
                 stats["errors"].append(f"{domain}: {type(e).__name__}: {e}")
+                print(f"[fetch-err] {domain}: {type(e).__name__}: {e}")  # FETCH-ERRORS
 
         stats["by_domain"][domain] = {"written": written, "failed": failed}
         stats["written"] += written

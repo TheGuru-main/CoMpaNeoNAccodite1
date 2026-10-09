@@ -8,7 +8,16 @@ result, and writes to the grid through the shared WebCrawler/grid path.
 The crawler_scheduler still governs refetch timing for URLs; this module
 only handles the *first* fill.
 
-Domain plan (318 docs):
+Domain plan (100 docs):
+    code        25
+    language    15
+    knowledge   15
+    news         8
+    finance      8
+    literature   8
+    media        8   (ScrapingBee)
+    religion     7
+    dialect      6
 """
 from __future__ import annotations
 import os
@@ -23,241 +32,76 @@ except ImportError:
 # ============================================================================
 # DOMAIN PLAN + QUERIES
 # ============================================================================
+
 DOMAIN_PLAN = [
-    # ====================== CORE CODE (Heavy Weight) ======================
-    ("code",          28),
-    ("gsp",           18),
-    ("sandbox",       16),
-    ("rules",         14),
-    ("workflows",     14),
-    ("console",       12),
-    ("licensing",     10),
-    ("systems",       12),
-    ("ai_ml",         14),
-    ("data",          12),
-    ("security",      11),
-    ("cloud",         11),
-
-    # ====================== LANGUAGE & LINGUISTICS ======================
-    ("language",      10),
-    ("dialect",        9),
-    ("nlp",            8),
-
-    # ====================== KNOWLEDGE & SCIENCE ======================
-    ("knowledge",     10),
-    ("science",        8),
-    ("mathematics",    8),
-    ("engineering",    8),
-
-    # ====================== BUSINESS & WORLD ======================
-    ("finance",        8),
-    ("business",       7),
-    ("startup",        7),
-    ("news",           7),
-
-    # ====================== CULTURE & SOCIETY ======================
-    ("literature",     6),
-    ("religion",       6),
-    ("education",      7),
-    ("philosophy",     5),
-    ("history",        5),
-
-    # ====================== MEDIA & OTHERS ======================
-    ("media",          6),
-    ("design",         5),
-    ("health",         5),
-    ("law",            4),
-    ("agriculture",    4),
+    ("code",       25),
+    ("language",   15),
+    ("knowledge",  15),
+    ("news",        8),
+    ("finance",     8),
+    ("literature",  8),
+    ("media",       8),
+    ("religion",    7),
+    ("dialect",     6),
 ]
 
 
 DOMAIN_QUERIES: Dict[str, List[str]] = {
-    # ====================== CORE CODE ======================
     "code": [
-        "python best practices", "typescript patterns", "javascript clean code",
-        "rust ownership", "go concurrency", "sql optimization", "docker best practices",
-        "kubernetes patterns", "fastapi tutorial", "pytorch training loop",
-        "react hooks", "nodejs architecture", "algorithms explained", "data structures",
-        "regex advanced", "async await patterns", "concurrency models", "unit testing",
-        "git workflows", "rest api design", "graphql schema", "postgres indexing",
-        "redis caching", "websocket patterns", "authentication jwt", "solid principles",
-        "design patterns", "clean architecture",
+        "python", "typescript", "javascript", "rust", "go",
+        "sql", "docker", "kubernetes", "fastapi", "pytorch",
+        "react", "node", "algorithms", "data structures", "regex",
+        "async", "concurrency", "testing", "git", "rest api",
+        "graphql", "postgres", "redis", "websocket", "auth",
     ],
-    "gsp": [
-        "Guru Scatter Protocol", "GSP placement formula", "GSP keyboard grid",
-        "L S c placement", "start_row formula", "fragment coordinates GSP",
-        "elastic cloud GSP", "typo tolerant neighbourhood", "GSP point-node",
-        "keyboard mapping GSP", "QWERTY GSP columns", "GSP row step D",
-        "Guru Separation Protocol", "cell id L+S+c", "GSP anomaly detection",
-        "GSP sharding", "GSP replication factor K", "GSP grid 26 columns 64 rows",
-    ],
-    "sandbox": [
-        "python sandbox execution", "restricted python environment", "code execution sandbox",
-        "EOF append file", "append to file terminal", "cat << EOF", "tee command",
-        "self modifying code", "safe code execution", "docker sandbox",
-        "firejail sandbox", "nsjail", "process isolation", "resource limits cgroups",
-        "temporary file handling", "secure subprocess",
-    ],
-    "rules": [
-        "coding standards", "style guide python", "pep8", "clean code rules",
-        "code review checklist", "naming conventions", "error handling best practices",
-        "logging best practices", "security coding rules", "input validation rules",
-        "immutability rules", "function length rules", "commenting standards",
-        "dependency rules",
-    ],
-    "workflows": [
-        "git flow", "github flow", "trunk based development", "ci cd pipeline",
-        "continuous integration", "continuous deployment", "code review workflow",
-        "feature branch workflow", "release workflow", "hotfix workflow",
-        "pull request process", "semantic versioning", "changelog management",
-        "deployment strategies",
-    ],
-    "console": [
-        "bash scripting", "linux commands", "shell scripting", "command line tools",
-        "awk sed grep", "find command", "xargs", "tmux usage", "screen command",
-        "ssh tips", "terminal multiplexers", "cli productivity",
-    ],
-    "licensing": [
-        "MIT license explained", "Apache 2.0 license", "GPL vs MIT", "BSD license",
-        "open source license compatibility", "license compliance", "copyright software",
-        "copyleft explained", "permissive licenses", "software license obligations",
-    ],
-    "systems": [
-        "operating system concepts", "linux kernel", "process management",
-        "memory management", "file systems", "networking basics", "tcp ip",
-        "distributed systems", "consensus algorithms", "load balancing",
-        "caching strategies", "message queues",
-    ],
-    "ai_ml": [
-        "transformer architecture", "attention mechanism", "training loop pytorch",
-        "fine tuning llm", "lora fine tuning", "tokenization", "embedding models",
-        "gradient descent", "backpropagation", "model evaluation", "overfitting",
-        "data loader pytorch", "mixed precision training", "distributed training",
-    ],
-    "data": [
-        "data modeling", "etl pipeline", "data warehouse", "olap vs oltp",
-        "data quality", "feature engineering", "data versioning", "parquet format",
-        "sql vs nosql", "data pipelines", "streaming data", "batch processing",
-    ],
-    "security": [
-        "owasp top 10", "authentication best practices", "authorization models",
-        "encryption at rest", "encryption in transit", "jwt security", "cors",
-        "sql injection prevention", "xss prevention", "csrf protection",
-        "secrets management", "zero trust",
-    ],
-    "cloud": [
-        "aws fundamentals", "kubernetes architecture", "docker networking",
-        "serverless patterns", "infrastructure as code", "terraform basics",
-        "ci cd cloud", "observability", "monitoring cloud", "auto scaling",
-        "cloud security shared responsibility",
-    ],
-
-    # ====================== LANGUAGE & LINGUISTICS ======================
     "language": [
-        "programming paradigms", "type systems", "functional programming",
-        "object oriented programming", "concurrency theory", "memory models",
-        "compilers", "interpreters", "static vs dynamic typing", "metaprogramming",
+        "algorithm", "recursion", "concurrency", "abstraction",
+        "encapsulation", "polymorphism", "inheritance", "closure",
+        "immutability", "asynchronous", "middleware", "idempotent",
+        "serialization", "deserialization", "throughput",
     ],
-    "dialect": [
-        "Nigerian Pidgin", "Hausa language", "Yoruba language", "Igbo language",
-        "Naija slang", "West African English", "code switching Africa",
-        "African English varieties", "local language computing",
-    ],
-    "nlp": [
-        "tokenization methods", "word embeddings", "named entity recognition",
-        "sentiment analysis", "language models", "text classification",
-        "sequence to sequence", "attention in nlp",
-    ],
-
-    # ====================== KNOWLEDGE & SCIENCE ======================
     "knowledge": [
-        "Artificial intelligence", "Machine learning", "Computer science",
-        "Software engineering", "Database systems", "Operating systems",
-        "Computer networks", "Distributed computing", "Cloud computing",
-        "Information retrieval",
-    ],
-    "science": [
-        "physics fundamentals", "biology basics", "chemistry concepts",
-        "scientific method", "research methodology", "experimental design",
-        "data analysis science", "peer review",
-    ],
-    "mathematics": [
-        "linear algebra", "calculus", "probability", "statistics",
-        "discrete mathematics", "graph theory", "optimization", "number theory",
-    ],
-    "engineering": [
-        "software engineering principles", "system design", "architecture patterns",
-        "reliability engineering", "performance engineering", "scalability",
-        "technical debt", "engineering management",
-    ],
-
-    # ====================== BUSINESS & WORLD ======================
-    "finance": [
-        "AAPL stock", "MSFT stock", "financial statements", "valuation methods",
-        "startup finance", "venture capital", "unit economics", "burn rate",
-    ],
-    "business": [
-        "business models", "go to market", "product market fit", "customer development",
-        "pricing strategies", "business strategy", "operations management",
-    ],
-    "startup": [
-        "yc application", "startup advice", "founder experience", "seed funding",
-        "product led growth", "startup metrics", "pitch deck",
+        "Artificial intelligence", "Machine learning",
+        "Programming language", "Database", "Operating system",
+        "Computer network", "Software engineering", "Compiler",
+        "Cryptography", "Distributed computing", "Cloud computing",
+        "Neural network", "Version control", "Application programming interface",
+        "Web development",
     ],
     "news": [
-        "technology news", "artificial intelligence news", "startup news",
-        "open source news", "cybersecurity news", "developer tools news",
-        "cloud computing news",
+        "technology", "artificial intelligence", "software",
+        "cybersecurity", "open source", "startup", "developer tools",
+        "cloud computing",
     ],
-
-    # ====================== CULTURE & SOCIETY ======================
+    "finance": [
+        "AAPL", "MSFT", "GOOGL", "TSLA", "AMZN",
+        "NVDA", "META", "JPM",
+    ],
     "literature": [
-        "technical writing", "documentation best practices", "software literature",
-        "computer science books", "programming books", "systems design books",
+        "programming", "machine learning", "software engineering",
+        "algorithms", "data science", "computer science",
+        "systems design", "coding interview",
     ],
-    "religion": [
-        "Islamic ethics", "Quran", "Hadith", "Fiqh", "Islamic Golden Age",
-        "Sharia", "Tafsir",
-    ],
-    "education": [
-        "learning systems", "curriculum design", "pedagogy", "online learning",
-        "knowledge transfer", "deliberate practice", "skill acquisition",
-    ],
-    "philosophy": [
-        "philosophy of technology", "ethics of ai", "epistemology", "logic",
-        "philosophy of mind",
-    ],
-    "history": [
-        "history of computing", "history of internet", "history of open source",
-        "history of artificial intelligence", "history of programming languages",
-    ],
-
-    # ====================== MEDIA & OTHERS ======================
     "media": [
         "https://en.wikipedia.org/wiki/Python_(programming_language)",
+        "https://en.wikipedia.org/wiki/JavaScript",
         "https://en.wikipedia.org/wiki/Artificial_intelligence",
-        "https://en.wikipedia.org/wiki/Machine_learning",
         "https://en.wikipedia.org/wiki/Distributed_computing",
-        "https://en.wikipedia.org/wiki/Operating_system",
+        "https://en.wikipedia.org/wiki/Functional_programming",
         "https://en.wikipedia.org/wiki/Compiler",
+        "https://en.wikipedia.org/wiki/Operating_system",
+        "https://en.wikipedia.org/wiki/Machine_learning",
     ],
-    "design": [
-        "system design", "api design", "ux for developers", "interface design",
-        "design systems",
+    "religion": [
+        "Islamic ethics", "Quran", "Hadith", "Fiqh",
+        "Islamic Golden Age", "Sharia", "Tafsir",
     ],
-    "health": [
-        "digital health", "health informatics", "medical data", "healthcare systems",
-        "public health technology",
-    ],
-    "law": [
-        "software law", "intellectual property software", "privacy law", "gdpr",
-        "cyber law",
-    ],
-    "agriculture": [
-        "agritech", "precision agriculture", "agricultural data", "food systems",
-        "sustainable agriculture technology",
+    "dialect": [
+        "Nigerian Pidgin", "Hausa language", "Yoruba language",
+        "Igbo language", "Naija slang", "West African English",
     ],
 }
+
 
 # ============================================================================
 # ADAPTER CALL (defensive)
@@ -265,82 +109,37 @@ DOMAIN_QUERIES: Dict[str, List[str]] = {
 
 def _call_adapter(name: str, **kwargs) -> Any:
     """
-    Import and call an adapter.
-
-    Supports both synchronous and asynchronous adapters. Any coroutine
-    returned by an adapter is resolved before the result reaches
-    _normalize().
+    Import and call the named function from external.py.
+    Tolerates module paths ('external' or 'external.external') and
+    multiple call signatures.
     """
-    aliases = {
-        "fetch_github": "fetch_github_ebooks",
-        "fetch_alpha_vantage": "fetch_alphavantage",
-        "fetch_fmp": "fetch_financial_modelling_prep",
-    }
-
-    actual_name = aliases.get(name, name)
-
     fn = None
-
-    # Normal external package/module locations.
     for path in ("external", "external.external"):
         try:
-            mod = __import__(path, fromlist=[actual_name])
-            fn = getattr(mod, actual_name, None)
+            mod = __import__(path, fromlist=[name])
+            fn = getattr(mod, name, None)
             if fn is not None:
                 break
         except ImportError:
             continue
-
-    # Datamuse lives in its own adapter module.
-    if fn is None and actual_name == "fetch_datamuse":
-        try:
-            from external.datamuse import fetch_datamuse
-            fn = fetch_datamuse
-        except ImportError:
-            try:
-                from datamuse import fetch_datamuse
-                fn = fetch_datamuse
-            except ImportError:
-                fn = None
-
     if fn is None:
         return None
 
+    # try kwarg-shape calls first, fall back to single positional
     attempts = [
         lambda: fn(**kwargs),
-        lambda: fn(
-            kwargs.get("query")
-            or kwargs.get("word")
-            or kwargs.get("url")
-            or ""
-        ),
+        lambda: fn(kwargs.get("query") or kwargs.get("word") or kwargs.get("url") or ""),
         lambda: fn(),
     ]
-
     for attempt in attempts:
         try:
-            result = attempt()
-
-            if _inspect.isawaitable(result):
-                loop = _get_seed_loop()
-
-                if loop.is_running():
-                    nested_loop = _aio.new_event_loop()
-                    try:
-                        return nested_loop.run_until_complete(result)
-                    finally:
-                        nested_loop.close()
-
-                return loop.run_until_complete(result)
-
-            return result
-
+            return attempt()
         except TypeError:
             continue
         except Exception as e:
             return {"__error__": f"{type(e).__name__}: {e}"}
-
     return None
+
 
 def _normalize(result: Any) -> List[str]:
     """Flatten any adapter result into a list of text chunks."""
@@ -377,7 +176,7 @@ def _normalize(result: Any) -> List[str]:
 # ============================================================================
 
 def _fetch_code(query: str) -> List[str]:
-    r = _call_adapter("fetch_github_ebooks", query=query)
+    r = _call_adapter("fetch_github", query=query)
     return _normalize(r)
 
 
@@ -402,9 +201,9 @@ def _fetch_news(query: str) -> List[str]:
 
 def _fetch_finance(query: str) -> List[str]:
     out = []
-    r1 = _call_adapter("fetch_alphavantage", query=query, symbol=query)
+    r1 = _call_adapter("fetch_alpha_vantage", query=query, symbol=query)
     out.extend(_normalize(r1))
-    r2 = _call_adapter("fetch_financial_modelling_prep", query=query, symbol=query)
+    r2 = _call_adapter("fetch_fmp", query=query, symbol=query)
     out.extend(_normalize(r2))
     return out
 
@@ -590,9 +389,6 @@ def _run_fetcher(fetcher, query):
         with _cf.ThreadPoolExecutor(max_workers=1) as ex:
             return ex.submit(runner).result()
     return res
-
-
-_SEED_LOOP = None
 
 
 def _get_seed_loop():

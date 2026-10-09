@@ -612,6 +612,7 @@ def train(
     save_model: str = "companion_model.pth",
     save_vocab: str = "tokenizer_vocab.json",
     device=None,
+    resume_checkpoint: Optional[str] = "companion_training_resume.pth",
 ):
     if not TORCH_AVAILABLE:
         raise RuntimeError(
@@ -789,12 +790,76 @@ def train(
     )
 
     # ----------------------------------------------------------------
-    # TRAINING LOOP
+    # RESUME CHECKPOINT
     # ----------------------------------------------------------------
 
     avg_loss = 0.0
+    start_epoch = 0
+
+    if resume_checkpoint and os.path.isfile(resume_checkpoint):
+        print(f"[resume] Loading checkpoint: {resume_checkpoint}")
+
+        try:
+            try:
+                checkpoint = torch.load(
+                    resume_checkpoint,
+                    map_location=device,
+                    weights_only=False,
+                )
+            except TypeError:
+                checkpoint = torch.load(
+                    resume_checkpoint,
+                    map_location=device,
+                )
+
+            if checkpoint.get("vocab") != vocab:
+                raise RuntimeError(
+                    "Resume checkpoint vocabulary differs from the "
+                    "current MemoryGrid vocabulary. Refusing to resume "
+                    "with misaligned token IDs."
+                )
+
+            saved_hparams = checkpoint.get("hyperparameters", {})
+            for key, current in (
+                ("batch_size", batch_size),
+                ("seq_len", seq_len),
+            ):
+                previous = saved_hparams.get(key)
+                if previous is not None and previous != current:
+                    raise RuntimeError(
+                        f"Cannot resume: {key} changed from "
+                        f"{previous} to {current}."
+                    )
+
+            model.load_state_dict(checkpoint["model_state_dict"])
+            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+
+            start_epoch = int(checkpoint.get("completed_epochs", 0))
+            avg_loss = float(checkpoint.get("avg_loss", 0.0))
+            batch_version = checkpoint.get("batch_version", batch_version)
+
+            if start_epoch < 0 or start_epoch > epochs:
+                raise RuntimeError(
+                    f"Checkpoint completed_epochs={start_epoch} is "
+                    f"outside the requested training range 0..{epochs}."
+                )
+
+            print(
+                f"[resume] Restored completed epochs: {start_epoch}/{epochs}; "
+                f"next epoch: {start_epoch + 1}"
+            )
+
+        except Exception as e:
+            raise RuntimeError(
+                f"Could not safely resume training from "
+                f"{resume_checkpoint}: {type(e).__name__}: {e}"
+            ) from e
+
+    else:
+        print("[resume] No recovery checkpoint found; starting a new run.")
 
     for epoch in range(
+        start_epoch,
         epochs
     ):
 
@@ -865,6 +930,33 @@ def train(
             total_loss
             / steps
         )
+
+        # Save a recoverable snapshot after every completed epoch.
+        if resume_checkpoint:
+            checkpoint_data = {
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "completed_epochs": epoch + 1,
+                "avg_loss": avg_loss,
+                "batch_version": batch_version,
+                "vocab": vocab,
+                "hyperparameters": {
+                    "lr": lr,
+                    "batch_size": batch_size,
+                    "seq_len": seq_len,
+                    "epochs": epochs,
+                },
+                "saved_at": datetime.now(timezone.utc).isoformat(),
+            }
+
+            checkpoint_tmp = resume_checkpoint + ".tmp"
+            torch.save(checkpoint_data, checkpoint_tmp)
+            os.replace(checkpoint_tmp, resume_checkpoint)
+
+            print(
+                f"[checkpoint] Saved after epoch {epoch + 1}/{epochs}: "
+                f"{resume_checkpoint}"
+            )
 
         if (
             (epoch + 1) % 10 == 0
@@ -1043,11 +1135,7 @@ def train(
 # ENTRY POINT
 # ============================================================================
 
-if __name__ == "__main__":
-
-    train(
-        memory_grid=MemoryGrid()
-    )
+# Standalone training entry point is defined at the end of this file.
          
 
 # ============================================================================
@@ -1073,7 +1161,7 @@ _seed_done = False
 _seed_lock = _seed_threading.Lock()
 
 
-def ensure_seed_crawl(*, force: bool = False):
+def ensure_seed_crawl(*, force: bool = False, grid=None):
     """Run the seed crawl once if the grid is thin. Idempotent."""
     global _seed_done
     with _seed_lock:
@@ -1081,13 +1169,15 @@ def ensure_seed_crawl(*, force: bool = False):
             return {"skipped": True, "reason": "already ran"}
         _seed_done = True
 
-    # resolve grid
-    grid = None
-    try:
-        from integration import get_state
-        grid = get_state().get("grid")
-    except Exception:
-        pass
+    # Use the caller's grid when supplied, so seeding and training
+    # operate on the exact same MemoryGrid instance.
+    if grid is None:
+        try:
+            from integration import get_state
+            grid = get_state().get("grid")
+        except Exception:
+            pass
+
     if grid is None:
         try:
             grid = MemoryGrid()
@@ -1141,7 +1231,54 @@ def _seed_autostart():
     )
     t.start()
 
-try:
-    _seed_autostart()
-except Exception:
-    pass
+# Preserve background seeding for importers, but do not race the
+# standalone training entry point against its own synchronous seed pass.
+if __name__ != "__main__":
+    try:
+        _seed_autostart()
+    except Exception:
+        pass
+
+
+if __name__ == "__main__":
+    grid = MemoryGrid()
+
+    docs_before = getattr(grid, "documents", None)
+    count_before = len(docs_before) if docs_before is not None else 0
+    print(f"[seed] Initial MemoryGrid documents: {count_before}")
+
+    if SEED_ENABLED:
+        seed_result = ensure_seed_crawl(grid=grid)
+        print(f"[seed] result: {seed_result}")
+
+        if seed_result.get("ok") is False:
+            raise SystemExit(
+                "[train] STOP: seed crawler failed; training was not started."
+            )
+
+        stats = seed_result.get("stats", {})
+        if stats and stats.get("written", 0) <= 0 and count_before == 0:
+            raise SystemExit(
+                "[train] STOP: crawler wrote no documents; "
+                "training was not started."
+            )
+
+    docs = getattr(grid, "documents", None)
+    doc_count = len(docs) if docs is not None else 0
+    print(f"[train] MemoryGrid documents after seeding: {doc_count}")
+
+    if doc_count <= 0:
+        raise SystemExit(
+            "[train] STOP: MemoryGrid is empty; training was not started."
+        )
+
+    records = collect_training_data(memory_grid=grid)
+    print(f"[train] Usable training records: {len(records)}")
+
+    if not records:
+        raise SystemExit(
+            "[train] STOP: MemoryGrid has no usable training records; "
+            "training was not started."
+        )
+
+    train(memory_grid=grid)

@@ -657,8 +657,13 @@ def train(
     # ----------------------------------------------------------------
 
     if memory_grid is None:
-
-        memory_grid = MemoryGrid()
+        try:
+            from integration import get_shared_grid
+            memory_grid = get_shared_grid()
+        except Exception:
+            memory_grid = None
+        if memory_grid is None:
+            memory_grid = MemoryGrid()
 
     # ----------------------------------------------------------------
     # COLLECT TRAINING DATA
@@ -1079,6 +1084,14 @@ def train(
         save_model,
     )
 
+    try:
+        from main import load_model_if_exists
+        load_model_if_exists()
+        print("[train] load_model_if_exists() called")
+    except Exception as _e:
+        print("[train] load_model_if_exists skipped:", type(_e).__name__, _e)
+
+
     with open(
         save_vocab,
         "w",
@@ -1180,9 +1193,15 @@ def ensure_seed_crawl(*, force: bool = False, grid=None):
 
     if grid is None:
         try:
-            grid = MemoryGrid()
+            from integration import get_shared_grid
+            grid = get_shared_grid()
         except Exception:
-            return {"ok": False, "reason": "no grid"}
+            grid = None
+        if grid is None:
+            try:
+                grid = MemoryGrid()
+            except Exception:
+                return {"ok": False, "reason": "no grid"}
 
     docs = getattr(grid, "documents", None)
     current = len(docs) if docs else 0
@@ -1241,7 +1260,29 @@ if __name__ != "__main__":
 
 
 if __name__ == "__main__":
-    grid = MemoryGrid()
+    try:
+        from integration import get_shared_grid
+        grid = get_shared_grid()
+    except Exception:
+        grid = None
+    if grid is None:
+        try:
+            from memory.memory_grid import get_process_grid, load_grid
+            grid = get_process_grid()
+            if grid is not None and not getattr(grid, "documents", None):
+                load_grid()
+                grid = get_process_grid()
+        except Exception:
+            grid = None
+    if grid is None:
+        grid = MemoryGrid()
+    # Seed into THIS grid, then train
+    try:
+        ensure_seed_crawl(force=False, grid=grid)
+    except Exception as e:
+        print("[train __main__] seed:", type(e).__name__, e)
+    print("[train __main__] grid docs:", len(getattr(grid, "documents", {}) or {}))
+
 
     docs_before = getattr(grid, "documents", None)
     count_before = len(docs_before) if docs_before is not None else 0

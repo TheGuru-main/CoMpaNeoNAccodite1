@@ -75,10 +75,29 @@ from memory_grid import MemoryGrid
 
 
 # ---------------------------------------------------------------------------
-# MEMORY GRID
+# MEMORY GRID  (shared process grid — never a private default)
 # ---------------------------------------------------------------------------
 
-memory_grid = MemoryGrid()
+def _resolve_shared_memory_grid():
+    try:
+        from integration import get_shared_grid
+        g = get_shared_grid()
+        if g is not None:
+            return g
+    except Exception:
+        pass
+    try:
+        from memory.memory_grid import get_process_grid
+        return get_process_grid()
+    except Exception:
+        try:
+            from memory_grid import get_process_grid
+            return get_process_grid()
+        except Exception:
+            pass
+    return None
+
+memory_grid = _resolve_shared_memory_grid()
 
 
 # ---------------------------------------------------------------------------
@@ -196,7 +215,13 @@ class WordChain:
         self,
         memory: Optional[MemoryGrid] = None,
     ):
-        self.memory = memory or memory_grid
+        self.memory = memory or memory_grid or _resolve_shared_memory_grid()
+        if self.memory is None:
+            try:
+                from memory_grid import MemoryGrid as _MG
+                self.memory = _MG()
+            except Exception:
+                self.memory = None
 
         # ---------------------------------------------------------------
         # GLOBAL WORD COUNTS

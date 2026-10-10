@@ -747,6 +747,31 @@ class WordUnderstanding:
     # CONTEXT RETRIEVAL
     # =================================================================
 
+
+    def _push_understanding_to_grid(self, ranked_texts, query: str) -> None:
+        """Feedback: store ranked understanding snippets on the shared grid."""
+        if not ranked_texts or self.memory is None:
+            return
+        if not hasattr(self.memory, "add_document"):
+            return
+        for text in ranked_texts[:8]:
+            t = (text or "").strip()
+            if len(t) < 40:
+                continue
+            try:
+                self.memory.add_document(
+                    text=t[:2000],
+                    source="understanding",
+                    metadata={"query": (query or "")[:200], "feedback": True},
+                )
+            except TypeError:
+                try:
+                    self.memory.add_document(text=t[:2000], source="understanding")
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
     def get_context(
         self,
         query: str,
@@ -916,6 +941,15 @@ class WordUnderstanding:
             item["text"]
             for item in ranked[:3]
         )
+
+        # Feedback: ranked understanding → shared MemoryGrid
+        try:
+            self._push_understanding_to_grid(
+                [item.get("text") or "" for item in ranked[:10]],
+                query,
+            )
+        except Exception:
+            pass
 
         # -------------------------------------------------------------
         # ENRICHMENT

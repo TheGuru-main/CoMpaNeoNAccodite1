@@ -1655,3 +1655,174 @@ if __name__ == "__main__":
     print(
         memory.stats()
     )
+
+# ============================================================================
+# PERSISTENCE + SHARED ACCESS
+# ============================================================================
+
+import json
+import os
+from pathlib import Path
+
+_DEFAULT_GRID_PATH = os.environ.get(
+    "ACCD_GRID_PATH",
+    str(Path("data") / "memory_grid_snapshot.json"),
+)
+
+_SHARED_GRID = None
+
+
+def get_process_grid():
+    """
+    Process-local singleton. Prefer integration.get_shared_grid()
+    when the app is running; this is the fallback owner inside
+    the memory package itself.
+    """
+    global _SHARED_GRID
+    if _SHARED_GRID is not None:
+        return _SHARED_GRID
+    try:
+        from integration import get_shared_grid
+        g = get_shared_grid()
+        if g is not None:
+            _SHARED_GRID = g
+            return _SHARED_GRID
+    except Exception:
+        pass
+    _SHARED_GRID = MemoryGrid()
+    return _SHARED_GRID
+
+
+def set_process_grid(grid) -> None:
+    global _SHARED_GRID
+    _SHARED_GRID = grid
+    try:
+        from integration import get_state
+        get_state()["grid"] = grid
+    except Exception:
+        pass
+
+
+def _grid_to_dict(grid: "MemoryGrid") -> dict:
+    return {
+        "rows": grid.rows,
+        "cols": grid.cols,
+        "documents": {str(k): v for k, v in (grid.documents or {}).items()},
+        "document_hashes": dict(grid.document_hashes or {}),
+        "tokens": {str(k): v for k, v in (grid.tokens or {}).items()},
+        "_next_document_id": getattr(grid, "_next_document_id", 1),
+        "documents_added": getattr(grid, "documents_added", 0),
+        "tokens_added": getattr(grid, "tokens_added", 0),
+        "duplicates_detected": getattr(grid, "duplicates_detected", 0),
+    }
+
+
+def _grid_from_dict(data: dict) -> "MemoryGrid":
+    grid = MemoryGrid(
+        rows=int(data.get("rows") or GRID_ROWS),
+        cols=int(data.get("cols") or GRID_COLS),
+    )
+    docs = data.get("documents") or {}
+    grid.documents = {int(k): v for k, v in docs.items()}
+    grid.document_hashes = dict(data.get("document_hashes") or {})
+    toks = data.get("tokens") or {}
+    grid.tokens = {int(k): v for k, v in toks.items()}
+    grid._next_document_id = int(data.get("_next_document_id") or 1)
+    grid.documents_added = int(data.get("documents_added") or 0)
+    grid.tokens_added = int(data.get("tokens_added") or 0)
+    grid.duplicates_detected = int(data.get("duplicates_detected") or 0)
+    # Rebuild operational indexes from stored documents when possible
+    try:
+        for doc in grid.documents.values():
+            placement = (doc or {}).get("placement") or {}
+            start_row = placement.get("start_row") or 1
+            row = _normalise_row(start_row, grid.rows)
+            grid.storage_index.setdefault(row, []).append(doc)
+        for doc_id, token_list in (grid.tokens or {}).items():
+            for token in token_list or []:
+                if isinstance(token, dict):
+                    grid._index_token(token)
+    except Exception:
+        pass
+    return grid
+
+
+def save_grid(grid: "MemoryGrid" = None, path: str = None) -> str:
+    grid = grid or get_process_grid()
+    path = path or _DEFAULT_GRID_PATH
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(_grid_to_dict(grid), f, ensure_ascii=False)
+    os.replace(tmp, path)
+    return path
+
+
+def load_grid(path: str = None) -> "MemoryGrid":
+    path = path or _DEFAULT_GRID_PATH
+    if not os.path.isfile(path):
+        return get_process_grid()
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    grid = _grid_from_dict(data)
+    set_process_grid(grid)
+    return grid
+
+
+def root_query_for_context(query: str, limit: int = 32) -> str:
+    """
+    Central retrieval: user/AI query → GridCrawler.crawl_query →
+    MemoryGrid documents → plain text context for prompt / stream.
+    """
+    grid = get_process_grid()
+    if grid is None or not (query or "").strip():
+        return ""
+
+    q = str(query).strip()
+    candidates = []
+
+    try:
+        try:
+            from grid_crawler import crawl_query
+        except ImportError:
+            from memory.grid_crawler import crawl_query
+
+        raw = crawl_query(grid, q, lang="en", limit=limit)
+        if isinstance(raw, dict):
+            candidates = raw.get("candidates") or raw.get("full_query") or []
+        elif isinstance(raw, list):
+            candidates = raw
+    except Exception as e:
+        print("[memory_grid] crawl_query failed:", type(e).__name__, e)
+        candidates = []
+
+    # Fallback: recent documents if crawl returns nothing
+    if not candidates and getattr(grid, "documents", None):
+        docs = list(grid.documents.values())[-limit:]
+        parts = []
+        for d in docs:
+            t = (d or {}).get("text") or ""
+            if t.strip():
+                parts.append(t.strip()[:800])
+        return "\n\n".join(parts)
+
+    parts = []
+    seen = set()
+    for c in candidates[:limit]:
+        if not isinstance(c, dict):
+            continue
+        text_c = c.get("text") or c.get("original") or c.get("snippet") or ""
+        doc_id = c.get("doc_id")
+        if doc_id is not None and hasattr(grid, "documents"):
+            try:
+                doc = grid.documents.get(int(doc_id))
+            except Exception:
+                doc = None
+            if isinstance(doc, dict) and doc.get("text"):
+                text_c = doc["text"]
+        text_c = (text_c or "").strip()
+        if text_c and text_c not in seen:
+            seen.add(text_c)
+            parts.append(text_c[:800])
+    return "\n\n".join(parts)
+

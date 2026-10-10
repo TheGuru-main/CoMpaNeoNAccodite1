@@ -126,15 +126,30 @@ model: Optional[MiniCompanionAI] = None
 tokenizer_vocab: Optional[Dict[str, int]] = None
 reverse_vocab: Optional[Dict[int, str]] = None
 
-memory = MemoryGrid()
+try:
+    from integration import get_shared_grid
+    memory = get_shared_grid()
+    if memory is None:
+        memory = MemoryGrid()
+except Exception:
+    memory = MemoryGrid()
+try:
+    from memory.memory_grid import set_process_grid
+    set_process_grid(memory)
+except Exception:
+    try:
+        from memory_grid import set_process_grid
+        set_process_grid(memory)
+    except Exception:
+        pass
 mixer = DataMixer()
 try:
     web_crawler = WebCrawler(memory, data_mixer=mixer)
 except TypeError:
-    # older signature; still works without mixer
     web_crawler = WebCrawler(memory)
 search_cache = SearchCache(ttl_seconds=300)
 memory_cache = MemoryCache()
+# Always bind WordUnderstanding to the shared process grid
 word_understanding = WordUnderstanding(memory)
 
 # Load model if exists
@@ -188,7 +203,88 @@ def decode_ids(ids: List[int]) -> str:
     return ' '.join([reverse_vocab.get(i, '<unk>') for i in ids if i not in {0,2,3}])
 
 def get_context_from_memory(query: str) -> str:
-    return word_understanding.get_context(query)
+    """
+    Central retrieval before generate / stream:
+    shared MemoryGrid → GridCrawler root → context text.
+    Falls back to WordUnderstanding if crawl path fails.
+    """
+    q = (query or "").strip()
+    if not q:
+        return ""
+
+    # 1) Prefer package-level rooter (save/load + shared grid)
+    try:
+        try:
+            from memory.memory_grid import (
+                root_query_for_context,
+                get_process_grid,
+                load_grid,
+            )
+        except ImportError:
+            from memory_grid import (
+                root_query_for_context,
+                get_process_grid,
+                load_grid,
+            )
+        grid = get_process_grid()
+        if grid is not None and not getattr(grid, "documents", None):
+            try:
+                load_grid()
+            except Exception:
+                pass
+        ctx = root_query_for_context(q) or ""
+        if ctx.strip():
+            return ctx
+    except Exception as e:
+        print("[memory] root_query_for_context skipped:", type(e).__name__, e)
+
+    # 2) GridCrawler crawl_query on shared grid (correct API)
+    try:
+        try:
+            from grid_crawler import crawl_query
+        except ImportError:
+            from memory.grid_crawler import crawl_query
+        try:
+            from integration import get_shared_grid
+            grid = get_shared_grid()
+        except Exception:
+            grid = memory
+        if grid is None:
+            grid = memory
+        raw = crawl_query(grid, q, lang="en", limit=32)
+        candidates = []
+        if isinstance(raw, dict):
+            candidates = raw.get("candidates") or raw.get("full_query") or []
+        elif isinstance(raw, list):
+            candidates = raw
+        parts = []
+        seen = set()
+        for c in (candidates or [])[:32]:
+            if not isinstance(c, dict):
+                continue
+            doc_id = c.get("doc_id")
+            t = c.get("text") or c.get("original") or c.get("snippet") or ""
+            if doc_id is not None and hasattr(grid, "documents"):
+                doc = grid.documents.get(int(doc_id))
+                if isinstance(doc, dict) and doc.get("text"):
+                    t = doc["text"]
+            t = (t or "").strip()
+            if t and t not in seen:
+                seen.add(t)
+                parts.append(t[:800])
+        if parts:
+            return "\n\n".join(parts)
+    except Exception as e:
+        print("[memory] crawl_query skipped:", type(e).__name__, e)
+
+    # 3) Legacy word understanding on the same memory object
+    try:
+        wu = word_understanding.get_context(q)
+        if isinstance(wu, dict):
+            return (wu.get("context") or "") or ""
+        return (wu or "") if isinstance(wu, str) else ""
+    except Exception:
+        return ""
 
 def generate_from_prompt(prompt: str, max_len: int, temperature: float) -> str:
     if not TORCH_AVAILABLE:

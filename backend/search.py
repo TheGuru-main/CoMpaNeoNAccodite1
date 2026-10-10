@@ -43,8 +43,17 @@ def _tokenize_query(q: str) -> List[str]:
 def _search_grid(q: str, limit: int) -> List[Dict[str, Any]]:
     hits: List[Dict[str, Any]] = []
     try:
-        from memory_grid import MemoryGrid
-        grid = MemoryGrid()
+        try:
+            from integration import get_shared_grid
+            grid = get_shared_grid()
+        except Exception:
+            grid = None
+        if grid is None:
+            try:
+                from memory_grid import MemoryGrid
+                grid = MemoryGrid()
+            except Exception:
+                return []
         raw = None
         if hasattr(grid, "retrieve"):
             try:

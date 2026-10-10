@@ -43,7 +43,13 @@ except ImportError:
 # MEMORY GRID
 # ============================================================================
 
-memory = MemoryGrid()
+try:
+    from integration import get_shared_grid
+    memory = get_shared_grid()
+    if memory is None:
+        memory = MemoryGrid()
+except Exception:
+    memory = MemoryGrid()
 
 
 # ============================================================================
@@ -834,6 +840,12 @@ def train_model(
         model.state_dict(),
         "companion_model.pth",
     )
+    try:
+        from main import load_model_if_exists
+        load_model_if_exists()
+        print("[background_training] load_model_if_exists() called")
+    except Exception as _e:
+        print("[background_training] load_model_if_exists skipped:", type(_e).__name__, _e)
 
     with open(
         "tokenizer_vocab.json",
@@ -875,10 +887,16 @@ def run_consolidation_cycle(grid=None) -> dict:
     # shared grid > fresh grid
     if grid is None:
         try:
-            from integration import get_state
-            grid = get_state().get("grid")
+            from integration import get_shared_grid
+            grid = get_shared_grid()
         except Exception:
             grid = None
+        if grid is None:
+            try:
+                from integration import get_state
+                grid = get_state().get("grid")
+            except Exception:
+                grid = None
     if grid is None:
         try:
             grid = MemoryGrid()

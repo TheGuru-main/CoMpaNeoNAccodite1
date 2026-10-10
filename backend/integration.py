@@ -772,3 +772,27 @@ def run_job(
         )
 
     yield f"#meta#{json.dumps({'steps': total, 'failures': failures, 'summaries': all_summaries})}"
+
+# ============================================================================
+# UNIFIED MEMORY GRID
+# ============================================================================
+
+def get_shared_grid():
+    """
+    Return the single process-wide MemoryGrid.
+    Creates it once and reuses it everywhere.
+    """
+    state = get_state()
+    grid = state.get("grid")
+    if grid is not None:
+        return grid
+    try:
+        from memory.memory_grid import MemoryGrid
+    except ImportError:
+        try:
+            from memory_grid import MemoryGrid
+        except ImportError:
+            return None
+    grid = MemoryGrid()
+    state["grid"] = grid
+    return grid

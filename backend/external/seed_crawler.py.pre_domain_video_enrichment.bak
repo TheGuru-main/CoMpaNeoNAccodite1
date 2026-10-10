@@ -376,118 +376,9 @@ def _normalize(result: Any) -> List[str]:
 # PER-DOMAIN FETCHERS
 # ============================================================================
 
-def _fetch_video_knowledge(
-    query: str,
-    domain: str,
-    limit: int = 2,
-) -> List[str]:
-    """
-    Supplement a domain with APITube video metadata.
-
-    Only include records with an explicitly declared license accepted
-    by the existing four-tier seed licensing policy.
-    Video descriptions are not treated as verified transcripts.
-    """
-    try:
-        result = _call_adapter(
-            "fetch_apitube_videos",
-            query=query,
-            limit=limit,
-        )
-    except Exception as exc:
-        print(
-            f"[video-enrichment] {domain}: "
-            f"{type(exc).__name__}: {exc}"
-        )
-        return []
-
-    if not isinstance(result, dict):
-        return []
-
-    documents = result.get("documents") or []
-    if not isinstance(documents, list):
-        return []
-
-    output: List[str] = []
-
-    for document in documents:
-        if not isinstance(document, dict):
-            continue
-
-        metadata = document.get("metadata")
-        if not isinstance(metadata, dict):
-            metadata = {}
-
-        provider = metadata.get("raw_provider")
-        if not isinstance(provider, dict):
-            provider = {}
-
-        raw_license = (
-            document.get("license")
-            or document.get("license_name")
-            or metadata.get("license")
-            or metadata.get("license_name")
-            or provider.get("license")
-            or provider.get("license_name")
-            or provider.get("license_type")
-            or provider.get("licence")
-            or provider.get("licence_name")
-            or provider.get("licence_type")
-            or ""
-        )
-
-        if isinstance(raw_license, dict):
-            raw_license = (
-                raw_license.get("name")
-                or raw_license.get("title")
-                or raw_license.get("type")
-                or raw_license.get("spdx_id")
-                or raw_license.get("identifier")
-                or ""
-            )
-
-        # Only explicitly recognized license names are accepted.
-        if not isinstance(raw_license, str):
-            raw_license = ""
-
-        if not normalize_license(raw_license):
-            print(
-                f"[video-enrichment] Skipped unverified license "
-                f"for domain={domain!r}, "
-                f"url={document.get('url', '')!r}"
-            )
-            continue
-
-        title = str(document.get("title") or "").strip()
-        description = str(
-            document.get("description")
-            or document.get("summary")
-            or document.get("content")
-            or ""
-        ).strip()
-        media_url = str(document.get("url") or "").strip()
-
-        parts = [f"Domain: {domain}", f"Search topic: {query}"]
-
-        if title:
-            parts.append(f"Video title: {title}")
-        if description:
-            parts.append(f"Video description: {description[:4000]}")
-        if media_url:
-            parts.append(f"Source URL: {media_url}")
-        parts.append(f"Declared license: {raw_license}")
-
-        if title or description:
-            output.append("[Licensed video metadata]\n" + "\n".join(parts))
-
-    return output
-
-
 def _fetch_code(query: str) -> List[str]:
     r = _call_adapter("fetch_github_ebooks", query=query)
-    out = _normalize(r)
-    out.extend(_fetch_video_knowledge(query, "code"))
-    return out
+    return _normalize(r)
 
 
 def _fetch_language(query: str) -> List[str]:
@@ -496,22 +387,17 @@ def _fetch_language(query: str) -> List[str]:
     out.extend(_normalize(r1))
     r2 = _call_adapter("fetch_datamuse", query=query, op="ml")
     out.extend(_normalize(r2))
-    out.extend(_fetch_video_knowledge(query, "language"))
     return out
 
 
 def _fetch_knowledge(query: str) -> List[str]:
     r = _call_adapter("fetch_wikipedia", query=query, topic=query)
-    out = _normalize(r)
-    out.extend(_fetch_video_knowledge(query, "knowledge"))
-    return out
+    return _normalize(r)
 
 
 def _fetch_news(query: str) -> List[str]:
     r = _call_adapter("fetch_news", query=query, topic=query)
-    out = _normalize(r)
-    out.extend(_fetch_video_knowledge(query, "news"))
-    return out
+    return _normalize(r)
 
 
 def _fetch_finance(query: str) -> List[str]:
@@ -520,7 +406,6 @@ def _fetch_finance(query: str) -> List[str]:
     out.extend(_normalize(r1))
     r2 = _call_adapter("fetch_financial_modelling_prep", query=query, symbol=query)
     out.extend(_normalize(r2))
-    out.extend(_fetch_video_knowledge(query, "finance"))
     return out
 
 
@@ -530,7 +415,6 @@ def _fetch_literature(query: str) -> List[str]:
     out.extend(_normalize(r1))
     r2 = _call_adapter("fetch_elibrary", query=query, topic=query)
     out.extend(_normalize(r2))
-    out.extend(_fetch_video_knowledge(query, "literature"))
     return out
 
 
@@ -648,7 +532,6 @@ def _fetch_religion(query: str) -> List[str]:
     out.extend(_normalize(r1))
     r2 = _call_adapter("fetch_books", query=query, topic=query)
     out.extend(_normalize(r2))
-    out.extend(_fetch_video_knowledge(query, "religion"))
     return out
 
 
@@ -658,7 +541,6 @@ def _fetch_dialect(query: str) -> List[str]:
     out.extend(_normalize(r1))
     r2 = _call_adapter("fetch_dictionary", word=query, query=query)
     out.extend(_normalize(r2))
-    out.extend(_fetch_video_knowledge(query, "dialect"))
     return out
 
 

@@ -418,39 +418,16 @@ def _fetch_video_knowledge(
         if not isinstance(metadata, dict):
             metadata = {}
 
-        provider = metadata.get("raw_provider")
-        if not isinstance(provider, dict):
-            provider = {}
-
         raw_license = (
             document.get("license")
             or document.get("license_name")
             or metadata.get("license")
             or metadata.get("license_name")
-            or provider.get("license")
-            or provider.get("license_name")
-            or provider.get("license_type")
-            or provider.get("licence")
-            or provider.get("licence_name")
-            or provider.get("licence_type")
             or ""
         )
 
-        if isinstance(raw_license, dict):
-            raw_license = (
-                raw_license.get("name")
-                or raw_license.get("title")
-                or raw_license.get("type")
-                or raw_license.get("spdx_id")
-                or raw_license.get("identifier")
-                or ""
-            )
-
-        # Only explicitly recognized license names are accepted.
-        if not isinstance(raw_license, str):
-            raw_license = ""
-
-        if not normalize_license(raw_license):
+        # Use the crawler's existing license normalizer.
+        if not normalize_license(str(raw_license)):
             print(
                 f"[video-enrichment] Skipped unverified license "
                 f"for domain={domain!r}, "

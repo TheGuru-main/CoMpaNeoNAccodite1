@@ -376,118 +376,9 @@ def _normalize(result: Any) -> List[str]:
 # PER-DOMAIN FETCHERS
 # ============================================================================
 
-def _fetch_video_knowledge(
-    query: str,
-    domain: str,
-    limit: int = 2,
-) -> List[str]:
-    """
-    Supplement a domain with APITube video metadata.
-
-    Only include records with an explicitly declared license accepted
-    by the existing four-tier seed licensing policy.
-    Video descriptions are not treated as verified transcripts.
-    """
-    try:
-        result = _call_adapter(
-            "fetch_apitube_videos",
-            query=query,
-            limit=limit,
-        )
-    except Exception as exc:
-        print(
-            f"[video-enrichment] {domain}: "
-            f"{type(exc).__name__}: {exc}"
-        )
-        return []
-
-    if not isinstance(result, dict):
-        return []
-
-    documents = result.get("documents") or []
-    if not isinstance(documents, list):
-        return []
-
-    output: List[str] = []
-
-    for document in documents:
-        if not isinstance(document, dict):
-            continue
-
-        metadata = document.get("metadata")
-        if not isinstance(metadata, dict):
-            metadata = {}
-
-        provider = metadata.get("raw_provider")
-        if not isinstance(provider, dict):
-            provider = {}
-
-        raw_license = (
-            document.get("license")
-            or document.get("license_name")
-            or metadata.get("license")
-            or metadata.get("license_name")
-            or provider.get("license")
-            or provider.get("license_name")
-            or provider.get("license_type")
-            or provider.get("licence")
-            or provider.get("licence_name")
-            or provider.get("licence_type")
-            or ""
-        )
-
-        if isinstance(raw_license, dict):
-            raw_license = (
-                raw_license.get("name")
-                or raw_license.get("title")
-                or raw_license.get("type")
-                or raw_license.get("spdx_id")
-                or raw_license.get("identifier")
-                or ""
-            )
-
-        # Only explicitly recognized license names are accepted.
-        if not isinstance(raw_license, str):
-            raw_license = ""
-
-        if not normalize_license(raw_license):
-            print(
-                f"[video-enrichment] Skipped unverified license "
-                f"for domain={domain!r}, "
-                f"url={document.get('url', '')!r}"
-            )
-            continue
-
-        title = str(document.get("title") or "").strip()
-        description = str(
-            document.get("description")
-            or document.get("summary")
-            or document.get("content")
-            or ""
-        ).strip()
-        media_url = str(document.get("url") or "").strip()
-
-        parts = [f"Domain: {domain}", f"Search topic: {query}"]
-
-        if title:
-            parts.append(f"Video title: {title}")
-        if description:
-            parts.append(f"Video description: {description[:4000]}")
-        if media_url:
-            parts.append(f"Source URL: {media_url}")
-        parts.append(f"Declared license: {raw_license}")
-
-        if title or description:
-            output.append("[Licensed video metadata]\n" + "\n".join(parts))
-
-    return output
-
-
 def _fetch_code(query: str) -> List[str]:
     r = _call_adapter("fetch_github_ebooks", query=query)
-    out = _normalize(r)
-    out.extend(_fetch_video_knowledge(query, "code"))
-    return out
+    return _normalize(r)
 
 
 def _fetch_language(query: str) -> List[str]:
@@ -496,22 +387,17 @@ def _fetch_language(query: str) -> List[str]:
     out.extend(_normalize(r1))
     r2 = _call_adapter("fetch_datamuse", query=query, op="ml")
     out.extend(_normalize(r2))
-    out.extend(_fetch_video_knowledge(query, "language"))
     return out
 
 
 def _fetch_knowledge(query: str) -> List[str]:
     r = _call_adapter("fetch_wikipedia", query=query, topic=query)
-    out = _normalize(r)
-    out.extend(_fetch_video_knowledge(query, "knowledge"))
-    return out
+    return _normalize(r)
 
 
 def _fetch_news(query: str) -> List[str]:
     r = _call_adapter("fetch_news", query=query, topic=query)
-    out = _normalize(r)
-    out.extend(_fetch_video_knowledge(query, "news"))
-    return out
+    return _normalize(r)
 
 
 def _fetch_finance(query: str) -> List[str]:
@@ -520,7 +406,6 @@ def _fetch_finance(query: str) -> List[str]:
     out.extend(_normalize(r1))
     r2 = _call_adapter("fetch_financial_modelling_prep", query=query, symbol=query)
     out.extend(_normalize(r2))
-    out.extend(_fetch_video_knowledge(query, "finance"))
     return out
 
 
@@ -530,117 +415,30 @@ def _fetch_literature(query: str) -> List[str]:
     out.extend(_normalize(r1))
     r2 = _call_adapter("fetch_elibrary", query=query, topic=query)
     out.extend(_normalize(r2))
-    out.extend(_fetch_video_knowledge(query, "literature"))
     return out
 
 
 def _fetch_media(url: str) -> List[str]:
-    """Combine APITube media discovery with ScrapingBee page retrieval."""
-    import re
-    from urllib.parse import urlparse, unquote
-
-    output: List[str] = []
-    seen_urls = set()
-
-    # Derive a search query from the current seed URL.
-    parsed = urlparse(url)
-    query = unquote(parsed.path.rstrip("/").rsplit("/", 1)[-1])
-    query = query.replace("_", " ").replace("-", " ").strip()
-
-    if not query:
-        query = parsed.netloc or url
-
-    # 1. APITube discovers related media and supplies metadata.
-    apitube_result = _call_adapter(
-        "fetch_apitube_videos",
-        query=query,
-        limit=3,
-    )
-
-    discovered_urls = []
-
-    if isinstance(apitube_result, dict):
-        documents = apitube_result.get("documents", [])
-
-        if isinstance(documents, list):
-            for document in documents:
-                if not isinstance(document, dict):
-                    continue
-
-                title = str(document.get("title") or "").strip()
-                content = str(
-                    document.get("content")
-                    or document.get("description")
-                    or document.get("summary")
-                    or ""
-                ).strip()
-                media_url = str(document.get("url") or "").strip()
-
-                # Keep APITube metadata even if page retrieval fails.
-                parts = []
-                if title:
-                    parts.append(f"Title: {title}")
-                if media_url:
-                    parts.append(f"Media URL: {media_url}")
-                if content:
-                    parts.append(content)
-
-                if parts:
-                    output.append(
-                        "[Media discovery: APITube] " + "\\n".join(parts)
-                    )
-
-                if (
-                    media_url.startswith(("https://", "http://"))
-                    and media_url not in discovered_urls
-                ):
-                    discovered_urls.append(media_url)
-
-    # 2. ScrapingBee retrieves the original seed page and discovered pages.
-    # A failure on one URL must not discard results from other URLs.
-    page_urls = [url] + discovered_urls
-
+    """Media domain now goes through ScrapingBee."""
     try:
         from external.scrapingbee import fetch_page
     except ImportError:
         try:
-            from scrapingbee import fetch_page
+            from scrapingbee import fetch_page  # type: ignore
         except ImportError:
-            fetch_page = None
+            return []
+    r = fetch_page(url, render_js=True)
+    if not r.get("ok"):
+        return []
+    html = r.get("html") or ""
+    # strip tags crudely; the memory_grid will tokenize what's left
+    import re
+    text = re.sub(r"<script[\s\S]*?</script>", " ", html, flags=re.I)
+    text = re.sub(r"<style[\s\S]*?</style>", " ", text, flags=re.I)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return [text] if text else []
 
-    if fetch_page is not None:
-        for page_url in page_urls:
-            if page_url in seen_urls:
-                continue
-            seen_urls.add(page_url)
-
-            try:
-                result = fetch_page(page_url, render_js=True)
-                if not isinstance(result, dict) or not result.get("ok"):
-                    continue
-
-                html = result.get("html") or ""
-                text = re.sub(
-                    r"<(script|style|noscript)[^>]*>[\\s\\S]*?</\\1>",
-                    " ",
-                    html,
-                    flags=re.I,
-                )
-                text = re.sub(r"<[^>]+>", " ", text)
-                text = re.sub(r"\\s+", " ", text).strip()
-
-                if text:
-                    output.append(
-                        f"[Media page: {page_url}] {text[:12000]}"
-                    )
-
-            except Exception as exc:
-                print(
-                    f"[media-fetch] {page_url}: "
-                    f"{type(exc).__name__}: {exc}"
-                )
-
-    return output
 
 def _fetch_religion(query: str) -> List[str]:
     out = []
@@ -648,7 +446,6 @@ def _fetch_religion(query: str) -> List[str]:
     out.extend(_normalize(r1))
     r2 = _call_adapter("fetch_books", query=query, topic=query)
     out.extend(_normalize(r2))
-    out.extend(_fetch_video_knowledge(query, "religion"))
     return out
 
 
@@ -658,7 +455,6 @@ def _fetch_dialect(query: str) -> List[str]:
     out.extend(_normalize(r1))
     r2 = _call_adapter("fetch_dictionary", word=query, query=query)
     out.extend(_normalize(r2))
-    out.extend(_fetch_video_knowledge(query, "dialect"))
     return out
 
 

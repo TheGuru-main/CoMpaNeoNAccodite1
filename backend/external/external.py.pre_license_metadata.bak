@@ -1378,23 +1378,15 @@ async def fetch_apitube_videos(
                         ),
                         metadata={
                             "raw_provider": item,
-                            "license": (
-                                item.get("license")
-                                or item.get("license_name")
-                                or item.get("license_type")
-                                or item.get("licence")
-                                or item.get("licence_name")
-                                or item.get("licence_type")
-                            ),
-                            "license_url": (
-                                item.get("license_url")
-                                or item.get("licence_url")
-                            ),
                             "transcript_available": bool(
-                                item.get("transcript")
+                                item.get(
+                                    "transcript"
+                                )
                             ),
                             "subtitles_available": bool(
-                                item.get("subtitles")
+                                item.get(
+                                    "subtitles"
+                                )
                             ),
                         },
                     )

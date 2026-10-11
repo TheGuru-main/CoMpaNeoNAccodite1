@@ -354,12 +354,12 @@ def _normalize(result: Any) -> List[str]:
     if isinstance(result, dict):
         if "__error__" in result:
             return out
-        for key in ("text", "extract", "content", "summary", "body", "html"):
+        for key in ("text", "extract", "content", "summary", "body", "html", "title"):
             v = result.get(key)
             if isinstance(v, str) and v.strip():
                 out.append(v)
-        # nested lists (e.g. news items)
-        for key in ("articles", "results", "items", "hits", "entries", "definitions"):
+        # nested lists — include external.py "documents"
+        for key in ("documents", "articles", "results", "items", "hits", "entries", "definitions"):
             v = result.get(key)
             if isinstance(v, list):
                 for item in v:
@@ -662,6 +662,41 @@ def _fetch_dialect(query: str) -> List[str]:
     return out
 
 
+
+# LOCAL_SEED_FALLBACK — offline / failed-API bootstrap for train
+LOCAL_SEED_TEXTS = {
+    "code": [
+        "Python best practices: use virtual environments, type hints, and explicit exception handling.",
+        "FastAPI patterns: dependency injection, pydantic models, and async route handlers.",
+        "Git workflows: feature branches, pull requests, and conventional commits.",
+        "REST API design: resource nouns, status codes, idempotent methods, and pagination.",
+        "PyTorch training loop: dataset, dataloader, forward, loss, backward, optimizer step.",
+    ],
+    "gsp": [
+        "GSP start_row = ((L + S - 1) mod R) + 1. Fragments: row_k = ((start_row - 1 + k*D) mod R) + 1, col_k = (c + k) mod C.",
+        "GSP point-node is fragment k=0. Elastic cloud perturbs L, S, and first-letter column c for typo tolerance.",
+        "MemoryGrid is the central store. crawl_query routes letter, word, and storage grids into ranked candidates.",
+        "Cell identity can be derived from L+S+c parameters used in placement.",
+    ],
+    "knowledge": [
+        "Artificial intelligence systems learn patterns from data and apply them to new inputs.",
+        "Machine learning includes supervised, unsupervised, and reinforcement learning paradigms.",
+        "Information retrieval ranks documents by relevance to a query using indexes and scoring.",
+    ],
+    "sandbox": [
+        "EOF append: cat << 'EOF' >> file.py then paste content then EOF. Safe subprocess with timeouts.",
+        "Code sandboxes isolate execution with resource limits and restricted imports.",
+    ],
+}
+
+def _local_fallback(domain: str, query: str) -> list:
+    texts = LOCAL_SEED_TEXTS.get(domain) or LOCAL_SEED_TEXTS.get("knowledge") or []
+    if not texts:
+        return [f"Seed topic ({domain}): {query}. Accodite MemoryGrid training document."]
+    # rotate by query hash
+    i = abs(hash(query)) % len(texts)
+    return [texts[i], f"Query context ({domain}): {query}"]
+
 DISPATCH = {
     "code":       _fetch_code,
     "language":   _fetch_language,
@@ -857,7 +892,9 @@ def seed_crawl(
             continue
         fetcher = DISPATCH.get(domain)
         if fetcher is None:
-            continue
+            # domains without dedicated API still get local/wiki path
+            fetcher = DISPATCH.get("knowledge") or (lambda q: _local_fallback(domain, q))
+
 
         written = 0
         failed = 0
@@ -866,6 +903,8 @@ def seed_crawl(
             stats["planned"] += 1
             try:
                 chunks = _run_fetcher(fetcher, q) or []
+                if not chunks:
+                    chunks = _local_fallback(domain, q)
                 if not chunks:
                     failed += 1
                     continue

@@ -329,86 +329,114 @@ def collect_training_data(
 
 
 # ============================================================================
-# VOCABULARY
+# VOCABULARY  (letter-chain v1 — tokenizer uid_sequence identity)
 # ============================================================================
+
+# Fixed embedding table size. Model rows are NOT sequential discovery ids.
+# Content identity = int(serialize_uid(uid_sequence(...))) e.g. home -> 714124
+EMBED_ROWS = int(__import__("os").environ.get("ACCD_EMBED_ROWS", "8192"))
+
+
+def letter_chain_id(token_str: str, lang: str = "en") -> int:
+    """Canonical content token id from 0-based multilingual letter chain."""
+    if not token_str or not str(token_str).strip():
+        return 1  # <unk>
+    try:
+        from tokenizer import (
+            uid_sequence,
+            serialize_uid,
+            normalize_lexical_token,
+            normalize_lang,
+        )
+    except ImportError:
+        from tokenizer.tokenizer import (
+            uid_sequence,
+            serialize_uid,
+            normalize_lexical_token,
+            normalize_lang,
+        )
+    code = normalize_lang(lang)
+    norm = normalize_lexical_token(str(token_str), code)
+    if not norm:
+        return 1
+    seq = uid_sequence(norm, code)
+    if not seq:
+        return 1
+    return int(serialize_uid(seq))
+
+
+def chain_to_row(chain_id: int, embed_rows: int = EMBED_ROWS) -> int:
+    """Map chain id into embedding row; specials 0..3 reserved."""
+    if chain_id in (0, 1, 2, 3):
+        return int(chain_id)
+    if chain_id < 0:
+        return 1
+    return 4 + (int(chain_id) % (int(embed_rows) - 4))
+
 
 def build_vocab(
     records: List[Dict[str, Any]],
+    embed_rows: int = EMBED_ROWS,
 ) -> Tuple[
     Dict[str, int],
     Dict[int, str],
 ]:
     """
-    Build vocabulary from the same tokenized representation used by
-    MemoryGrid and tokenizer.py.
+    Letter-chain vocabulary metadata.
 
-    Both stem and original forms are retained where available.
+    vocab maps:
+      specials by name -> 0..3
+      normalized word  -> embed row (from chain id)
+      str(chain_id)    -> same row (debug / export)
+
+    reverse maps embed row -> representative normalized word.
+    Identity is always letter-chain, not corpus order.
     """
-
-    vocab = {
+    vocab: Dict[str, int] = {
         "<pad>": 0,
         "<unk>": 1,
         "<start>": 2,
         "<end>": 3,
     }
-
-    reverse = {
+    reverse: Dict[int, str] = {
         0: "<pad>",
         1: "<unk>",
         2: "<start>",
         3: "<end>",
     }
+    chain_to_word: Dict[str, str] = {}
 
     for record in records:
-
-        tokens = record.get(
-            "tokens",
-            [],
-        )
-
+        lang = record.get("lang") or "en"
+        tokens = record.get("tokens") or []
         for token in tokens:
-
-            if not isinstance(
-                token,
-                dict,
-            ):
+            if not isinstance(token, dict):
                 continue
-
-            stem = token.get(
-                "stem",
-                "",
+            word = (
+                token.get("normalized")
+                or token.get("stem")
+                or token.get("original")
+                or ""
             )
-
-            original = token.get(
-                "original",
-                "",
-            )
-
-            if stem:
-
-                if stem not in vocab:
-
-                    token_id = len(
-                        vocab
-                    )
-
-                    vocab[stem] = token_id
-                    reverse[token_id] = stem
-
-            if (
-                original
-                and original != stem
+            word = str(word).strip()
+            if not word:
+                continue
+            cid = letter_chain_id(word, lang)
+            if cid == 1 and len(word) > 0:
+                # still record surface for debugging
+                pass
+            row = chain_to_row(cid, embed_rows)
+            vocab[word] = row
+            vocab[str(cid)] = row
+            if row not in reverse or reverse[row] in (
+                "<pad>", "<unk>", "<start>", "<end>",
             ):
+                reverse[row] = word
+            chain_to_word[str(cid)] = word
 
-                if original not in vocab:
-
-                    token_id = len(
-                        vocab
-                    )
-
-                    vocab[original] = token_id
-                    reverse[token_id] = original
-
+    # stash for metadata writers (optional attribute on function)
+    build_vocab._last_chain_to_word = chain_to_word  # type: ignore
+    build_vocab._embed_rows = embed_rows  # type: ignore
     return vocab, reverse
 
 
@@ -419,84 +447,39 @@ def build_vocab(
 def encode_records(
     records: List[Dict[str, Any]],
     vocab: Dict[str, int],
+    embed_rows: int = EMBED_ROWS,
 ) -> List[List[int]]:
     """
-    Encode MemoryGrid tokenized records into model token IDs.
+    Encode via letter-chain ids -> embed rows (not sequential discovery).
     """
-
-    encoded: List[
-        List[int]
-    ] = []
-
-    start_id = vocab[
-        "<start>"
-    ]
-
-    end_id = vocab[
-        "<end>"
-    ]
-
-    unk_id = vocab[
-        "<unk>"
-    ]
+    encoded: List[List[int]] = []
+    start_id = 2
+    end_id = 3
+    unk_id = 1
 
     for record in records:
-
-        tokens = record.get(
-            "tokens",
-            [],
-        )
-
-        ids = [
-            start_id
-        ]
-
+        lang = record.get("lang") or "en"
+        tokens = record.get("tokens") or []
+        ids = [start_id]
         for token in tokens:
-
-            if not isinstance(
-                token,
-                dict,
-            ):
+            if not isinstance(token, dict):
                 continue
-
-            stem = token.get(
-                "stem",
-                "",
+            word = (
+                token.get("normalized")
+                or token.get("stem")
+                or token.get("original")
+                or ""
             )
-
-            original = token.get(
-                "original",
-                "",
-            )
-
-            if stem in vocab:
-
-                word = stem
-
-            elif original in vocab:
-
-                word = original
-
-            else:
-
-                ids.append(
-                    unk_id
-                )
+            word = str(word).strip()
+            if not word:
+                ids.append(unk_id)
                 continue
-
-            ids.append(
-                vocab[word]
-            )
-
-        ids.append(
-            end_id
-        )
-
+            cid = letter_chain_id(word, lang)
+            row = chain_to_row(cid, embed_rows)
+            ids.append(row)
+        ids.append(end_id)
         if len(ids) > 2:
-
-            encoded.append(
-                ids
-            )
+            encoded.append(ids)
 
     return encoded
 
@@ -736,6 +719,7 @@ def train(
     encoded_docs = encode_records(
         records,
         vocab,
+        embed_rows=int(__import__("os").environ.get("ACCD_EMBED_ROWS", str(EMBED_ROWS))),
     )
 
     if not encoded_docs:
@@ -754,8 +738,10 @@ def train(
     # MODEL
     # ----------------------------------------------------------------
 
+    embed_rows = int(__import__("os").environ.get("ACCD_EMBED_ROWS", str(EMBED_ROWS)))
+    print(f"Letter-chain scheme: embed_rows={embed_rows} (home chain id example 714124)")
     model = MiniCompanionAI(
-        vocab_size=len(vocab)
+        vocab_size=embed_rows,
     )
 
     model.to(

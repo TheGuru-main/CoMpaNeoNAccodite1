@@ -899,14 +899,11 @@ def train(
                 x
             )
 
+            # letter-chain: class dim = embedding table (8192), NOT len(vocab)
+            V = logits.size(-1)
             loss = criterion(
-                logits.view(
-                    -1,
-                    len(vocab),
-                ),
-                y.view(
-                    -1
-                ),
+                logits.reshape(-1, V),
+                y.reshape(-1),
             )
 
             loss.backward()

@@ -338,39 +338,63 @@ EMBED_ROWS = int(__import__("os").environ.get("ACCD_EMBED_ROWS", "8192"))
 
 
 def letter_chain_id(token_str: str, lang: str = "en") -> int:
-    """Canonical content token id from 0-based multilingual letter chain."""
+    """
+    Training path only (not phone/placement uID).
+
+    1) uid_sequence = ordered letter/digit-marker indexes (0 = letter a; zeros kept).
+    2) embed fingerprint = stable hash(tuple(seq)) — NOT int(serialize_uid).
+    3) chain_to_row maps fingerprint into rows [4, embed_rows) so specials 0..3 stay free.
+
+    Placement / phone formatting must not be used here.
+    """
     if not token_str or not str(token_str).strip():
-        return 1  # <unk>
+        return -1
     try:
         from tokenizer import (
             uid_sequence,
-            serialize_uid,
             normalize_lexical_token,
             normalize_lang,
         )
     except ImportError:
-        from tokenizer.tokenizer import (
-            uid_sequence,
-            serialize_uid,
-            normalize_lexical_token,
-            normalize_lang,
-        )
+        try:
+            from tokenizer.tokenizer import (
+                uid_sequence,
+                normalize_lexical_token,
+                normalize_lang,
+            )
+        except ImportError:
+            return -1
     code = normalize_lang(lang)
     norm = normalize_lexical_token(str(token_str), code)
     if not norm:
-        return 1
+        return -1
     seq = uid_sequence(norm, code)
     if not seq:
-        return 1
-    return int(serialize_uid(seq))
+        # symbol-only fallback: hash codepoints, still training-only
+        seq = tuple(ord(ch) & 0xFFFF for ch in norm)
+    else:
+        seq = tuple(int(x) for x in seq)
+    # stable hash independent of PYTHONHASHSEED
+    h = 0
+    for x in seq:
+        h = (h * 131 + (int(x) + 1)) & 0x7FFFFFFFFFFFFFFF
+    return h if h > 0 else 4
 
 
 def chain_to_row(chain_id: int, embed_rows: int = EMBED_ROWS) -> int:
-    """Content always rows 4..; 0..3 only for named specials at encode time."""
+    """
+    Training embed seat only.
+    Rows 0..3 = named specials (<pad>, <unk>, <start>, <end>).
+    Content spans 4 .. embed_rows-1  (addition of +4 at the front of the usable grid).
+    """
     er = max(8, int(embed_rows))
-    usable = er - 4
-    cid = abs(int(chain_id))
+    usable = er - 4  # cross content span
+    if chain_id is None or int(chain_id) < 0:
+        return 1  # unk seat when caller passed failure signal
+    cid = int(chain_id)
     return 4 + (cid % usable)
+
+
 
 
 def build_vocab(

@@ -309,6 +309,27 @@ ALPHABETS: dict[str, str] = {
 }
 
 ALPHABETS["default"] = ALPHABETS["en"]
+
+# =====================================================================
+# DIGIT SPECIAL IDENTIFIERS (roman-style markers — avoid serialize collapse)
+# =====================================================================
+# Raw digit indexes 0-9 in uid_sequence collapse under serialize_uid
+# (e.g. [4,2] == "42"). Each digit expands to letter indexes of a marker.
+
+DIGIT_MARKERS: dict[str, str] = {
+    "0": "xxxlll",
+    "1": "xxxded",
+    "2": "xxxawa",
+    "3": "xxxewa",
+    "4": "cccreg",
+    "5": "bbtsv",
+    "6": "cccftd",
+    "7": "vxzkkl",
+    "8": "grtlv",
+    "9": "xxxnov",  # 10th marker; rename if you have a preferred form
+}
+
+
 KEY_LINES["default"] = KEY_LINES["en"]
 
 
@@ -1142,6 +1163,19 @@ def uid_sequence(
     sequence: list[int] = []
 
     for ch in normalized:
+        # Digit → expand special marker into letter indexes (no raw 0-9 chain)
+        if ch.isdigit() and ch in DIGIT_MARKERS:
+            marker = DIGIT_MARKERS[ch]
+            for mch in marker:
+                index = alphabet_index(
+                    mch,
+                    lang,
+                    text_context=marker,
+                )
+                if index is not None:
+                    sequence.append(index)
+            continue
+
         index = alphabet_index(
             ch,
             lang,

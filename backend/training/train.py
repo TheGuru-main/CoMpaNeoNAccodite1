@@ -366,12 +366,11 @@ def letter_chain_id(token_str: str, lang: str = "en") -> int:
 
 
 def chain_to_row(chain_id: int, embed_rows: int = EMBED_ROWS) -> int:
-    """Map chain id into embedding row; specials 0..3 reserved."""
-    if chain_id in (0, 1, 2, 3):
-        return int(chain_id)
-    if chain_id < 0:
-        return 1
-    return 4 + (int(chain_id) % (int(embed_rows) - 4))
+    """Content always rows 4..; 0..3 only for named specials at encode time."""
+    er = max(8, int(embed_rows))
+    usable = er - 4
+    cid = abs(int(chain_id))
+    return 4 + (cid % usable)
 
 
 def build_vocab(

@@ -183,3 +183,54 @@ window.runInSandbox = async function (source, lang = "python", context = "ai") {
 };
 
 window.openCodePanel = showCodeScreen; // backward compat
+
+// ============================================================
+// ACCD-CODE-BACK-FIX (EOF)
+// ============================================================
+(function () {
+  const _show = window.openCodePanel;
+  window.openCodePanel = function () {
+    const screen = document.getElementById("codeScreen");
+    if (screen) {
+      screen.style.display = "flex";
+      screen.classList.add("active");
+    }
+    // hide main chat chrome while coding
+    const main = document.getElementById("mainScreen");
+    if (main) {
+      main.classList.remove("active");
+    }
+    if (typeof _show === "function") _show();
+    else if (typeof initMonaco === "function") initMonaco();
+  };
+
+  window.hideCodeScreen = function () {
+    const screen = document.getElementById("codeScreen");
+    if (screen) {
+      screen.style.display = "none";
+      screen.classList.remove("active");
+    }
+    const main = document.getElementById("mainScreen");
+    if (main) {
+      main.style.display = "flex";
+      main.classList.add("active");
+    }
+  };
+
+  document.addEventListener("DOMContentLoaded", function () {
+    const back = document.getElementById("btnCodeBack");
+    if (back) {
+      back.onclick = function () {
+        window.hideCodeScreen();
+        if (typeof window.acdSetScreenMode === "function") {
+          window.acdSetScreenMode("home");
+        }
+        const homeNav = document.querySelector('.nav-link[data-action="home"]');
+        if (homeNav) {
+          document.querySelectorAll(".nav-link").forEach(n => n.classList.remove("active"));
+          homeNav.classList.add("active");
+        }
+      };
+    }
+  });
+})();

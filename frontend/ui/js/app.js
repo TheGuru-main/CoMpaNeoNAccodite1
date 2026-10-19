@@ -4745,3 +4745,89 @@ document.addEventListener("DOMContentLoaded", () => {
         };
     }
 })();
+
+// ============================================================
+// ACCD-SCREEN-MODE (EOF)
+// home-active  → home actions, no prompt
+// workspace-active → prompt at bottom
+// other screens → no prompt
+// ============================================================
+(function () {
+  function setMode(mode) {
+    document.body.classList.remove("home-active", "workspace-active");
+    if (mode === "home") document.body.classList.add("home-active");
+    if (mode === "workspace") document.body.classList.add("workspace-active");
+
+    const input = document.getElementById("inputArea");
+    if (input) {
+      input.style.display = mode === "workspace" ? "flex" : "none";
+    }
+    const home = document.getElementById("homeActions");
+    if (home) {
+      home.style.display = mode === "home" ? "flex" : "none";
+    }
+  }
+
+  window.acdSetScreenMode = setMode;
+
+  // Default after login: home
+  document.addEventListener("DOMContentLoaded", function () {
+    setMode("home");
+
+    const btnCode = document.getElementById("btnHomeCode");
+    const btnConsole = document.getElementById("btnHomeConsole");
+    if (btnCode) {
+      btnCode.addEventListener("click", function () {
+        if (typeof window.openCodePanel === "function") window.openCodePanel();
+        else if (typeof window.acdNav === "function") window.acdNav("code");
+      });
+    }
+    if (btnConsole) {
+      btnConsole.addEventListener("click", function () {
+        // Open code screen focused on console (same space, scroll to bottom)
+        if (typeof window.openCodePanel === "function") window.openCodePanel();
+        setTimeout(function () {
+          const c = document.getElementById("codeConsole");
+          if (c) c.scrollIntoView({ behavior: "smooth", block: "end" });
+        }, 200);
+      });
+    }
+  });
+
+  // When user opens a room/workspace, switch to workspace mode
+  const _origLoadWs = window.loadWorkspaceMessages;
+  if (typeof _origLoadWs === "function") {
+    window.loadWorkspaceMessages = async function () {
+      const r = await _origLoadWs.apply(this, arguments);
+      setMode("workspace");
+      return r;
+    };
+  }
+
+  // Nav: home restores home mode; others clear workspace prompt
+  const _origNav = window.acdNav;
+  window.acdNav = function (action, el) {
+    if (action === "home") {
+      setMode("home");
+      const chat = document.getElementById("chatBox");
+      if (chat) chat.style.display = "";
+      // ensure main visible
+      const main = document.getElementById("mainScreen");
+      if (main) {
+        main.style.display = "flex";
+        main.classList.add("active");
+      }
+      if (typeof window.hideCodeScreen === "function") window.hideCodeScreen();
+    } else if (action === "code") {
+      setMode(null);
+      if (typeof window.openCodePanel === "function") window.openCodePanel();
+      return false;
+    } else {
+      // messages, research, train, etc. — no prompt
+      setMode(null);
+      if (typeof window.hideCodeScreen === "function") window.hideCodeScreen();
+    }
+    if (typeof _origNav === "function") return _origNav(action, el);
+    return false;
+  };
+})();

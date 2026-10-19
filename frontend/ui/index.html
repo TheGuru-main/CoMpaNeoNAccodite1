@@ -237,6 +237,17 @@
                 <div id="roomList" class="sidebar-body"></div>
             </aside>
 
+            
+            <!-- HOME ACTIONS: Code + Console on home (not in header) -->
+            <div id="homeActions" class="home-actions" style="display:none; padding:12px; gap:10px; flex-wrap:wrap;">
+              <button type="button" class="primary-btn home-action-btn" id="btnHomeCode" style="flex:1; min-width:140px;">
+                <i class="fa-solid fa-code"></i> VS Code space
+              </button>
+              <button type="button" class="primary-btn secondary-btn home-action-btn" id="btnHomeConsole" style="flex:1; min-width:140px;">
+                <i class="fa-solid fa-terminal"></i> Console
+              </button>
+            </div>
+
             <main class="chat-box" id="chatBox">
                 <!-- Messages appear here dynamically via JS -->
             </main>

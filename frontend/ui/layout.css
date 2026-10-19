@@ -1131,3 +1131,136 @@ body.light-mode .side-kebab:hover {
     background: rgba(44, 92, 197, 0.10);
     color: var(--neon-blue-bright);
 }
+
+
+/* ============================================================
+   ACCD-LAYOUT-TOPNAV (appended at EOF – do not interleave)
+   Nav moved to top. Input stays at bottom of home/workspace.
+   Content always scrolls past the input – never hidden under it.
+   ============================================================ */
+
+:root {
+    --top-nav-h: 52px;
+    --header-h: 56px;
+    --input-h: 64px;
+}
+
+/* Top nav – sits above the existing header, does not replace it */
+.top-nav.top-nav-fixed,
+.top-nav {
+    position: relative !important;
+    top: auto !important;
+    bottom: auto !important;
+    left: 0 !important;
+    right: 0 !important;
+    height: var(--top-nav-h) !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    z-index: 50 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-around !important;
+    background: rgba(12, 12, 16, 0.98) !important;
+    border-bottom: 1px solid var(--border, #1e293b) !important;
+    flex: 0 0 auto !important;
+}
+
+.top-nav .nav-link {
+    color: var(--text-faint, #94a3b8);
+    font-size: 1.1rem;
+    padding: 0.45rem 0.9rem;
+    border-radius: 0.5rem;
+    text-decoration: none;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.top-nav .nav-link.active {
+    color: var(--aqua-bright, #00ffaa);
+    background: linear-gradient(275deg,
+        rgba(124, 30, 63, 0.28) 0%,
+        rgba(79, 140, 255, 0.22) 100%);
+}
+
+/* Hide top nav on auth */
+body:not(.logged-in) .top-nav,
+body:not(.logged-in) .top-nav-fixed {
+    display: none !important;
+}
+
+/* Main screen: full height, column layout */
+#mainScreen.active {
+    display: flex !important;
+    flex-direction: column !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    overflow: hidden !important;
+}
+
+@supports not (height: 100dvh) {
+    #mainScreen.active {
+        height: 100vh !important;
+        max-height: 100vh !important;
+    }
+}
+
+/* Header stays under the top nav */
+#mainScreen > .top-header,
+#mainScreen .top-header {
+    flex: 0 0 auto !important;
+    position: relative !important;
+}
+
+/* Chat / activity area – takes all remaining space and scrolls */
+#mainScreen > .chat-box,
+#mainScreen .chat-box {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    /* Extra bottom padding so last messages clear the input field */
+    padding-bottom: calc(var(--input-h) + 12px) !important;
+}
+
+/* Prompt input – explicit bottom of home + workspace screens */
+#mainScreen > .input-area,
+#mainScreen .input-area {
+    flex: 0 0 auto !important;
+    position: relative !important;
+    bottom: auto !important;
+    left: auto !important;
+    right: auto !important;
+    width: 100% !important;
+    z-index: 30 !important;
+    margin: 0 !important;
+    padding: 0.65rem 1rem !important;
+    background: rgba(12, 12, 16, 0.98) !important;
+    border-top: 1px solid var(--border, #1e293b) !important;
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+
+body.light-mode #mainScreen > .input-area,
+body.light-mode #mainScreen .input-area {
+    background: rgba(255, 255, 255, 0.98) !important;
+    border-top-color: rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Kill any remaining fixed bottom-nav rules so nothing sits under the input */
+.bottom-nav,
+.bottom-nav.bottom-nav-fixed {
+    display: none !important;
+}
+
+/* Panels that were previously bottom-offset to the old nav */
+#mainScreen > .research-panel,
+#mainScreen .research-panel,
+#searchPanel,
+#docsPanel,
+#dmPanel {
+    bottom: 0 !important;
+}

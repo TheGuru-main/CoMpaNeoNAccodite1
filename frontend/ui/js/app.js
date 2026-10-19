@@ -4722,3 +4722,26 @@ document.addEventListener("DOMContentLoaded", () => {
     // Example – call window.openCodePanel() from any button
     console.log("[ACCD] code console ready – call openCodePanel()");
 });
+
+// ============================================================
+// ACCD-INPUT-BOTTOM (appended at EOF)
+// Ensure prompt input is at the bottom and visible on home + workspace
+// ============================================================
+(function () {
+    function ensureInputVisible() {
+        const input = document.getElementById("inputArea");
+        if (!input) return;
+        // Always show on main screen (home / workspace)
+        input.style.display = "flex";
+    }
+    document.addEventListener("DOMContentLoaded", ensureInputVisible);
+    // Re-run when rooms change
+    const orig = window.loadRooms || window.loadWorkspaces;
+    if (typeof orig === "function") {
+        window.loadRooms = window.loadWorkspaces = async function () {
+            const r = await orig.apply(this, arguments);
+            ensureInputVisible();
+            return r;
+        };
+    }
+})();

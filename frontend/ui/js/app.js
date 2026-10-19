@@ -4983,3 +4983,141 @@ document.addEventListener("DOMContentLoaded", () => {
     };
   }
 })();
+
+
+// ============================================================
+// ACCD-FIX-ORG-HOME-NAV (EOF — do not interleave)
+// 1) hasOrg: true if any org membership (not only has_org flag)
+// 2) Home: never show query prompt; clear currentRoomId on home
+// 3) Hide bottom-nav duplicates (search/messages/train/workspace)
+//    those live on Home body only
+// 4) Do not remap workspace→docs (that broke org hamburger rooms)
+// ============================================================
+(function () {
+  // --- Strengthen hasOrg after loadMe ---
+  if (typeof loadMe === "function") {
+    var _loadMe = loadMe;
+    loadMe = async function () {
+      await _loadMe.apply(this, arguments);
+      try {
+        var orgs = (currentUser && currentUser.orgs) || [];
+        if (orgs.length > 0) {
+          hasOrg = true;
+          if (!activeOrgId) {
+            var active = orgs.filter(function (o) { return o.credential_active; });
+            activeOrgId = (active[0] && active[0].org_id) || orgs[0].org_id || null;
+          }
+        }
+        if (typeof renderRoomBar === "function") renderRoomBar();
+        var btnOrg = document.getElementById("btnOrg");
+        if (btnOrg) btnOrg.style.display = hasOrg ? "" : "none";
+      } catch (e) {}
+    };
+  }
+
+  // --- Input: home = hidden; only when currentRoomId set ---
+  if (typeof updateInputVisibility === "function") {
+    var _uiv = updateInputVisibility;
+    updateInputVisibility = function () {
+      _uiv.apply(this, arguments);
+      var inputArea = document.getElementById("inputArea");
+      var onHome = !currentRoomId || document.body.classList.contains("home-active");
+      if (onHome && inputArea) {
+        inputArea.style.setProperty("display", "none", "important");
+      }
+    };
+  }
+
+  function hideDuplicateNav() {
+    document.querySelectorAll(".bottom-nav .nav-link, .top-nav .nav-link").forEach(function (link) {
+      var a = link.getAttribute("data-action");
+      if (a && a !== "home") {
+        link.style.display = "none";
+      }
+    });
+  }
+
+  function goHomeStrict() {
+    document.body.classList.add("home-active");
+    document.body.classList.remove("workspace-active");
+    currentRoomId = null;
+    try { localStorage.removeItem("acd_last_room"); } catch (e) {}
+    // close overlays
+    ["researchPanel", "dmPanel", "docsPanel", "searchPanel"].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.style.display = "none";
+    });
+    var panel = document.getElementById("codePanel");
+    if (panel) panel.style.setProperty("display", "none", "important");
+    var hub = document.getElementById("homeHub");
+    if (hub) hub.style.display = "flex";
+    if (typeof showHomeState === "function") {
+      try { showHomeState(); } catch (e) {}
+    }
+    if (typeof updateInputVisibility === "function") updateInputVisibility();
+    if (typeof renderRoomBar === "function") renderRoomBar();
+  }
+
+  window.acdGoHomeStrict = goHomeStrict;
+
+  // Nav: only home uses showHomeState; messages/research use existing panels
+  // DO NOT map workspace → docs (sidebar hamburger owns workspaces)
+  var _nav = window.acdNav;
+  window.acdNav = function (action, el) {
+    document.querySelectorAll(".nav-link").forEach(function (n) {
+      n.classList.remove("active");
+    });
+    if (el) el.classList.add("active");
+
+    if (action === "home") {
+      goHomeStrict();
+      return false;
+    }
+    // leave workspace action to original (sidebar / rooms) — critical for org
+    if (action === "workspace") {
+      document.body.classList.remove("home-active");
+      if (typeof _nav === "function") return _nav(action, el);
+      // open sidebar for room list
+      try {
+        var sb = document.getElementById("btnSidebar");
+        if (sb) sb.click();
+      } catch (e) {}
+      return false;
+    }
+    if (action === "messages") {
+      document.body.classList.remove("home-active");
+      var hub = document.getElementById("homeHub");
+      if (hub) hub.style.display = "none";
+      if (typeof openDMPanel === "function") openDMPanel();
+      return false;
+    }
+    if (action === "research") {
+      document.body.classList.remove("home-active");
+      var hub2 = document.getElementById("homeHub");
+      if (hub2) hub2.style.display = "none";
+      try { if (typeof openResearch === "function") openResearch(); } catch (e) {}
+      var sp = document.getElementById("searchPanel") || document.getElementById("researchPanel");
+      if (sp) sp.style.display = "block";
+      return false;
+    }
+    if (action === "train") {
+      document.body.classList.remove("home-active");
+      var tr = document.getElementById("trainingModal");
+      if (tr) tr.style.display = "flex";
+      return false;
+    }
+    if (typeof _nav === "function") return _nav(action, el);
+    return false;
+  };
+
+  document.addEventListener("DOMContentLoaded", function () {
+    hideDuplicateNav();
+    // re-hide after any late nav paint
+    setTimeout(hideDuplicateNav, 500);
+    setTimeout(function () {
+      if (typeof loadMe === "function") loadMe().then(function () {
+        if (typeof renderRoomBar === "function") renderRoomBar();
+      });
+    }, 300);
+  });
+})();

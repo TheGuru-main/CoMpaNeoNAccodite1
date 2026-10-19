@@ -193,11 +193,11 @@
             <nav class="top-nav top-nav-fixed" id="mainNav">
                 <!-- NAV-INLINE-2 -->
                 <a href="#" data-action="home"      class="nav-link active" onclick="return window.acdNav('home', this)"><i class="fa-solid fa-house"></i></a>
-                <a href="#" data-action="research"  class="nav-link"        onclick="return window.acdNav('research', this)"><i class="fa-solid fa-magnifying-glass"></i></a>
-                <a href="#" data-action="workspace" class="nav-link"        onclick="return window.acdNav('workspace', this)"><i class="fa-solid fa-folder"></i></a>
-                <a href="#" data-action="messages"  class="nav-link"        onclick="return window.acdNav('messages', this)"><i class="fa-solid fa-comments"></i></a>
+                <a href="#" data-action="research" style="display:none !important"  class="nav-link"        onclick="return window.acdNav('research', this)"><i class="fa-solid fa-magnifying-glass"></i></a>
+                <a href="#" data-action="workspace" style="display:none !important" class="nav-link"        onclick="return window.acdNav('workspace', this)"><i class="fa-solid fa-folder"></i></a>
+                <a href="#" data-action="messages" style="display:none !important"  class="nav-link"        onclick="return window.acdNav('messages', this)"><i class="fa-solid fa-comments"></i></a>
                 <a href="#" data-action="code" class="nav-link" onclick="return window.acdNav('code', this)"><i class="fa-solid fa-code"></i></a>
-                <a href="#" data-action="train"     class="nav-link"        onclick="return window.acdNav('train', this)"><i class="fa-solid fa-wand-magic-sparkles"></i></a>
+                <a href="#" data-action="train" style="display:none !important"     class="nav-link"        onclick="return window.acdNav('train', this)"><i class="fa-solid fa-wand-magic-sparkles"></i></a>
             </nav>
 
             <header class="top-header">
@@ -282,7 +282,7 @@
                     <i class="fa-solid fa-users"></i> <span id="chipMemberCount">0</span>
                 </button>
             </div>
-            <footer class="input-area" id="inputArea" style="display:none;">
+            <footer class="input-area" id="inputArea" style="display:none !important;">
                 <button id="btnAttachImage" class="icon-btn attach-btn" title="Image">
                     <i class="fa-solid fa-image"></i>
                 </button>
@@ -599,12 +599,7 @@
     <button type="button" id="btnNewFile" style="padding:5px 10px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer;">+ File</button>
     <button type="button" id="btnNewFolder" style="padding:5px 10px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer;">+ Folder</button>
     <button type="button" id="btnSaveFile" style="padding:5px 10px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer;">Save</button>
-    <select id="codeLang" style="padding:5px;border-radius:4px;background:#0f172a;color:#e2e8f0;border:1px solid #334155;">
-      <option value="python">Python</option>
-      <option value="javascript">JavaScript</option>
-      <option value="typescript">TypeScript</option>
-      <option value="bash">Bash</option>
-    </select>
+    
     <button type="button" id="btnRunCode" style="padding:6px 12px;border-radius:6px;border:none;background:#22d3ee;color:#0f172a;font-weight:600;cursor:pointer;">▶ Run</button>
     <button type="button" id="btnToggleConsole" style="padding:5px 10px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer;">Console ▾</button>
     <button type="button" id="btnCloseCode" style="margin-left:auto;background:none;border:1px solid #334155;color:#94a3b8;padding:6px 10px;border-radius:6px;cursor:pointer;">✕</button>
@@ -632,5 +627,6 @@
 </div>
 
 <script src="js/code_console.js"></script>
+<input type="file" id="folderPickerInput" webkitdirectory directory multiple style="display:none" />
 </body>
 </html>

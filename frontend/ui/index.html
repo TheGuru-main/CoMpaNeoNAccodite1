@@ -239,12 +239,25 @@
 
             
             <!-- HOME ACTIONS: Code + Console on home (not in header) -->
-            <div id="homeActions" class="home-actions" style="display:none; padding:12px; gap:10px; flex-wrap:wrap;">
-              <button type="button" class="primary-btn home-action-btn" id="btnHomeCode" style="flex:1; min-width:140px;">
-                <i class="fa-solid fa-code"></i> VS Code space
+            
+
+            
+            <!-- HOME HUB: Messages, Search, Folder, Train, Codespace -->
+            <div id="homeHub" class="home-hub" style="display:none; padding:16px; gap:12px; flex-wrap:wrap;">
+              <button type="button" class="primary-btn home-hub-btn" data-hub="messages" style="flex:1; min-width:140px; padding:14px;">
+                <i class="fa-solid fa-comments"></i> Messages
               </button>
-              <button type="button" class="primary-btn secondary-btn home-action-btn" id="btnHomeConsole" style="flex:1; min-width:140px;">
-                <i class="fa-solid fa-terminal"></i> Console
+              <button type="button" class="primary-btn secondary-btn home-hub-btn" data-hub="search" style="flex:1; min-width:140px; padding:14px;">
+                <i class="fa-solid fa-magnifying-glass"></i> Search
+              </button>
+              <button type="button" class="primary-btn secondary-btn home-hub-btn" data-hub="docs" style="flex:1; min-width:140px; padding:14px;">
+                <i class="fa-solid fa-folder"></i> Files
+              </button>
+              <button type="button" class="primary-btn secondary-btn home-hub-btn" data-hub="train" style="flex:1; min-width:140px; padding:14px;">
+                <i class="fa-solid fa-wand-magic-sparkles"></i> Train
+              </button>
+              <button type="button" class="primary-btn home-hub-btn" data-hub="codespace" id="btnHomeCode" style="flex:1; min-width:140px; padding:14px;">
+                <i class="fa-solid fa-code"></i> Codespace
               </button>
             </div>
 
@@ -573,31 +586,45 @@
     <!-- NAV-FIXED -->
             
 
-<!-- ACCD-CODESPACE-P1 -->
+
+
+
+
+
+<!-- ACCD-CODESPACE -->
 <div id="codePanel" style="display:none !important; flex-direction:column; position:fixed; inset:0; background:#0b1120; z-index:9999;">
-  <div style="display:flex; gap:8px; padding:10px; background:#111827; align-items:center; flex-wrap:wrap; border-bottom:1px solid #1e293b;">
+  <div style="display:flex; gap:6px; padding:8px 10px; background:#111827; align-items:center; flex-wrap:wrap; border-bottom:1px solid #1e293b;">
     <button type="button" id="btnCodeBack" style="background:none;border:1px solid #334155;color:#e2e8f0;padding:6px 12px;border-radius:6px;cursor:pointer;">← Home</button>
     <strong style="color:#e2e8f0;">Codespace</strong>
-    <select id="codeLang" style="padding:6px;border-radius:4px;background:#0f172a;color:#e2e8f0;border:1px solid #334155;">
+    <button type="button" id="btnNewFile" style="padding:5px 10px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer;">+ File</button>
+    <button type="button" id="btnNewFolder" style="padding:5px 10px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer;">+ Folder</button>
+    <button type="button" id="btnSaveFile" style="padding:5px 10px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer;">Save</button>
+    <select id="codeLang" style="padding:5px;border-radius:4px;background:#0f172a;color:#e2e8f0;border:1px solid #334155;">
       <option value="python">Python</option>
       <option value="javascript">JavaScript</option>
       <option value="typescript">TypeScript</option>
       <option value="bash">Bash</option>
     </select>
-    <button type="button" id="btnRunCode" style="padding:6px 14px;border-radius:6px;border:none;background:#22d3ee;color:#0f172a;font-weight:600;cursor:pointer;">▶ Run</button>
-    <button type="button" id="btnToggleConsole" style="padding:6px 10px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer;">Console ▾</button>
-    <button type="button" id="btnCloseCode" style="margin-left:auto;background:none;border:1px solid #334155;color:#94a3b8;padding:6px 12px;border-radius:6px;cursor:pointer;">✕</button>
+    <button type="button" id="btnRunCode" style="padding:6px 12px;border-radius:6px;border:none;background:#22d3ee;color:#0f172a;font-weight:600;cursor:pointer;">▶ Run</button>
+    <button type="button" id="btnToggleConsole" style="padding:5px 10px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer;">Console ▾</button>
+    <button type="button" id="btnCloseCode" style="margin-left:auto;background:none;border:1px solid #334155;color:#94a3b8;padding:6px 10px;border-radius:6px;cursor:pointer;">✕</button>
   </div>
-  <div id="monacoContainer" style="flex:1; min-height:140px; width:100%; background:#1e1e1e;"></div>
-  <div id="codeConsole" style="flex:0 0 200px; background:#020617; border-top:1px solid #1e293b; display:flex; flex-direction:column; min-height:0;">
+  <div style="flex:1; display:flex; min-height:0;">
+    <aside id="codeFileTree" style="width:160px; flex:0 0 160px; background:#0f172a; border-right:1px solid #1e293b; overflow:auto; padding:8px; color:#cbd5e1; font-size:12px;">
+      <div style="opacity:0.6; margin-bottom:6px;">Files</div>
+      <ul id="codeFileList" style="list-style:none; margin:0; padding:0;"></ul>
+    </aside>
+    <div id="monacoContainer" style="flex:1; min-width:0; background:#1e1e1e;"></div>
+  </div>
+  <div id="codeConsole" style="flex:0 0 180px; background:#020617; border-top:1px solid #1e293b; display:flex; flex-direction:column; min-height:0;">
     <div style="padding:4px 10px; font-size:11px; color:#94a3b8; display:flex; justify-content:space-between;">
-      <span>Terminal</span>
+      <span>Console (commands)</span>
       <span id="codeRunStatus"></span>
     </div>
-    <pre id="codeOutput" style="flex:1; margin:0; padding:8px 10px; overflow:auto; font-size:12px; color:#e2e8f0; white-space:pre-wrap;"></pre>
-    <div style="display:flex; align-items:center; gap:6px; padding:8px 10px; border-top:1px solid #1e293b; background:#0a0f1a;">
+    <pre id="codeOutput" style="flex:1; margin:0; padding:6px 10px; overflow:auto; font-size:12px; color:#e2e8f0; white-space:pre-wrap;"></pre>
+    <div style="display:flex; align-items:center; gap:6px; padding:6px 10px; border-top:1px solid #1e293b; background:#0a0f1a;">
       <span style="color:#22d3ee; font-family:monospace;">$</span>
-      <input id="consoleInput" type="text" placeholder="run | clear | help" autocomplete="off"
+      <input id="consoleInput" type="text" placeholder="run | clear | ls | help" autocomplete="off"
         style="flex:1; background:transparent; border:none; outline:none; color:#e2e8f0; font-family:monospace; font-size:13px;" />
       <button type="button" id="btnConsoleSend" style="background:none;border:none;color:#94a3b8;cursor:pointer;">↵</button>
     </div>

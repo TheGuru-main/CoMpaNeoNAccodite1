@@ -1,6 +1,6 @@
 /**
- * Codespace Phase 1 — fixed navigation
- * Never auto-open. Back/Close always hide panel and show Home (or auth).
+ * Codespace: Monaco editor + file tree + terminal console
+ * Back → Home. Console is NOT the editor.
  */
 (function () {
   "use strict";
@@ -8,65 +8,69 @@
   var monacoEditor = null;
   var consoleLog = "";
   var consoleCollapsed = false;
+  var files = {
+    "main.py": '# Codespace\nprint("Hello from sandbox")\n'
+  };
+  var currentFile = "main.py";
+  var folders = {};
 
   function $(id) { return document.getElementById(id); }
 
-  function hideCodespace() {
+  function hidePanel() {
     var panel = $("codePanel");
-    if (panel) {
-      panel.style.setProperty("display", "none", "important");
-    }
-  }
-
-  function showCodespace() {
-    var panel = $("codePanel");
-    if (!panel) {
-      console.warn("[codespace] panel missing");
-      return;
-    }
-    panel.style.setProperty("display", "flex", "important");
-    panel.style.flexDirection = "column";
-    initMonaco();
-    setTimeout(function () {
-      if (monacoEditor) try { monacoEditor.layout(); } catch (e) {}
-    }, 100);
+    if (panel) panel.style.setProperty("display", "none", "important");
   }
 
   function goHome() {
-    hideCodespace();
-
-    // Prefer main app if logged in
+    hidePanel();
+    if (typeof window.acdOpenHub === "function") {
+      window.acdOpenHub("home");
+      return;
+    }
     var main = $("mainScreen");
-    var auth = $("authScreen");
-    var token = (typeof authToken !== "undefined" && authToken) ||
-                localStorage.getItem("coMpaNeoN_token") ||
-                localStorage.getItem("accodite_token") || "";
-
-    document.querySelectorAll(".screen").forEach(function (s) {
-      s.classList.remove("active");
-      s.style.display = "none";
-    });
-
-    if (token && main) {
-      main.classList.add("active");
-      main.style.display = "flex";
-      var chat = $("chatBox");
-      if (chat) chat.style.display = "";
-      document.querySelectorAll(".nav-link").forEach(function (n) {
-        n.classList.remove("active");
-      });
-      var homeNav = document.querySelector('.nav-link[data-action="home"]');
-      if (homeNav) homeNav.classList.add("active");
-      if (typeof window.acdSetScreenMode === "function") {
-        try { window.acdSetScreenMode("home"); } catch (e) {}
-      }
-    } else if (auth) {
-      auth.classList.add("active");
-      auth.style.display = "flex";
-    } else if (main) {
+    if (main) {
       main.classList.add("active");
       main.style.display = "flex";
     }
+  }
+
+  function showPanel() {
+    var panel = $("codePanel");
+    if (!panel) return;
+    panel.style.setProperty("display", "flex", "important");
+    panel.style.flexDirection = "column";
+    renderFileList();
+    initMonaco();
+    setTimeout(function () {
+      if (monacoEditor) try { monacoEditor.layout(); } catch (e) {}
+    }, 80);
+  }
+
+  function renderFileList() {
+    var ul = $("codeFileList");
+    if (!ul) return;
+    ul.innerHTML = "";
+    Object.keys(folders).forEach(function (dir) {
+      var li = document.createElement("li");
+      li.textContent = "📁 " + dir;
+      li.style.padding = "4px 0";
+      li.style.opacity = "0.85";
+      ul.appendChild(li);
+    });
+    Object.keys(files).forEach(function (name) {
+      var li = document.createElement("li");
+      li.textContent = "📄 " + name;
+      li.style.padding = "4px 0";
+      li.style.cursor = "pointer";
+      if (name === currentFile) li.style.color = "#22d3ee";
+      li.onclick = function () {
+        if (monacoEditor) files[currentFile] = monacoEditor.getValue();
+        currentFile = name;
+        if (monacoEditor) monacoEditor.setValue(files[name] || "");
+        renderFileList();
+      };
+      ul.appendChild(li);
+    });
   }
 
   function initMonaco() {
@@ -77,13 +81,13 @@
       return;
     }
     if (typeof require === "undefined") {
-      el.innerHTML = "<p style='color:#f87171;padding:1rem'>Monaco loader missing — hard refresh.</p>";
+      el.innerHTML = "<p style='color:#f87171;padding:1rem'>Monaco missing — hard refresh</p>";
       return;
     }
     require.config({ paths: { vs: "https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs" } });
     require(["vs/editor/editor.main"], function () {
       monacoEditor = monaco.editor.create(el, {
-        value: '# Codespace\nprint("Hello from sandbox")\n',
+        value: files[currentFile] || "",
         language: "python",
         theme: "vs-dark",
         automaticLayout: true,
@@ -114,16 +118,14 @@
     if (!box) return;
     consoleCollapsed = !consoleCollapsed;
     if (consoleCollapsed) {
-      box.style.flex = "0 0 40px";
-      var pre = $("codeOutput");
-      if (pre) pre.style.display = "none";
+      box.style.flex = "0 0 36px";
+      if ($("codeOutput")) $("codeOutput").style.display = "none";
       var inp = $("consoleInput");
       if (inp && inp.parentElement) inp.parentElement.style.display = "none";
       if (btn) btn.textContent = "Console ▸";
     } else {
-      box.style.flex = "0 0 200px";
-      var pre2 = $("codeOutput");
-      if (pre2) pre2.style.display = "block";
+      box.style.flex = "0 0 180px";
+      if ($("codeOutput")) $("codeOutput").style.display = "block";
       var inp2 = $("consoleInput");
       if (inp2 && inp2.parentElement) inp2.parentElement.style.display = "flex";
       if (btn) btn.textContent = "Console ▾";
@@ -137,10 +139,11 @@
       initMonaco();
       return;
     }
+    files[currentFile] = monacoEditor.getValue();
     var source = monacoEditor.getValue();
     var lang = ($("codeLang") && $("codeLang").value) || "python";
     setStatus("running…");
-    appendLog("$ run (" + lang + ")\n");
+    appendLog("$ run " + currentFile + "\n");
     try {
       var headers = { "Content-Type": "application/json" };
       var token = (typeof authToken !== "undefined" && authToken) ||
@@ -151,7 +154,7 @@
         headers: headers,
         body: JSON.stringify({
           source: source,
-          filename: lang === "python" ? "main.py" : "main.js",
+          filename: currentFile,
           lang: lang,
           context: "user",
         }),
@@ -159,14 +162,10 @@
       var data = await res.json().catch(function () {
         return { ok: false, error: "HTTP " + res.status, stdout: "", stderr: "", backend: "?", exit_code: -1, duration_s: 0 };
       });
-      var lines = [
-        "backend: " + (data.backend || "?") + "  exit: " + data.exit_code + "  " + (data.duration_s || 0) + "s",
-        data.error ? "ERROR: " + data.error : "",
-        data.stdout || "",
-        data.stderr || "",
-        "",
-      ];
-      appendLog(lines.filter(Boolean).join("\n") + "\n");
+      appendLog(
+        ["backend: " + (data.backend || "?") + " exit:" + data.exit_code,
+         data.error || "", data.stdout || "", data.stderr || "", ""].filter(Boolean).join("\n") + "\n"
+      );
       setStatus(data.ok ? "ok" : "failed");
     } catch (e) {
       appendLog("Request failed: " + e.message + "\n");
@@ -174,20 +173,23 @@
     }
   }
 
-  function onConsoleCommand(raw) {
+  function onCmd(raw) {
     var line = (raw || "").trim();
     if (!line) return;
     appendLog("$ " + line + "\n");
-    var cmd = line.split(/\s+/)[0].toLowerCase();
-    if (cmd === "clear" || cmd === "cls") {
+    var parts = line.split(/\s+/);
+    var cmd = parts[0].toLowerCase();
+    if (cmd === "clear") {
       consoleLog = "";
-      var out = $("codeOutput");
-      if (out) out.textContent = "";
-      setStatus("");
+      if ($("codeOutput")) $("codeOutput").textContent = "";
       return;
     }
     if (cmd === "help") {
-      appendLog("commands: run | clear | help\n");
+      appendLog("run | clear | ls | help\n");
+      return;
+    }
+    if (cmd === "ls") {
+      appendLog(Object.keys(folders).map(function (d) { return d + "/"; }).concat(Object.keys(files)).join("\n") + "\n");
       return;
     }
     if (cmd === "run") {
@@ -197,73 +199,80 @@
     appendLog("unknown: " + cmd + "\n");
   }
 
-  function bind() {
-    // ALWAYS start hidden — fixes stuck overlay after reload
-    hideCodespace();
+  function newFile() {
+    var name = prompt("File name:", "untitled.py");
+    if (!name) return;
+    name = name.trim();
+    if (!name) return;
+    if (monacoEditor) files[currentFile] = monacoEditor.getValue();
+    files[name] = "";
+    currentFile = name;
+    if (monacoEditor) monacoEditor.setValue("");
+    renderFileList();
+  }
 
+  function newFolder() {
+    var name = prompt("Folder name:", "src");
+    if (!name) return;
+    name = name.trim();
+    if (!name) return;
+    folders[name] = true;
+    renderFileList();
+    appendLog("folder: " + name + "/\n");
+  }
+
+  function saveFile() {
+    if (monacoEditor) files[currentFile] = monacoEditor.getValue();
+    appendLog("saved " + currentFile + "\n");
+    setStatus("saved");
+  }
+
+  function bind() {
+    hidePanel();
     function wire(id, fn) {
       var el = $(id);
       if (el) el.onclick = function (e) {
         e.preventDefault();
-        e.stopPropagation();
         fn();
       };
     }
-
     wire("btnCodeBack", goHome);
     wire("btnCloseCode", goHome);
     wire("btnRunCode", runCode);
     wire("btnToggleConsole", toggleConsole);
+    wire("btnNewFile", newFile);
+    wire("btnNewFolder", newFolder);
+    wire("btnSaveFile", saveFile);
     wire("btnConsoleSend", function () {
       var input = $("consoleInput");
       if (!input) return;
-      onConsoleCommand(input.value);
+      onCmd(input.value);
       input.value = "";
-      input.focus();
     });
-
     var input = $("consoleInput");
     if (input) {
       input.onkeydown = function (e) {
         if (e.key === "Enter") {
           e.preventDefault();
-          onConsoleCommand(input.value);
+          onCmd(input.value);
           input.value = "";
         }
       };
     }
-
-    var lang = $("codeLang");
-    if (lang) {
-      lang.onchange = function () {
-        if (monacoEditor && window.monaco) {
-          try {
-            monaco.editor.setModelLanguage(monacoEditor.getModel(), lang.value);
-          } catch (e) {}
-        }
-      };
-    }
-
-    wire("btnHomeCode", showCodespace);
-    wire("btnHomeConsole", showCodespace);
-
-    // Event delegation backup (in case nodes were replaced)
+    wire("btnHomeCode", showPanel);
     document.addEventListener("click", function (e) {
-      var t = e.target;
-      if (!t) return;
-      var id = t.id || (t.closest && t.closest("[id]") && t.closest("[id]").id);
-      if (id === "btnCodeBack" || id === "btnCloseCode") {
+      var t = e.target && e.target.closest && e.target.closest("#btnCodeBack, #btnCloseCode");
+      if (t) {
         e.preventDefault();
         goHome();
       }
     }, true);
   }
 
-  window.openCodePanel = showCodespace;
+  window.openCodePanel = showPanel;
   window.closeCodePanel = goHome;
   window.hideCodeScreen = goHome;
 
-  // Do NOT open on load
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", bind);
   } else {

@@ -1332,3 +1332,23 @@ body.home-active #homeActions.home-actions {
 #codeScreen #codeConsole {
     flex: 0 0 160px !important;
 }
+
+/* ACCD-HOME-HUB-CSS */
+#homeHub.home-hub, #homeHub {
+  display: none;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 16px;
+}
+body.home-active #homeHub {
+  display: flex !important;
+}
+body.home-active #inputArea,
+body.home-active #mainScreen > .input-area {
+  display: none !important;
+}
+body.workspace-active #inputArea,
+body.workspace-active #mainScreen > .input-area {
+  display: flex !important;
+}

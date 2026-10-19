@@ -4831,3 +4831,155 @@ document.addEventListener("DOMContentLoaded", () => {
     return false;
   };
 })();
+
+// ============================================================
+// ACCD-HOME-HUB-V2 (EOF)
+// Home body: Messages, Search, Files, Train, Codespace
+// Prompt input ONLY when a workspace room is open
+// Messages → openDMPanel; never leave mainScreen blank
+// ============================================================
+(function () {
+  function hideCodespace() {
+    var panel = document.getElementById("codePanel");
+    if (panel) panel.style.setProperty("display", "none", "important");
+  }
+
+  function setHomeMode(on) {
+    document.body.classList.toggle("home-active", !!on);
+    document.body.classList.toggle("workspace-active", !on && !!window.currentRoomId);
+    var hub = document.getElementById("homeHub");
+    var input = document.getElementById("inputArea");
+    if (hub) hub.style.display = on ? "flex" : "none";
+    if (input) {
+      // only workspaces get the chat prompt
+      if (on) {
+        input.style.setProperty("display", "none", "important");
+      } else if (window.currentRoomId) {
+        input.style.setProperty("display", "flex", "important");
+      } else {
+        input.style.setProperty("display", "none", "important");
+      }
+    }
+  }
+
+  function closeAllHubPanels() {
+    ["researchPanel", "dmPanel", "docsPanel", "searchPanel"].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.style.display = "none";
+    });
+    var tm = document.getElementById("trainingModal");
+    if (tm) tm.style.display = "none";
+    hideCodespace();
+  }
+
+  function openHub(which) {
+    closeAllHubPanels();
+    setHomeMode(false);
+    if (which === "messages") {
+      var dm = document.getElementById("dmPanel");
+      if (dm) {
+        dm.style.display = "block";
+        try { if (typeof openDMPanel === "function") openDMPanel(); } catch (e) {}
+        try { if (typeof loadDMConversations === "function") loadDMConversations(); } catch (e) {}
+      }
+      return;
+    }
+    if (which === "search") {
+      var sp = document.getElementById("searchPanel") || document.getElementById("researchPanel");
+      if (sp) {
+        sp.style.display = "block";
+        try { if (typeof openResearch === "function") openResearch(); } catch (e) {}
+      }
+      return;
+    }
+    if (which === "docs") {
+      var dp = document.getElementById("docsPanel");
+      if (dp) {
+        dp.style.display = "block";
+        try { if (typeof openDocuments === "function") openDocuments(); } catch (e) {}
+      }
+      return;
+    }
+    if (which === "train") {
+      var tr = document.getElementById("trainingModal");
+      if (tr) tr.style.display = "flex";
+      return;
+    }
+    if (which === "codespace") {
+      if (typeof window.openCodePanel === "function") window.openCodePanel();
+      return;
+    }
+    if (which === "home") {
+      setHomeMode(true);
+      // keep mainScreen active
+      var main = document.getElementById("mainScreen");
+      if (main) {
+        main.classList.add("active");
+        main.style.display = "flex";
+      }
+    }
+  }
+
+  window.acdOpenHub = openHub;
+  window.acdSetHomeMode = setHomeMode;
+
+  // Override/wrap nav so messages always work
+  var _nav = window.acdNav;
+  window.acdNav = function (action, el) {
+    document.querySelectorAll(".nav-link").forEach(function (n) {
+      n.classList.remove("active");
+    });
+    if (el) el.classList.add("active");
+
+    if (action === "home") {
+      openHub("home");
+      return false;
+    }
+    if (action === "messages") {
+      openHub("messages");
+      return false;
+    }
+    if (action === "research") {
+      openHub("search");
+      return false;
+    }
+    if (action === "workspace") {
+      openHub("docs");
+      return false;
+    }
+    if (action === "train") {
+      openHub("train");
+      return false;
+    }
+    if (action === "code") {
+      openHub("codespace");
+      return false;
+    }
+    if (typeof _nav === "function") return _nav(action, el);
+    return false;
+  };
+
+  document.addEventListener("DOMContentLoaded", function () {
+    setHomeMode(true);
+    document.querySelectorAll("[data-hub]").forEach(function (btn) {
+      btn.addEventListener("click", function (e) {
+        e.preventDefault();
+        openHub(btn.getAttribute("data-hub"));
+      });
+    });
+  });
+
+  // When a room opens → workspace mode (show prompt)
+  if (typeof window.openRoom === "function") {
+    var _or = window.openRoom;
+    window.openRoom = async function () {
+      var r = await _or.apply(this, arguments);
+      setHomeMode(false);
+      var input = document.getElementById("inputArea");
+      if (input) input.style.setProperty("display", "flex", "important");
+      var hub = document.getElementById("homeHub");
+      if (hub) hub.style.display = "none";
+      return r;
+    };
+  }
+})();

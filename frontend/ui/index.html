@@ -610,5 +610,34 @@
 
 </div>
 
+<div id="codePanel" class="code-panel" style="display:none; flex-direction:column; position:fixed; inset:0; background:#0b1120; z-index:9999;">
+    <div class="code-toolbar" style="display:flex; gap:8px; padding:8px; background:#111827; align-items:center; flex-wrap:wrap;">
+        <button type="button" id="btnCodeBack" class="icon-btn" title="Back" style="font-size:1.1rem;">←</button>
+        <strong style="color:#e2e8f0; font-size:0.9rem;">Code / Console</strong>
+        <select id="codeContext" style="padding:6px;">
+            <option value="user">User</option>
+            <option value="org">Org</option>
+            <option value="ai">AI</option>
+        </select>
+        <select id="codeLang" style="padding:6px;">
+            <option value="python">Python</option>
+            <option value="javascript">JavaScript</option>
+            <option value="typescript">TypeScript</option>
+            <option value="bash">Bash</option>
+        </select>
+        <button type="button" id="btnRunCode" class="primary-btn">▶ Run</button>
+        <button type="button" id="btnClearConsole" class="primary-btn secondary-btn">Clear</button>
+        <button type="button" id="btnNewRepo" class="primary-btn secondary-btn" title="Create repo space">+ Repo</button>
+        <button type="button" id="btnCloseCode" class="icon-btn" style="margin-left:auto;" title="Close">✕</button>
+    </div>
+    <div id="monacoContainer" style="flex:1; min-height:200px; width:100%;"></div>
+    <div id="codeConsole" class="code-console" style="height:180px; background:#020617; border-top:1px solid #1e293b; display:flex; flex-direction:column;">
+        <div class="console-header" style="padding:4px 10px; font-size:12px; color:#94a3b8; display:flex; justify-content:space-between;">
+            <span>Terminal · <span id="consoleContextLabel">user</span></span>
+            <span id="codeRunStatus" style="opacity:0.7;"></span>
+        </div>
+        <pre id="codeOutput" class="console-output" style="flex:1; margin:0; padding:8px 10px; overflow:auto; font-size:12px; color:#e2e8f0; white-space:pre-wrap;"></pre>
+    </div>
+</div>
 </body>
 </html>

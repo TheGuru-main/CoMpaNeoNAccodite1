@@ -610,34 +610,40 @@
 
 </div>
 
+
+<!-- ========== ACCD CODESPACE (Phase 1) ========== -->
 <div id="codePanel" class="code-panel" style="display:none; flex-direction:column; position:fixed; inset:0; background:#0b1120; z-index:9999;">
-    <div class="code-toolbar" style="display:flex; gap:8px; padding:8px; background:#111827; align-items:center; flex-wrap:wrap;">
-        <button type="button" id="btnCodeBack" class="icon-btn" title="Back" style="font-size:1.1rem;">←</button>
-        <strong style="color:#e2e8f0; font-size:0.9rem;">Code / Console</strong>
-        <select id="codeContext" style="padding:6px;">
-            <option value="user">User</option>
-            <option value="org">Org</option>
-            <option value="ai">AI</option>
-        </select>
-        <select id="codeLang" style="padding:6px;">
-            <option value="python">Python</option>
-            <option value="javascript">JavaScript</option>
-            <option value="typescript">TypeScript</option>
-            <option value="bash">Bash</option>
-        </select>
-        <button type="button" id="btnRunCode" class="primary-btn">▶ Run</button>
-        <button type="button" id="btnClearConsole" class="primary-btn secondary-btn">Clear</button>
-        <button type="button" id="btnNewRepo" class="primary-btn secondary-btn" title="Create repo space">+ Repo</button>
-        <button type="button" id="btnCloseCode" class="icon-btn" style="margin-left:auto;" title="Close">✕</button>
+  <div class="code-toolbar" style="display:flex; gap:8px; padding:8px 10px; background:#111827; align-items:center; flex-wrap:wrap; border-bottom:1px solid #1e293b;">
+    <button type="button" id="btnCodeBack" class="icon-btn" title="Back to Home" style="font-size:1.15rem; color:#e2e8f0;">←</button>
+    <strong style="color:#e2e8f0; font-size:0.9rem;">Codespace</strong>
+    <span id="codeRepoLabel" style="color:#64748b; font-size:0.8rem; margin-left:4px;">no repo</span>
+    <select id="codeLang" style="padding:5px 8px; margin-left:8px; border-radius:4px; background:#0f172a; color:#e2e8f0; border:1px solid #334155;">
+      <option value="python">Python</option>
+      <option value="javascript">JavaScript</option>
+      <option value="typescript">TypeScript</option>
+      <option value="bash">Bash</option>
+    </select>
+    <button type="button" id="btnRunCode" class="primary-btn" style="padding:6px 12px;">▶ Run</button>
+    <button type="button" id="btnToggleConsole" class="primary-btn secondary-btn" style="padding:6px 10px;" title="Collapse/expand console">Console ▾</button>
+    <button type="button" id="btnCloseCode" class="icon-btn" style="margin-left:auto; color:#94a3b8;" title="Back to Home">✕</button>
+  </div>
+
+  <div id="monacoContainer" style="flex:1; min-height:120px; width:100%; background:#1e1e1e;"></div>
+
+  <div id="codeConsole" style="flex:0 0 200px; max-height:45%; background:#020617; border-top:1px solid #1e293b; display:flex; flex-direction:column; min-height:0;">
+    <div style="padding:4px 10px; font-size:11px; color:#94a3b8; display:flex; justify-content:space-between; align-items:center; flex:0 0 auto;">
+      <span>Terminal</span>
+      <span id="codeRunStatus" style="opacity:0.75;"></span>
     </div>
-    <div id="monacoContainer" style="flex:1; min-height:200px; width:100%;"></div>
-    <div id="codeConsole" class="code-console" style="height:180px; background:#020617; border-top:1px solid #1e293b; display:flex; flex-direction:column;">
-        <div class="console-header" style="padding:4px 10px; font-size:12px; color:#94a3b8; display:flex; justify-content:space-between;">
-            <span>Terminal · <span id="consoleContextLabel">user</span></span>
-            <span id="codeRunStatus" style="opacity:0.7;"></span>
-        </div>
-        <pre id="codeOutput" class="console-output" style="flex:1; margin:0; padding:8px 10px; overflow:auto; font-size:12px; color:#e2e8f0; white-space:pre-wrap;"></pre>
+    <pre id="codeOutput" style="flex:1; margin:0; padding:6px 10px; overflow:auto; font-size:12px; color:#e2e8f0; white-space:pre-wrap; min-height:0;"></pre>
+    <div style="display:flex; align-items:center; gap:6px; padding:6px 10px; border-top:1px solid #1e293b; flex:0 0 auto; background:#0a0f1a;">
+      <span style="color:#22d3ee; font-family:monospace; font-size:13px;">$</span>
+      <input type="text" id="consoleInput" placeholder="command (run | clear | help)" autocomplete="off"
+        style="flex:1; background:transparent; border:none; outline:none; color:#e2e8f0; font-family:monospace; font-size:13px;" />
+      <button type="button" id="btnConsoleSend" class="icon-btn" title="Send" style="color:#94a3b8;">↵</button>
     </div>
+  </div>
 </div>
+
 </body>
 </html>

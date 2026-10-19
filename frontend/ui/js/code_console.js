@@ -1,32 +1,93 @@
 /**
- * Accodite Code / Console panel
- * IDs: codePanel, monacoContainer, codeOutput, btnRunCode,
- *      btnClearConsole, btnCodeBack, btnCloseCode, btnNewRepo
+ * Accodite Codespace — Phase 1
+ * - Back / ✕ → Home only
+ * - No User/Org/AI dropdown (scope from session later)
+ * - Collapsible console + $ input
+ * - Run → POST /sandbox/run → SandboxRunner
+ * - Nested back stack stub for Phase 2
  */
 (function () {
   "use strict";
 
   let monacoEditor = null;
-  let previousScreen = null;
-  const buffers = { user: "", org: "", ai: "" };
+  let consoleCollapsed = false;
+  let consoleLog = "";
+  // Phase 2: nested screens push/pop here; top-level back ignores this and goes Home
+  const viewStack = [];
 
   function $(id) {
     return document.getElementById(id);
   }
 
-  function initMonaco() {
-    const el = $("monacoContainer");
-    if (!el) {
-      console.warn("[code] monacoContainer missing");
+  function goHome() {
+    const panel = $("codePanel");
+    if (panel) panel.style.display = "none";
+
+    // clear nested stack
+    viewStack.length = 0;
+
+    // activate Home / mainScreen
+    document.querySelectorAll(".screen").forEach(function (s) {
+      s.classList.remove("active");
+      if (s.style) s.style.display = "none";
+    });
+    const main = $("mainScreen");
+    if (main) {
+      main.classList.add("active");
+      main.style.display = "flex";
+    }
+    const chat = $("chatBox");
+    if (chat) chat.style.display = "";
+
+    // nav highlight home
+    document.querySelectorAll(".nav-link").forEach(function (n) {
+      n.classList.remove("active");
+    });
+    const homeNav = document.querySelector('.nav-link[data-action="home"]');
+    if (homeNav) homeNav.classList.add("active");
+
+    if (typeof window.acdSetScreenMode === "function") {
+      window.acdSetScreenMode("home");
+    }
+  }
+
+  /** Nested back: previous Codespace view, or Home if stack empty */
+  function nestedBack() {
+    if (viewStack.length > 0) {
+      const prev = viewStack.pop();
+      if (typeof prev === "function") prev();
       return;
     }
+    goHome();
+  }
+
+  function openCodePanel() {
+    const panel = $("codePanel");
+    if (!panel) {
+      console.warn("[codespace] codePanel missing");
+      return;
+    }
+    panel.style.display = "flex";
+    panel.style.flexDirection = "column";
+    initMonaco();
+    setTimeout(function () {
+      if (monacoEditor) {
+        try { monacoEditor.layout(); } catch (_) {}
+      }
+      const input = $("consoleInput");
+      if (input) input.focus();
+    }, 120);
+  }
+
+  function initMonaco() {
+    const el = $("monacoContainer");
+    if (!el) return;
     if (monacoEditor) {
       try { monacoEditor.layout(); } catch (_) {}
       return;
     }
     if (typeof require === "undefined") {
-      console.warn("[code] Monaco loader not present");
-      el.innerHTML = "<p style='color:#f87171;padding:1rem'>Monaco loader missing. Hard-refresh.</p>";
+      el.innerHTML = "<p style='color:#f87171;padding:1rem;font-size:13px'>Monaco loader missing — hard-refresh the app.</p>";
       return;
     }
     require.config({
@@ -34,7 +95,7 @@
     });
     require(["vs/editor/editor.main"], function () {
       monacoEditor = monaco.editor.create(el, {
-        value: '# Accodite sandbox\nprint("Hello from User console")\n',
+        value: '# Codespace\nprint("Hello from sandbox")\n',
         language: "python",
         theme: "vs-dark",
         automaticLayout: true,
@@ -45,75 +106,60 @@
     });
   }
 
-  function updateLabel() {
-    const ctx = ($("codeContext") || {}).value || "user";
-    const label = $("consoleContextLabel");
-    if (label) label.textContent = ctx;
+  function appendLog(text) {
+    consoleLog += text;
+    if (consoleLog.length > 80000) consoleLog = consoleLog.slice(-60000);
     const out = $("codeOutput");
-    if (out) out.textContent = buffers[ctx] || "";
+    if (out) {
+      out.textContent = consoleLog;
+      out.scrollTop = out.scrollHeight;
+    }
   }
 
-  function openCodePanel() {
-    // remember what was visible
-    previousScreen = document.querySelector(".screen.active") || $("mainScreen");
+  function setStatus(s) {
+    const el = $("codeRunStatus");
+    if (el) el.textContent = s || "";
+  }
 
-    const panel = $("codePanel");
-    if (!panel) {
-      console.warn("[code] codePanel missing");
-      return;
-    }
-    panel.style.display = "flex";
-    panel.style.flexDirection = "column";
-
-    // do not destroy other screens; just cover them
-    initMonaco();
-    updateLabel();
-    setTimeout(function () {
+  function toggleConsole() {
+    const box = $("codeConsole");
+    const btn = $("btnToggleConsole");
+    if (!box) return;
+    consoleCollapsed = !consoleCollapsed;
+    if (consoleCollapsed) {
+      box.style.flex = "0 0 36px";
+      box.style.maxHeight = "36px";
+      const pre = $("codeOutput");
+      const row = box.querySelector('div[style*="border-top"]');
+      if (pre) pre.style.display = "none";
+      // keep header visible; hide input row roughly
+      const inputRow = $("consoleInput");
+      if (inputRow && inputRow.parentElement) inputRow.parentElement.style.display = "none";
+      if (btn) btn.textContent = "Console ▸";
+    } else {
+      box.style.flex = "0 0 200px";
+      box.style.maxHeight = "45%";
+      const pre = $("codeOutput");
+      if (pre) pre.style.display = "block";
+      const inputRow = $("consoleInput");
+      if (inputRow && inputRow.parentElement) inputRow.parentElement.style.display = "flex";
+      if (btn) btn.textContent = "Console ▾";
       if (monacoEditor) {
         try { monacoEditor.layout(); } catch (_) {}
       }
-    }, 100);
-  }
-
-  function closeCodePanel() {
-    const panel = $("codePanel");
-    if (panel) panel.style.display = "none";
-
-    // restore previous screen
-    if (previousScreen) {
-      document.querySelectorAll(".screen").forEach(function (s) {
-        s.classList.remove("active");
-        if (s.style) s.style.display = "none";
-      });
-      previousScreen.classList.add("active");
-      previousScreen.style.display = previousScreen.id === "mainScreen" ? "flex" : "";
-      if (previousScreen.id === "mainScreen") {
-        previousScreen.style.display = "flex";
-      }
-    } else {
-      const main = $("mainScreen");
-      if (main) {
-        main.classList.add("active");
-        main.style.display = "flex";
-      }
     }
-    previousScreen = null;
   }
 
   async function runCode() {
-    const out = $("codeOutput");
-    const status = $("codeRunStatus");
     if (!monacoEditor) {
-      if (out) out.textContent = "Editor not ready – wait a second and try again.\n";
+      appendLog("Editor not ready — wait a moment.\n");
       initMonaco();
       return;
     }
     const source = monacoEditor.getValue();
     const lang = ($("codeLang") || {}).value || "python";
-    const context = ($("codeContext") || {}).value || "user";
-
-    if (status) status.textContent = "running…";
-    if (out) out.textContent = "[" + context + "] Running…\n";
+    setStatus("running…");
+    appendLog("$ run (" + lang + ")\n");
 
     try {
       const headers = { "Content-Type": "application/json" };
@@ -125,102 +171,159 @@
         headers: headers,
         body: JSON.stringify({
           source: source,
-          filename: lang === "python" ? "main.py" : "main.js",
+          filename: lang === "python" ? "main.py" : lang === "bash" ? "main.sh" : "main.js",
           lang: lang,
-          context: context,
+          context: "user",
         }),
       });
       let data;
       try {
         data = await res.json();
       } catch (_) {
-        data = { ok: false, error: "HTTP " + res.status, stdout: "", stderr: "", backend: "?", exit_code: -1, duration_s: 0 };
+        data = {
+          ok: false,
+          error: "HTTP " + res.status,
+          stdout: "",
+          stderr: await res.text().catch(function () { return ""; }),
+          backend: "?",
+          exit_code: -1,
+          duration_s: 0,
+        };
       }
-      const text = [
+      const block = [
         "backend: " + (data.backend || "?") + "  exit: " + data.exit_code + "  " + (data.duration_s || 0) + "s",
         data.timed_out ? "TIMEOUT" : "",
         data.error ? "ERROR: " + data.error : "",
-        "── stdout ──",
-        data.stdout || "(empty)",
-        "── stderr ──",
-        data.stderr || "(empty)",
-      ].filter(Boolean).join("\n");
-
-      buffers[context] = (buffers[context] || "") + text + "\n\n";
-      if (out) {
-        out.textContent = buffers[context];
-        out.scrollTop = out.scrollHeight;
-      }
-      if (status) status.textContent = data.ok ? "ok" : "failed";
+        data.stdout ? data.stdout : "",
+        data.stderr ? data.stderr : "",
+        "",
+      ].filter(function (x) { return x !== ""; }).join("\n");
+      appendLog(block + (block.endsWith("\n") ? "" : "\n"));
+      setStatus(data.ok ? "ok" : "failed");
     } catch (e) {
-      const err = "Request failed: " + e.message + "\n";
-      buffers[context] = (buffers[context] || "") + err;
-      if (out) out.textContent = buffers[context];
-      if (status) status.textContent = "error";
+      appendLog("Request failed: " + e.message + "\n");
+      setStatus("error");
     }
   }
 
   function clearConsole() {
-    const context = ($("codeContext") || {}).value || "user";
-    buffers[context] = "";
+    consoleLog = "";
     const out = $("codeOutput");
     if (out) out.textContent = "";
-    const status = $("codeRunStatus");
-    if (status) status.textContent = "";
+    setStatus("");
   }
 
-  function newRepoSpace() {
-    // Placeholder: local “repo space” name in console until FS API exists
-    const name = prompt("Repo space name (local label):", "my-repo");
-    if (!name) return;
-    const context = ($("codeContext") || {}).value || "user";
-    const line = "[repo] created space: " + name + " (context=" + context + ")\n";
-    buffers[context] = (buffers[context] || "") + line;
-    const out = $("codeOutput");
-    if (out) out.textContent = buffers[context];
-    if (monacoEditor) {
-      const cur = monacoEditor.getValue();
-      monacoEditor.setValue("# repo: " + name + "\n" + cur);
+  function handleConsoleCommand(raw) {
+    const line = (raw || "").trim();
+    if (!line) return;
+    appendLog("$ " + line + "\n");
+    const parts = line.split(/\s+/);
+    const cmd = parts[0].toLowerCase();
+
+    if (cmd === "clear" || cmd === "cls") {
+      clearConsole();
+      return;
     }
+    if (cmd === "help") {
+      appendLog("commands: run | clear | help\n(Phase 2: ls, mkdir, …)\n");
+      return;
+    }
+    if (cmd === "run") {
+      runCode();
+      return;
+    }
+    appendLog("unknown command: " + cmd + " (try help)\n");
   }
 
   function bind() {
-    const run = $("btnRunCode");
-    const clear = $("btnClearConsole");
     const back = $("btnCodeBack");
     const close = $("btnCloseCode");
-    const repo = $("btnNewRepo");
-    const ctx = $("codeContext");
+    const run = $("btnRunCode");
+    const toggle = $("btnToggleConsole");
+    const send = $("btnConsoleSend");
+    const input = $("consoleInput");
     const lang = $("codeLang");
 
-    if (run) run.onclick = function (e) { e.preventDefault(); runCode(); };
-    if (clear) clear.onclick = function (e) { e.preventDefault(); clearConsole(); };
-    if (back) back.onclick = function (e) { e.preventDefault(); closeCodePanel(); };
-    if (close) close.onclick = function (e) { e.preventDefault(); closeCodePanel(); };
-    if (repo) repo.onclick = function (e) { e.preventDefault(); newRepoSpace(); };
-    if (ctx) ctx.onchange = updateLabel;
+    // Phase 1: both back and close → Home (nested stack empty)
+    if (back) {
+      back.onclick = function (e) {
+        e.preventDefault();
+        nestedBack(); // empty stack → Home
+      };
+    }
+    if (close) {
+      close.onclick = function (e) {
+        e.preventDefault();
+        goHome();
+      };
+    }
+    if (run) {
+      run.onclick = function (e) {
+        e.preventDefault();
+        runCode();
+      };
+    }
+    if (toggle) {
+      toggle.onclick = function (e) {
+        e.preventDefault();
+        toggleConsole();
+      };
+    }
+    if (send) {
+      send.onclick = function (e) {
+        e.preventDefault();
+        if (!input) return;
+        handleConsoleCommand(input.value);
+        input.value = "";
+        input.focus();
+      };
+    }
+    if (input) {
+      input.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          handleConsoleCommand(input.value);
+          input.value = "";
+        }
+      });
+    }
     if (lang) {
       lang.onchange = function () {
         if (monacoEditor && window.monaco) {
-          monaco.editor.setModelLanguage(monacoEditor.getModel(), lang.value);
+          try {
+            monaco.editor.setModelLanguage(monacoEditor.getModel(), lang.value);
+          } catch (_) {}
         }
       };
     }
 
-    // Home buttons if present
+    // Home entry points
     const homeCode = $("btnHomeCode");
     const homeConsole = $("btnHomeConsole");
-    if (homeCode) homeCode.onclick = function (e) { e.preventDefault(); openCodePanel(); };
-    if (homeConsole) homeConsole.onclick = function (e) { e.preventDefault(); openCodePanel(); };
+    if (homeCode) {
+      homeCode.onclick = function (e) {
+        e.preventDefault();
+        openCodePanel();
+      };
+    }
+    if (homeConsole) {
+      homeConsole.onclick = function (e) {
+        e.preventDefault();
+        openCodePanel();
+      };
+    }
   }
 
   // Public API
   window.openCodePanel = openCodePanel;
-  window.closeCodePanel = closeCodePanel;
-  window.hideCodeScreen = closeCodePanel;
-  window.runInSandbox = async function (source, lang, context) {
+  window.closeCodePanel = goHome;
+  window.hideCodeScreen = goHome;
+  window.acdCodespaceNestedBack = nestedBack;
+  window.acdCodespacePushView = function (restoreFn) {
+    viewStack.push(restoreFn);
+  };
+  window.runInSandbox = async function (source, lang) {
     lang = lang || "python";
-    context = context || "ai";
     const headers = { "Content-Type": "application/json" };
     if (typeof authToken !== "undefined" && authToken) {
       headers["Authorization"] = "Bearer " + authToken;
@@ -232,7 +335,7 @@
         source: source,
         filename: "main.py",
         lang: lang,
-        context: context,
+        context: "ai",
       }),
     });
     return res.json();

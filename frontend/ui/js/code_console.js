@@ -1,98 +1,86 @@
 /**
- * Accodite Codespace — Phase 1
- * - Back / ✕ → Home only
- * - No User/Org/AI dropdown (scope from session later)
- * - Collapsible console + $ input
- * - Run → POST /sandbox/run → SandboxRunner
- * - Nested back stack stub for Phase 2
+ * Codespace Phase 1 — fixed navigation
+ * Never auto-open. Back/Close always hide panel and show Home (or auth).
  */
 (function () {
   "use strict";
 
-  let monacoEditor = null;
-  let consoleCollapsed = false;
-  let consoleLog = "";
-  // Phase 2: nested screens push/pop here; top-level back ignores this and goes Home
-  const viewStack = [];
+  var monacoEditor = null;
+  var consoleLog = "";
+  var consoleCollapsed = false;
 
-  function $(id) {
-    return document.getElementById(id);
-  }
+  function $(id) { return document.getElementById(id); }
 
-  function goHome() {
-    const panel = $("codePanel");
-    if (panel) panel.style.display = "none";
-
-    // clear nested stack
-    viewStack.length = 0;
-
-    // activate Home / mainScreen
-    document.querySelectorAll(".screen").forEach(function (s) {
-      s.classList.remove("active");
-      if (s.style) s.style.display = "none";
-    });
-    const main = $("mainScreen");
-    if (main) {
-      main.classList.add("active");
-      main.style.display = "flex";
-    }
-    const chat = $("chatBox");
-    if (chat) chat.style.display = "";
-
-    // nav highlight home
-    document.querySelectorAll(".nav-link").forEach(function (n) {
-      n.classList.remove("active");
-    });
-    const homeNav = document.querySelector('.nav-link[data-action="home"]');
-    if (homeNav) homeNav.classList.add("active");
-
-    if (typeof window.acdSetScreenMode === "function") {
-      window.acdSetScreenMode("home");
+  function hideCodespace() {
+    var panel = $("codePanel");
+    if (panel) {
+      panel.style.setProperty("display", "none", "important");
     }
   }
 
-  /** Nested back: previous Codespace view, or Home if stack empty */
-  function nestedBack() {
-    if (viewStack.length > 0) {
-      const prev = viewStack.pop();
-      if (typeof prev === "function") prev();
-      return;
-    }
-    goHome();
-  }
-
-  function openCodePanel() {
-    const panel = $("codePanel");
+  function showCodespace() {
+    var panel = $("codePanel");
     if (!panel) {
-      console.warn("[codespace] codePanel missing");
+      console.warn("[codespace] panel missing");
       return;
     }
-    panel.style.display = "flex";
+    panel.style.setProperty("display", "flex", "important");
     panel.style.flexDirection = "column";
     initMonaco();
     setTimeout(function () {
-      if (monacoEditor) {
-        try { monacoEditor.layout(); } catch (_) {}
+      if (monacoEditor) try { monacoEditor.layout(); } catch (e) {}
+    }, 100);
+  }
+
+  function goHome() {
+    hideCodespace();
+
+    // Prefer main app if logged in
+    var main = $("mainScreen");
+    var auth = $("authScreen");
+    var token = (typeof authToken !== "undefined" && authToken) ||
+                localStorage.getItem("coMpaNeoN_token") ||
+                localStorage.getItem("accodite_token") || "";
+
+    document.querySelectorAll(".screen").forEach(function (s) {
+      s.classList.remove("active");
+      s.style.display = "none";
+    });
+
+    if (token && main) {
+      main.classList.add("active");
+      main.style.display = "flex";
+      var chat = $("chatBox");
+      if (chat) chat.style.display = "";
+      document.querySelectorAll(".nav-link").forEach(function (n) {
+        n.classList.remove("active");
+      });
+      var homeNav = document.querySelector('.nav-link[data-action="home"]');
+      if (homeNav) homeNav.classList.add("active");
+      if (typeof window.acdSetScreenMode === "function") {
+        try { window.acdSetScreenMode("home"); } catch (e) {}
       }
-      const input = $("consoleInput");
-      if (input) input.focus();
-    }, 120);
+    } else if (auth) {
+      auth.classList.add("active");
+      auth.style.display = "flex";
+    } else if (main) {
+      main.classList.add("active");
+      main.style.display = "flex";
+    }
   }
 
   function initMonaco() {
-    const el = $("monacoContainer");
+    var el = $("monacoContainer");
     if (!el) return;
     if (monacoEditor) {
-      try { monacoEditor.layout(); } catch (_) {}
+      try { monacoEditor.layout(); } catch (e) {}
       return;
     }
     if (typeof require === "undefined") {
-      el.innerHTML = "<p style='color:#f87171;padding:1rem;font-size:13px'>Monaco loader missing — hard-refresh the app.</p>";
+      el.innerHTML = "<p style='color:#f87171;padding:1rem'>Monaco loader missing — hard refresh.</p>";
       return;
     }
-    require.config({
-      paths: { vs: "https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs" },
-    });
+    require.config({ paths: { vs: "https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs" } });
     require(["vs/editor/editor.main"], function () {
       monacoEditor = monaco.editor.create(el, {
         value: '# Codespace\nprint("Hello from sandbox")\n',
@@ -101,15 +89,14 @@
         automaticLayout: true,
         minimap: { enabled: false },
         fontSize: 14,
-        lineNumbers: "on",
       });
     });
   }
 
-  function appendLog(text) {
-    consoleLog += text;
+  function appendLog(t) {
+    consoleLog += t;
     if (consoleLog.length > 80000) consoleLog = consoleLog.slice(-60000);
-    const out = $("codeOutput");
+    var out = $("codeOutput");
     if (out) {
       out.textContent = consoleLog;
       out.scrollTop = out.scrollHeight;
@@ -117,88 +104,69 @@
   }
 
   function setStatus(s) {
-    const el = $("codeRunStatus");
+    var el = $("codeRunStatus");
     if (el) el.textContent = s || "";
   }
 
   function toggleConsole() {
-    const box = $("codeConsole");
-    const btn = $("btnToggleConsole");
+    var box = $("codeConsole");
+    var btn = $("btnToggleConsole");
     if (!box) return;
     consoleCollapsed = !consoleCollapsed;
     if (consoleCollapsed) {
-      box.style.flex = "0 0 36px";
-      box.style.maxHeight = "36px";
-      const pre = $("codeOutput");
-      const row = box.querySelector('div[style*="border-top"]');
+      box.style.flex = "0 0 40px";
+      var pre = $("codeOutput");
       if (pre) pre.style.display = "none";
-      // keep header visible; hide input row roughly
-      const inputRow = $("consoleInput");
-      if (inputRow && inputRow.parentElement) inputRow.parentElement.style.display = "none";
+      var inp = $("consoleInput");
+      if (inp && inp.parentElement) inp.parentElement.style.display = "none";
       if (btn) btn.textContent = "Console ▸";
     } else {
       box.style.flex = "0 0 200px";
-      box.style.maxHeight = "45%";
-      const pre = $("codeOutput");
-      if (pre) pre.style.display = "block";
-      const inputRow = $("consoleInput");
-      if (inputRow && inputRow.parentElement) inputRow.parentElement.style.display = "flex";
+      var pre2 = $("codeOutput");
+      if (pre2) pre2.style.display = "block";
+      var inp2 = $("consoleInput");
+      if (inp2 && inp2.parentElement) inp2.parentElement.style.display = "flex";
       if (btn) btn.textContent = "Console ▾";
-      if (monacoEditor) {
-        try { monacoEditor.layout(); } catch (_) {}
-      }
+      if (monacoEditor) try { monacoEditor.layout(); } catch (e) {}
     }
   }
 
   async function runCode() {
     if (!monacoEditor) {
-      appendLog("Editor not ready — wait a moment.\n");
+      appendLog("Editor not ready\n");
       initMonaco();
       return;
     }
-    const source = monacoEditor.getValue();
-    const lang = ($("codeLang") || {}).value || "python";
+    var source = monacoEditor.getValue();
+    var lang = ($("codeLang") && $("codeLang").value) || "python";
     setStatus("running…");
     appendLog("$ run (" + lang + ")\n");
-
     try {
-      const headers = { "Content-Type": "application/json" };
-      if (typeof authToken !== "undefined" && authToken) {
-        headers["Authorization"] = "Bearer " + authToken;
-      }
-      const res = await fetch("/sandbox/run", {
+      var headers = { "Content-Type": "application/json" };
+      var token = (typeof authToken !== "undefined" && authToken) ||
+                  localStorage.getItem("coMpaNeoN_token") || "";
+      if (token) headers["Authorization"] = "Bearer " + token;
+      var res = await fetch("/sandbox/run", {
         method: "POST",
         headers: headers,
         body: JSON.stringify({
           source: source,
-          filename: lang === "python" ? "main.py" : lang === "bash" ? "main.sh" : "main.js",
+          filename: lang === "python" ? "main.py" : "main.js",
           lang: lang,
           context: "user",
         }),
       });
-      let data;
-      try {
-        data = await res.json();
-      } catch (_) {
-        data = {
-          ok: false,
-          error: "HTTP " + res.status,
-          stdout: "",
-          stderr: await res.text().catch(function () { return ""; }),
-          backend: "?",
-          exit_code: -1,
-          duration_s: 0,
-        };
-      }
-      const block = [
+      var data = await res.json().catch(function () {
+        return { ok: false, error: "HTTP " + res.status, stdout: "", stderr: "", backend: "?", exit_code: -1, duration_s: 0 };
+      });
+      var lines = [
         "backend: " + (data.backend || "?") + "  exit: " + data.exit_code + "  " + (data.duration_s || 0) + "s",
-        data.timed_out ? "TIMEOUT" : "",
         data.error ? "ERROR: " + data.error : "",
-        data.stdout ? data.stdout : "",
-        data.stderr ? data.stderr : "",
+        data.stdout || "",
+        data.stderr || "",
         "",
-      ].filter(function (x) { return x !== ""; }).join("\n");
-      appendLog(block + (block.endsWith("\n") ? "" : "\n"));
+      ];
+      appendLog(lines.filter(Boolean).join("\n") + "\n");
       setStatus(data.ok ? "ok" : "failed");
     } catch (e) {
       appendLog("Request failed: " + e.message + "\n");
@@ -206,141 +174,96 @@
     }
   }
 
-  function clearConsole() {
-    consoleLog = "";
-    const out = $("codeOutput");
-    if (out) out.textContent = "";
-    setStatus("");
-  }
-
-  function handleConsoleCommand(raw) {
-    const line = (raw || "").trim();
+  function onConsoleCommand(raw) {
+    var line = (raw || "").trim();
     if (!line) return;
     appendLog("$ " + line + "\n");
-    const parts = line.split(/\s+/);
-    const cmd = parts[0].toLowerCase();
-
+    var cmd = line.split(/\s+/)[0].toLowerCase();
     if (cmd === "clear" || cmd === "cls") {
-      clearConsole();
+      consoleLog = "";
+      var out = $("codeOutput");
+      if (out) out.textContent = "";
+      setStatus("");
       return;
     }
     if (cmd === "help") {
-      appendLog("commands: run | clear | help\n(Phase 2: ls, mkdir, …)\n");
+      appendLog("commands: run | clear | help\n");
       return;
     }
     if (cmd === "run") {
       runCode();
       return;
     }
-    appendLog("unknown command: " + cmd + " (try help)\n");
+    appendLog("unknown: " + cmd + "\n");
   }
 
   function bind() {
-    const back = $("btnCodeBack");
-    const close = $("btnCloseCode");
-    const run = $("btnRunCode");
-    const toggle = $("btnToggleConsole");
-    const send = $("btnConsoleSend");
-    const input = $("consoleInput");
-    const lang = $("codeLang");
+    // ALWAYS start hidden — fixes stuck overlay after reload
+    hideCodespace();
 
-    // Phase 1: both back and close → Home (nested stack empty)
-    if (back) {
-      back.onclick = function (e) {
+    function wire(id, fn) {
+      var el = $(id);
+      if (el) el.onclick = function (e) {
         e.preventDefault();
-        nestedBack(); // empty stack → Home
+        e.stopPropagation();
+        fn();
       };
     }
-    if (close) {
-      close.onclick = function (e) {
-        e.preventDefault();
-        goHome();
-      };
-    }
-    if (run) {
-      run.onclick = function (e) {
-        e.preventDefault();
-        runCode();
-      };
-    }
-    if (toggle) {
-      toggle.onclick = function (e) {
-        e.preventDefault();
-        toggleConsole();
-      };
-    }
-    if (send) {
-      send.onclick = function (e) {
-        e.preventDefault();
-        if (!input) return;
-        handleConsoleCommand(input.value);
-        input.value = "";
-        input.focus();
-      };
-    }
+
+    wire("btnCodeBack", goHome);
+    wire("btnCloseCode", goHome);
+    wire("btnRunCode", runCode);
+    wire("btnToggleConsole", toggleConsole);
+    wire("btnConsoleSend", function () {
+      var input = $("consoleInput");
+      if (!input) return;
+      onConsoleCommand(input.value);
+      input.value = "";
+      input.focus();
+    });
+
+    var input = $("consoleInput");
     if (input) {
-      input.addEventListener("keydown", function (e) {
+      input.onkeydown = function (e) {
         if (e.key === "Enter") {
           e.preventDefault();
-          handleConsoleCommand(input.value);
+          onConsoleCommand(input.value);
           input.value = "";
         }
-      });
+      };
     }
+
+    var lang = $("codeLang");
     if (lang) {
       lang.onchange = function () {
         if (monacoEditor && window.monaco) {
           try {
             monaco.editor.setModelLanguage(monacoEditor.getModel(), lang.value);
-          } catch (_) {}
+          } catch (e) {}
         }
       };
     }
 
-    // Home entry points
-    const homeCode = $("btnHomeCode");
-    const homeConsole = $("btnHomeConsole");
-    if (homeCode) {
-      homeCode.onclick = function (e) {
+    wire("btnHomeCode", showCodespace);
+    wire("btnHomeConsole", showCodespace);
+
+    // Event delegation backup (in case nodes were replaced)
+    document.addEventListener("click", function (e) {
+      var t = e.target;
+      if (!t) return;
+      var id = t.id || (t.closest && t.closest("[id]") && t.closest("[id]").id);
+      if (id === "btnCodeBack" || id === "btnCloseCode") {
         e.preventDefault();
-        openCodePanel();
-      };
-    }
-    if (homeConsole) {
-      homeConsole.onclick = function (e) {
-        e.preventDefault();
-        openCodePanel();
-      };
-    }
+        goHome();
+      }
+    }, true);
   }
 
-  // Public API
-  window.openCodePanel = openCodePanel;
+  window.openCodePanel = showCodespace;
   window.closeCodePanel = goHome;
   window.hideCodeScreen = goHome;
-  window.acdCodespaceNestedBack = nestedBack;
-  window.acdCodespacePushView = function (restoreFn) {
-    viewStack.push(restoreFn);
-  };
-  window.runInSandbox = async function (source, lang) {
-    lang = lang || "python";
-    const headers = { "Content-Type": "application/json" };
-    if (typeof authToken !== "undefined" && authToken) {
-      headers["Authorization"] = "Bearer " + authToken;
-    }
-    const res = await fetch("/sandbox/run", {
-      method: "POST",
-      headers: headers,
-      body: JSON.stringify({
-        source: source,
-        filename: "main.py",
-        lang: lang,
-        context: "ai",
-      }),
-    });
-    return res.json();
-  };
 
+  // Do NOT open on load
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", bind);
   } else {

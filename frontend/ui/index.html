@@ -547,6 +547,7 @@
             </div>
         </div>
 
+<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
 <script src="js/app.js"></script>
     <!-- NAV-FIXED -->
             <nav class="bottom-nav bottom-nav-fixed" id="mainNav">
@@ -558,5 +559,33 @@
                 <a href="#" data-action="train"     class="nav-link"        onclick="return window.acdNav('train', this)"><i class="fa-solid fa-wand-magic-sparkles"></i></a>
             </nav>
 <script src="js/stream_generate.js"></script>
+<script src="js/code_console.js"></script>
+
+<!-- ========== ACCD CODE CONSOLE (User / Org / AI) ========== -->
+<div id="codePanel" class="code-panel" style="display:none; flex-direction:column; position:fixed; inset:0; background:#0b1120; z-index:9999;">
+    <div class="code-toolbar" style="display:flex; gap:8px; padding:8px; background:#111827; align-items:center;">
+        <select id="codeContext" style="padding:6px;">
+            <option value="user">User Console</option>
+            <option value="org">Org Console</option>
+            <option value="ai">AI Console</option>
+        </select>
+        <select id="codeLang" style="padding:6px;">
+            <option value="python">Python</option>
+            <option value="javascript">JavaScript</option>
+            <option value="typescript">TypeScript</option>
+            <option value="bash">Bash</option>
+        </select>
+        <button id="btnRunCode" class="primary-btn">▶ Run</button>
+        <button id="btnCloseCode" class="icon-btn" style="margin-left:auto;">✕</button>
+    </div>
+    <div id="monacoContainer" style="flex:1; min-height:280px;"></div>
+    <div class="code-console" style="height:180px; background:#020617; border-top:1px solid #1e293b; display:flex; flex-direction:column;">
+        <div class="console-header" style="padding:4px 8px; font-size:12px; color:#94a3b8;">
+            Terminal · <span id="consoleContextLabel">user</span>
+        </div>
+        <pre id="codeOutput" class="console-output" style="flex:1; margin:0; padding:8px; overflow:auto; font-size:12px; color:#e2e8f0;"></pre>
+    </div>
+</div>
+
 </body>
 </html>

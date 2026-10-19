@@ -2147,3 +2147,12 @@ except Exception as _accd_stream_route_error:
         _accd_stream_route_error,
     )
 
+# ============================================================
+# ACCD-SANDBOX (appended at EOF – do not move or interleave)
+# ============================================================
+try:
+    from api.sandbox_api import router as _sandbox_router
+    app.include_router(_sandbox_router)
+    print("[ACCD] sandbox router mounted at /sandbox/*")
+except Exception as _e:
+    print(f"[ACCD] sandbox router not mounted: {_e}")

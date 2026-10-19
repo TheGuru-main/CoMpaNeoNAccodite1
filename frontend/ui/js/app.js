@@ -4713,3 +4713,12 @@ setTimeout(_injectSidebarTripleDots, 300);
 setTimeout(_injectSidebarTripleDots, 900);
 
 console.log('[acd] SIDEBAR-MENU installed');
+
+// ============================================================
+// ACCD-CODE-CONSOLE (appended at EOF)
+// ============================================================
+document.addEventListener("DOMContentLoaded", () => {
+    // Optional: add a floating button or wire any existing nav item
+    // Example – call window.openCodePanel() from any button
+    console.log("[ACCD] code console ready – call openCodePanel()");
+});

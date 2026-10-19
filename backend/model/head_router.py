@@ -78,3 +78,18 @@ class HeadAllocator:
                   PoolKind.PERSONAL: POOL_C_RANGE,
                   PoolKind.SHARED: POOL_D_RANGE}[pool]
         return range((lo - 1) // 2, (hi - 1) // 2 + 1)
+
+# dept / meeting / group reuse existing pools. Distinct segment ids still.
+_orig_pool_for = HeadAllocator._pool_for
+
+def _pool_for_extended(self, seg):
+    kind = str(getattr(seg, "kind", "") or "").strip().lower()
+    if kind in ("dept", "department"):
+        return PoolKind.ORG
+    if kind in ("meeting", "meetings"):
+        return PoolKind.ROOM
+    if kind in ("group", "groups"):
+        return PoolKind.SHARED
+    return _orig_pool_for(self, seg)
+
+HeadAllocator._pool_for = _pool_for_extended

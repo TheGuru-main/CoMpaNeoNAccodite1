@@ -1826,3 +1826,45 @@ def root_query_for_context(query: str, limit: int = 32) -> str:
             parts.append(text_c[:800])
     return "\n\n".join(parts)
 
+
+# ============================================================================
+# PROJECT SCOPE -> HEAD ALLOCATOR (EOF append)
+# personal | org | room | group | meeting | dept
+# ============================================================================
+
+_orig_add_document = MemoryGrid.add_document
+_orig_root_query_for_context = root_query_for_context
+
+
+def _scoped_add_document(self, text, lang=None, source="memory", metadata=None):
+    doc_id = _orig_add_document(self, text, lang=lang, source=source, metadata=metadata)
+    try:
+        from workspace.scope import stamp_document
+        doc = self.documents.get(doc_id)
+        if isinstance(doc, dict):
+            stamp_document(doc)
+    except Exception:
+        pass
+    return doc_id
+
+
+def root_query_for_context(query: str, limit: int = 32) -> str:
+    text = _orig_root_query_for_context(query, limit=limit)
+    docs = []
+    grid = get_process_grid()
+    if grid is not None and text:
+        for doc in (getattr(grid, "documents", None) or {}).values():
+            if not isinstance(doc, dict):
+                continue
+            body = (doc.get("text") or "").strip()
+            if body and body[:120] in text:
+                docs.append(doc)
+    try:
+        from workspace.scope import plan_for_docs, remember_query_plan
+        remember_query_plan(plan_for_docs(docs), docs)
+    except Exception:
+        pass
+    return text
+
+
+MemoryGrid.add_document = _scoped_add_document

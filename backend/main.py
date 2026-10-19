@@ -533,7 +533,10 @@ async def org_create(req: OrgCreateRequest):
             role="ceo",
             department="Administration",
             title="Founder",
-            credential_hash="",
+            # Unique per admin+org — empty string violates UNIQUE index
+            credential_hash=hashlib.sha256(
+                f"admin:{admin_user.id}:{org.id}".encode("utf-8")
+            ).hexdigest(),
             credential_active=True,
         )
         db.add(admin_membership)
@@ -770,7 +773,11 @@ def _backfill_admin_membership(db, user):
             role="ceo",
             department="Administration",
             title="Founder",
-            credential_hash=_h.sha256(cred.encode("utf-8")).hexdigest() if cred else "",
+            credential_hash=(
+                _h.sha256(cred.encode("utf-8")).hexdigest()
+                if cred
+                else _h.sha256(f"admin:{user.id}:{org.id}".encode("utf-8")).hexdigest()
+            ),
             credential_active=True,
         )
         db.add(membership)

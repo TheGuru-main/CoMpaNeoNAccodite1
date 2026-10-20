@@ -1360,3 +1360,16 @@ body.home-active #inputArea,
 #inputArea[data-home-hide="1"] {
   display: none !important;
 }
+
+
+/* ACCD-CHAT-P0-CSS — room wins over home-hide */
+body.workspace-active #inputArea,
+body.workspace-active #mainScreen > .input-area,
+#mainScreen.workspace-on #inputArea {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+body.home-active:not(.workspace-active) #inputArea {
+  display: none !important;
+}

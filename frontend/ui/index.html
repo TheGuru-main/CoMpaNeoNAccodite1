@@ -595,35 +595,45 @@
 
 
 
-<input type="file" id="folderPickerInput" webkitdirectory directory multiple style="display:none" />
+
 
 <!-- ACCD-CODESPACE-DEMO -->
+
+
+
+
+
+<!-- ACCD-CODESPACE-P2 -->
 <div id="codePanel" style="display:none !important; flex-direction:column; position:fixed; inset:0; background:#0b1120; z-index:9999;">
-  <div style="display:flex; gap:6px; padding:8px 10px; background:#111827; align-items:center; flex-wrap:wrap; border-bottom:1px solid #1e293b; flex:0 0 auto;">
-    <button type="button" id="btnCodeBack" style="background:none;border:1px solid #334155;color:#e2e8f0;padding:6px 12px;border-radius:6px;cursor:pointer;">← Home</button>
+  <div style="display:flex; gap:5px; padding:8px; background:#111827; align-items:center; flex-wrap:wrap; border-bottom:1px solid #1e293b;">
+    <button type="button" id="btnCodeBack" style="background:none;border:1px solid #334155;color:#e2e8f0;padding:6px 10px;border-radius:6px;cursor:pointer;">←</button>
     <strong style="color:#e2e8f0;">Codespace</strong>
-    <span id="codeCwdLabel" style="color:#64748b;font-size:12px;font-family:monospace;">/</span>
-    <button type="button" id="btnNewFile" style="padding:5px 10px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer;">+ File</button>
-    <button type="button" id="btnNewFolder" style="padding:5px 10px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer;">+ Folder</button>
-    <button type="button" id="btnSaveFile" style="padding:5px 10px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer;">Save</button>
-    <button type="button" id="btnRunCode" style="padding:6px 14px;border-radius:6px;border:none;background:#22d3ee;color:#0f172a;font-weight:700;cursor:pointer;">▶ Run</button>
+    <select id="codeRepoSelect" style="padding:5px;border-radius:4px;background:#0f172a;color:#e2e8f0;border:1px solid #334155;max-width:120px;"></select>
+    <button type="button" id="btnNewRepo" style="padding:5px 8px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer;">+ Repo</button>
+    <button type="button" id="btnNewFile" style="padding:5px 8px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer;">+ File</button>
+    <button type="button" id="btnNewFolder" style="padding:5px 8px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer;">+ Folder</button>
+    <button type="button" id="btnSaveFile" style="padding:5px 8px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer;">Save</button>
+    <button type="button" id="btnImportMem" style="padding:5px 8px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer;">Import</button>
+    <button type="button" id="btnViewToggle" style="padding:5px 8px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer;">View</button>
+    <button type="button" id="btnPushRepo" style="padding:5px 8px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer;">Push</button>
+    <button type="button" id="btnRunCode" style="padding:6px 12px;border-radius:6px;border:none;background:#22d3ee;color:#0f172a;font-weight:700;cursor:pointer;">▶ Run</button>
     <button type="button" id="btnCloseCode" style="margin-left:auto;background:none;border:1px solid #334155;color:#94a3b8;padding:6px 10px;border-radius:6px;cursor:pointer;">✕</button>
   </div>
-  <div style="flex:1 1 auto; display:flex; min-height:0;">
-    <aside style="width:150px; flex:0 0 150px; background:#0f172a; border-right:1px solid #1e293b; overflow:auto; padding:8px; color:#cbd5e1; font-size:12px;">
+  <div id="codeBody" style="flex:1; display:flex; min-height:0;">
+    <aside id="codeSidebar" style="width:150px; flex:0 0 150px; background:#0f172a; border-right:1px solid #1e293b; overflow:auto; padding:8px; color:#cbd5e1; font-size:12px;">
       <div style="opacity:0.55;margin-bottom:6px;">Files</div>
       <ul id="codeFileList" style="list-style:none;margin:0;padding:0;"></ul>
     </aside>
     <div id="monacoContainer" style="flex:1; min-width:0; background:#1e1e1e;"></div>
+    <div id="codePreview" style="display:none; flex:1; min-width:0; background:#0f172a; color:#e2e8f0; padding:12px; overflow:auto; font-family:monospace; font-size:13px; white-space:pre-wrap;"></div>
   </div>
-  <!-- FULL BOTTOM = TERMINAL (not a tiny strip) -->
-  <div id="codeConsole" style="flex:0 0 32%; min-height:140px; max-height:45%; background:#020617; border-top:1px solid #1e293b; display:flex; flex-direction:column;">
-    <div style="padding:4px 10px; font-size:11px; color:#64748b; flex:0 0 auto;">Terminal · type commands · Enter to run</div>
-    <pre id="codeOutput" style="flex:1; margin:0; padding:8px 10px; overflow:auto; font-size:12px; color:#e2e8f0; white-space:pre-wrap; font-family:ui-monospace,monospace; cursor:text;"></pre>
-    <div style="display:flex; align-items:center; gap:8px; padding:8px 10px; border-top:1px solid #1e293b; background:#0a0f1a; flex:0 0 auto;">
-      <span style="color:#22d3ee; font-family:monospace; font-size:13px;">$</span>
-      <input id="consoleInput" type="text" placeholder="ls · cd · cat · python · run · clear · help" autocomplete="off" spellcheck="false"
-        style="flex:1; background:#020617; border:1px solid #1e293b; border-radius:4px; outline:none; color:#e2e8f0; font-family:monospace; font-size:13px; padding:8px 10px;" />
+  <div id="codeConsole" style="flex:0 0 30%; min-height:120px; max-height:42%; background:#020617; border-top:1px solid #1e293b; display:flex; flex-direction:column;">
+    <div style="padding:4px 10px; font-size:11px; color:#64748b;">Terminal</div>
+    <pre id="codeOutput" style="flex:1; margin:0; padding:8px 10px; overflow:auto; font-size:12px; color:#e2e8f0; white-space:pre-wrap; font-family:monospace; cursor:text;"></pre>
+    <div style="display:flex; align-items:center; gap:8px; padding:8px 10px; border-top:1px solid #1e293b; background:#0a0f1a;">
+      <span style="color:#22d3ee; font-family:monospace;">$</span>
+      <input id="consoleInput" type="text" placeholder="ls · cd · cat · run · clear · help" autocomplete="off" spellcheck="false"
+        style="flex:1; background:#020617; border:1px solid #1e293b; border-radius:4px; color:#e2e8f0; font-family:monospace; font-size:13px; padding:8px 10px; outline:none;" />
     </div>
   </div>
 </div>

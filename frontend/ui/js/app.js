@@ -5121,3 +5121,110 @@ document.addEventListener("DOMContentLoaded", () => {
     }, 300);
   });
 })();
+
+
+// ============================================================
+// ACCD-CHAT-P0-FIX (EOF) — input + double-bubble + multi-room AI
+// Does NOT touch createRoom / org membership / sandbox runner.
+// ============================================================
+(function () {
+  // Content fingerprint for messages that lack stable ids
+  function _fp(role, text) {
+    return role + "::" + String(text || "").slice(0, 240);
+  }
+  if (typeof window._acdRenderedFp !== "object") {
+    window._acdRenderedFp = new Set();
+  }
+
+  // --- 1) ONE rule for prompt visibility ---
+  function acdForceRoomInput() {
+    var ia = document.getElementById("inputArea");
+    if (!ia) return;
+    var onMain = document.getElementById("mainScreen") &&
+      document.getElementById("mainScreen").classList.contains("active");
+    var inRoom = !!(typeof currentRoomId !== "undefined" && currentRoomId);
+    // Home / no room → hide. Open workspace → show.
+    if (onMain && inRoom) {
+      document.body.classList.remove("home-active");
+      document.body.classList.add("workspace-active");
+      ia.style.setProperty("display", "flex", "important");
+      ia.style.setProperty("visibility", "visible", "important");
+      ia.style.setProperty("opacity", "1", "important");
+      ia.style.setProperty("z-index", "55", "important");
+    } else if (onMain && !inRoom) {
+      document.body.classList.add("home-active");
+      document.body.classList.remove("workspace-active");
+      ia.style.setProperty("display", "none", "important");
+    }
+  }
+  window.acdForceRoomInput = acdForceRoomInput;
+
+  // Re-assert when a room opens
+  if (typeof openRoom === "function") {
+    var _or = openRoom;
+    openRoom = async function (id) {
+      if (typeof _renderedIds !== "undefined" && _renderedIds.clear) _renderedIds.clear();
+      window._acdRenderedFp = new Set();
+      var r = await _or.apply(this, arguments);
+      acdForceRoomInput();
+      setTimeout(acdForceRoomInput, 50);
+      setTimeout(acdForceRoomInput, 300);
+      return r;
+    };
+  }
+
+  // Kill home interval that may hide input while in a room
+  if (typeof updateInputVisibility === "function") {
+    var _uiv = updateInputVisibility;
+    updateInputVisibility = function () {
+      _uiv.apply(this, arguments);
+      acdForceRoomInput();
+    };
+  }
+
+  // --- 2) Dedup appendMessage / appendFrameMessage ---
+  if (typeof appendMessage === "function") {
+    var _am = appendMessage;
+    appendMessage = function (role, text, followUps) {
+      var key = _fp(role, text);
+      if (window._acdRenderedFp.has(key)) return;
+      window._acdRenderedFp.add(key);
+      return _am(role, text, followUps);
+    };
+  }
+  if (typeof appendFrameMessage === "function") {
+    var _af = appendFrameMessage;
+    appendFrameMessage = function (role, frames, followUps) {
+      var sig = "";
+      try { sig = JSON.stringify(frames).slice(0, 300); } catch (e) { sig = String(frames); }
+      var key = _fp(role, "frames:" + sig);
+      if (window._acdRenderedFp.has(key)) return;
+      window._acdRenderedFp.add(key);
+      return _af(role, frames, followUps);
+    };
+  }
+
+  // --- 3) sendMessage: do not paint AI twice if WS already has id ---
+  if (typeof sendMessage === "function") {
+    var _sm = sendMessage;
+    sendMessage = async function (text, isFirst) {
+      // Multi-person rooms: ensure @AI is preserved (server gates on it)
+      var room = (typeof roomList !== "undefined" && roomList)
+        ? roomList.find(function (r) { return r.id === currentRoomId; })
+        : null;
+      var members = room && (room.member_count || 1);
+      // Server rule: 2+ members need @AI — client just sends content as typed
+      var result = await _sm.apply(this, arguments);
+      acdForceRoomInput();
+      return result;
+    };
+  }
+
+  // Periodic re-assert only while a room is open (stops disappear)
+  setInterval(function () {
+    if (typeof currentRoomId !== "undefined" && currentRoomId) acdForceRoomInput();
+  }, 800);
+
+  document.addEventListener("DOMContentLoaded", acdForceRoomInput);
+  setTimeout(acdForceRoomInput, 200);
+})();

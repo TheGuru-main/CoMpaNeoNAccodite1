@@ -1,57 +1,44 @@
 /**
- * Accodite Codespace — demo-ready
- * Editor (Monaco) + virtual FS + bottom Terminal
- * ONE run path → /sandbox/run → SandboxRunner
+ * Accodite Codespace Phase 2
+ * Repos + FS API + Terminal + nested back stack
  */
 (function () {
   "use strict";
 
   var monacoEditor = null;
   var log = "";
-  var cwd = "/";
+  var scope = "user";
+  var repo = null;
+  var cwd = "";
   var currentFile = "main.py";
-  // path -> content  (paths always start with /)
-  var fs = {
-    "/main.py": '# Accodite Codespace\nprint("Hello from sandbox")\n',
-  };
-  var dirs = { "/": true };
+  var viewMode = "edit"; // edit | preview
+  var stack = []; // nested restore fns; empty → Home
 
   var TEMPLATES = {
-    ".py": '# new file\nprint("ok")\n',
-    ".js": '// new file\nconsole.log("ok");\n',
+    ".py": 'print("ok")\n',
+    ".js": 'console.log("ok");\n',
     ".html": "<!DOCTYPE html>\n<html><body><h1>ok</h1></body></html>\n",
-    ".css": "/* new stylesheet */\nbody { margin: 0; }\n",
-    ".ts": "// typescript\nconst x: string = 'ok';\nconsole.log(x);\n",
+    ".css": "body { margin: 0; }\n",
+    ".md": "# note\n",
+    ".ts": 'const x: string = "ok";\nconsole.log(x);\n',
     ".sh": "#!/bin/bash\necho ok\n",
   };
 
   function $(id) { return document.getElementById(id); }
 
-  function norm(p) {
-    if (!p) return cwd;
-    var base = p.startsWith("/") ? p : (cwd.replace(/\/$/, "") + "/" + p);
-    var parts = [];
-    base.split("/").forEach(function (s) {
-      if (!s || s === ".") return;
-      if (s === "..") { parts.pop(); return; }
-      parts.push(s);
-    });
-    return "/" + parts.join("/");
+  function authHeaders() {
+    var h = { "Content-Type": "application/json" };
+    var token = (typeof authToken !== "undefined" && authToken) ||
+                localStorage.getItem("coMpaNeoN_token") || "";
+    if (token) h["Authorization"] = "Bearer " + token;
+    return h;
   }
 
-  function parentDir(p) {
-    var i = p.lastIndexOf("/");
-    return i <= 0 ? "/" : p.slice(0, i);
-  }
-
-  function ensureDir(d) {
-    d = norm(d);
-    if (d !== "/") dirs[d] = true;
-    var cur = d;
-    while (cur && cur !== "/") {
-      dirs[cur] = true;
-      cur = parentDir(cur);
-    }
+  function writeLog(s) {
+    log += s;
+    if (log.length > 120000) log = log.slice(-90000);
+    var out = $("codeOutput");
+    if (out) { out.textContent = log; out.scrollTop = out.scrollHeight; }
   }
 
   function detectLang(path) {
@@ -59,72 +46,166 @@
     if (n.endsWith(".py")) return "python";
     if (n.endsWith(".js") || n.endsWith(".jsx")) return "javascript";
     if (n.endsWith(".ts") || n.endsWith(".tsx")) return "typescript";
-    if (n.endsWith(".html") || n.endsWith(".htm")) return "html";
+    if (n.endsWith(".html")) return "html";
     if (n.endsWith(".css")) return "css";
-    if (n.endsWith(".sh")) return "bash";
+    if (n.endsWith(".md")) return "markdown";
+    if (n.endsWith(".sh")) return "shell";
     return "plaintext";
   }
 
-  function writeLog(s) {
-    log += s;
-    if (log.length > 100000) log = log.slice(-80000);
-    var out = $("codeOutput");
-    if (out) {
-      out.textContent = log;
-      out.scrollTop = out.scrollHeight;
+  function goHome() {
+    stack.length = 0;
+    var panel = $("codePanel");
+    if (panel) panel.style.setProperty("display", "none", "important");
+    if (typeof window.acdGoHomeStrict === "function") window.acdGoHomeStrict();
+  }
+
+  function nestedBack() {
+    if (stack.length) {
+      var fn = stack.pop();
+      if (typeof fn === "function") fn();
+      return;
     }
+    goHome();
   }
 
-  function setCwdLabel() {
-    var el = $("codeCwdLabel");
-    if (el) el.textContent = cwd;
+  function pushView(restore) {
+    stack.push(restore);
   }
 
-  function syncEditorFromFs() {
-    if (!monacoEditor) return;
-    var path = norm(currentFile);
-    var body = fs[path] != null ? fs[path] : "";
-    monacoEditor.setValue(body);
-    try {
-      if (window.monaco) {
-        monaco.editor.setModelLanguage(monacoEditor.getModel(), detectLang(path));
-      }
-    } catch (e) {}
+  async function api(path, method, body) {
+    var opt = { method: method || "GET", headers: authHeaders() };
+    if (body != null) opt.body = JSON.stringify(body);
+    var res = await fetch(path, opt);
+    var text = await res.text();
+    var data;
+    try { data = JSON.parse(text); } catch (e) {
+      throw new Error("HTTP " + res.status + " " + text.slice(0, 200));
+    }
+    if (!res.ok) throw new Error(data.detail || data.error || ("HTTP " + res.status));
+    return data;
   }
 
-  function saveEditorToFs() {
-    if (!monacoEditor) return;
-    fs[norm(currentFile)] = monacoEditor.getValue();
+  async function refreshRepos() {
+    var sel = $("codeRepoSelect");
+    if (!sel) return;
+    var data = await api("/sandbox/repos?scope=" + encodeURIComponent(scope));
+    var repos = data.repos || [];
+    sel.innerHTML = "";
+    if (!repos.length) {
+      var o = document.createElement("option");
+      o.value = "";
+      o.textContent = "(no repo)";
+      sel.appendChild(o);
+      repo = null;
+      return;
+    }
+    repos.forEach(function (r) {
+      var o = document.createElement("option");
+      o.value = r.name;
+      o.textContent = r.name;
+      sel.appendChild(o);
+    });
+    if (!repo || !repos.find(function (r) { return r.name === repo; })) {
+      repo = repos[0].name;
+    }
+    sel.value = repo;
   }
 
-  function renderFiles() {
+  async function loadTree() {
     var ul = $("codeFileList");
     if (!ul) return;
     ul.innerHTML = "";
-    Object.keys(dirs).sort().forEach(function (d) {
-      if (d === "/") return;
-      var li = document.createElement("li");
-      li.textContent = "📁 " + d;
-      li.style.cssText = "padding:3px 0;cursor:pointer;opacity:0.9;";
-      li.onclick = function () { cwd = d; setCwdLabel(); writeLog("$ cd " + d + "\n"); };
-      ul.appendChild(li);
-    });
-    Object.keys(fs).sort().forEach(function (path) {
-      var li = document.createElement("li");
-      var name = path === "/" ? path : path.split("/").pop();
-      li.textContent = "📄 " + name;
-      li.style.cssText = "padding:3px 0;cursor:pointer;";
-      if (norm(currentFile) === path) li.style.color = "#22d3ee";
-      li.onclick = function () {
-        saveEditorToFs();
-        currentFile = path;
-        cwd = parentDir(path);
-        setCwdLabel();
-        syncEditorFromFs();
-        renderFiles();
-      };
-      ul.appendChild(li);
-    });
+    if (!repo) {
+      ul.innerHTML = "<li style='opacity:0.5'>Create a repo</li>";
+      return;
+    }
+    try {
+      var data = await api(
+        "/sandbox/fs/list?scope=" + encodeURIComponent(scope) +
+        "&repo=" + encodeURIComponent(repo) +
+        "&path=" + encodeURIComponent(cwd)
+      );
+      if (cwd) {
+        var up = document.createElement("li");
+        up.textContent = "‥ /";
+        up.style.cssText = "padding:3px 0;cursor:pointer;color:#94a3b8;";
+        up.onclick = function () {
+          var parts = cwd.split("/").filter(Boolean);
+          parts.pop();
+          cwd = parts.join("/");
+          loadTree();
+        };
+        ul.appendChild(up);
+      }
+      (data.entries || []).forEach(function (e) {
+        var li = document.createElement("li");
+        li.textContent = (e.type === "dir" ? "📁 " : "📄 ") + e.name;
+        li.style.cssText = "padding:3px 0;cursor:pointer;";
+        if (e.type === "file" && e.path === currentFile) li.style.color = "#22d3ee";
+        li.onclick = function () {
+          if (e.type === "dir") {
+            cwd = e.path;
+            loadTree();
+          } else {
+            openFile(e.path);
+          }
+        };
+        ul.appendChild(li);
+      });
+    } catch (err) {
+      writeLog("tree: " + err.message + "\n");
+    }
+  }
+
+  async function openFile(path) {
+    if (!repo) return;
+    try {
+      if (monacoEditor) {
+        // auto-save previous
+        try {
+          await api("/sandbox/fs/write", "POST", {
+            scope: scope, repo: repo, path: currentFile,
+            content: monacoEditor.getValue(),
+          });
+        } catch (e) {}
+      }
+      var data = await api(
+        "/sandbox/fs/read?scope=" + encodeURIComponent(scope) +
+        "&repo=" + encodeURIComponent(repo) +
+        "&path=" + encodeURIComponent(path)
+      );
+      currentFile = path;
+      if (monacoEditor) {
+        monacoEditor.setValue(data.content || "");
+        try {
+          monaco.editor.setModelLanguage(monacoEditor.getModel(), detectLang(path));
+        } catch (e) {}
+      }
+      if (viewMode === "preview") showPreview(data.content || "");
+      loadTree();
+      writeLog("opened " + path + "\n");
+    } catch (err) {
+      writeLog("open: " + err.message + "\n");
+    }
+  }
+
+  function showPreview(text) {
+    var prev = $("codePreview");
+    var mon = $("monacoContainer");
+    if (!prev || !mon) return;
+    prev.style.display = "block";
+    mon.style.display = "none";
+    prev.textContent = text;
+  }
+
+  function showEditor() {
+    var prev = $("codePreview");
+    var mon = $("monacoContainer");
+    if (!prev || !mon) return;
+    prev.style.display = "none";
+    mon.style.display = "block";
+    if (monacoEditor) try { monacoEditor.layout(); } catch (e) {}
   }
 
   function initMonaco() {
@@ -135,14 +216,14 @@
       return;
     }
     if (typeof require === "undefined") {
-      el.innerHTML = "<p style='color:#f87171;padding:1rem'>Monaco loader missing — hard refresh</p>";
+      el.innerHTML = "<p style='color:#f87171;padding:1rem'>Monaco missing</p>";
       return;
     }
     require.config({ paths: { vs: "https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs" } });
     require(["vs/editor/editor.main"], function () {
       monacoEditor = monaco.editor.create(el, {
-        value: fs[norm(currentFile)] || "",
-        language: detectLang(currentFile),
+        value: "",
+        language: "python",
         theme: "vs-dark",
         automaticLayout: true,
         minimap: { enabled: false },
@@ -151,173 +232,89 @@
     });
   }
 
-  async function sandboxRun(source, filename, lang) {
-    var headers = { "Content-Type": "application/json" };
-    var token = (typeof authToken !== "undefined" && authToken) ||
-                localStorage.getItem("coMpaNeoN_token") || "";
-    if (token) headers["Authorization"] = "Bearer " + token;
-    var res = await fetch("/sandbox/run", {
-      method: "POST",
-      headers: headers,
-      body: JSON.stringify({
-        source: source,
-        filename: filename || "main.py",
-        lang: lang || "python",
-        context: "user",
-      }),
-    });
-    var text = await res.text();
+  async function ensureDefaultRepo() {
+    await refreshRepos();
+    if (!repo) {
+      var name = "demo";
+      try {
+        await api("/sandbox/repos", "POST", { name: name, scope: scope });
+        repo = name;
+        await refreshRepos();
+        writeLog("created repo " + name + "\n");
+      } catch (e) {
+        writeLog("repo: " + e.message + "\n");
+      }
+    }
+    await loadTree();
+    // open main.py if present
     try {
-      return JSON.parse(text);
+      await openFile("main.py");
+    } catch (e) {}
+  }
+
+  async function createRepo() {
+    var name = prompt("Repo name:", "app");
+    if (!name || !name.trim()) return;
+    name = name.trim().replace(/\s+/g, "-");
+    try {
+      await api("/sandbox/repos", "POST", { name: name, scope: scope });
+      repo = name;
+      cwd = "";
+      await refreshRepos();
+      await loadTree();
+      await openFile("main.py");
+      writeLog("repo " + name + " ready\n");
     } catch (e) {
-      return { ok: false, error: "HTTP " + res.status + " " + text.slice(0, 300), exit_code: -1, backend: "?", stdout: "", stderr: "" };
+      writeLog("repo: " + e.message + "\n");
     }
   }
 
-  async function runActiveFile() {
-    if (!monacoEditor) {
-      writeLog("Editor not ready — open Codespace again\n");
-      initMonaco();
+  async function saveFile() {
+    if (!repo || !monacoEditor) {
+      writeLog("nothing to save\n");
       return;
     }
-    saveEditorToFs();
-    var path = norm(currentFile);
-    var source = fs[path] || monacoEditor.getValue();
-    var lang = detectLang(path);
-    if (lang === "html" || lang === "css") {
-      writeLog("Cannot execute " + lang + " via sandbox — open/edit only\n");
-      return;
-    }
-    if (lang === "plaintext") lang = "python";
-    writeLog("$ run " + path + "\n");
-    var data = await sandboxRun(source, path.split("/").pop(), lang === "typescript" ? "javascript" : lang);
-    if (data.stdout) writeLog(data.stdout.replace(/\n?$/, "\n"));
-    if (data.stderr) writeLog(data.stderr.replace(/\n?$/, "\n"));
-    if (data.error) writeLog("ERROR: " + data.error + "\n");
-    writeLog("[exit " + data.exit_code + " · " + (data.backend || "?") + "]\n");
-  }
-
-  async function onCommand(line) {
-    line = (line || "").trim();
-    if (!line) return;
-    writeLog("$ " + line + "\n");
-    var parts = line.match(/(?:[^\s"]+|"[^"]*")+/g) || [];
-    parts = parts.map(function (p) { return p.replace(/^"|"$/g, ""); });
-    var cmd = (parts[0] || "").toLowerCase();
-    var arg = parts[1] || "";
-
-    if (cmd === "help") {
-      writeLog("pwd  ls  cd <dir>  cat <file>  touch <file>  mkdir <dir>\n");
-      writeLog("run [file]  python <file>  clear  help\n");
-      return;
-    }
-    if (cmd === "clear" || cmd === "cls") {
-      log = "";
-      writeLog("");
-      return;
-    }
-    if (cmd === "pwd") {
-      writeLog(cwd + "\n");
-      return;
-    }
-    if (cmd === "ls") {
-      var prefix = cwd === "/" ? "/" : cwd + "/";
-      var names = [];
-      Object.keys(dirs).forEach(function (d) {
-        if (d === cwd) return;
-        if (parentDir(d) === cwd || (cwd === "/" && d.split("/").length === 2)) {
-          names.push(d.split("/").pop() + "/");
-        }
+    try {
+      await api("/sandbox/fs/write", "POST", {
+        scope: scope,
+        repo: repo,
+        path: currentFile,
+        content: monacoEditor.getValue(),
       });
-      Object.keys(fs).forEach(function (f) {
-        if (parentDir(f) === cwd || (cwd === "/" && f.split("/").length === 2)) {
-          names.push(f.split("/").pop());
-        }
-      });
-      writeLog((names.sort().join("  ") || "(empty)") + "\n");
-      return;
+      writeLog("saved " + currentFile + "\n");
+      await loadTree();
+    } catch (e) {
+      writeLog("save: " + e.message + "\n");
     }
-    if (cmd === "cd") {
-      if (!arg || arg === "/") { cwd = "/"; setCwdLabel(); return; }
-      var target = norm(arg);
-      if (dirs[target] || target === "/") {
-        cwd = target;
-        setCwdLabel();
-      } else {
-        writeLog("cd: no such directory: " + arg + "\n");
-      }
-      return;
-    }
-    if (cmd === "cat") {
-      if (!arg) { writeLog("cat: missing file\n"); return; }
-      var cp = norm(arg);
-      if (fs[cp] == null) { writeLog("cat: no such file\n"); return; }
-      writeLog(fs[cp] + (fs[cp].endsWith("\n") ? "" : "\n"));
-      return;
-    }
-    if (cmd === "touch") {
-      if (!arg) { writeLog("touch: missing name\n"); return; }
-      var tp = norm(arg);
-      ensureDir(parentDir(tp));
-      if (fs[tp] == null) {
-        var ext = "";
-        Object.keys(TEMPLATES).forEach(function (e) {
-          if (tp.toLowerCase().endsWith(e)) ext = e;
-        });
-        fs[tp] = TEMPLATES[ext] || "";
-      }
-      renderFiles();
-      writeLog("created " + tp + "\n");
-      return;
-    }
-    if (cmd === "mkdir") {
-      if (!arg) { writeLog("mkdir: missing name\n"); return; }
-      var dp = norm(arg);
-      ensureDir(dp);
-      renderFiles();
-      writeLog("mkdir " + dp + "\n");
-      return;
-    }
-    if (cmd === "run" || cmd === "python" || cmd === "node") {
-      if (arg) {
-        var rp = norm(arg);
-        if (fs[rp] == null) { writeLog("no such file: " + arg + "\n"); return; }
-        saveEditorToFs();
-        currentFile = rp;
-        syncEditorFromFs();
-      }
-      await runActiveFile();
-      return;
-    }
-    writeLog("unknown command: " + cmd + " (try help)\n");
   }
 
-  function newFile() {
-    var name = prompt("File name (.py .js .html .css .ts .sh):", "app.py");
+  async function newFile() {
+    if (!repo) { writeLog("create a repo first\n"); return; }
+    var name = prompt("File name (.py .js .html .css .md):", "app.py");
     if (!name || !name.trim()) return;
     name = name.trim();
-    var path = norm(name);
-    ensureDir(parentDir(path));
+    var path = cwd ? cwd + "/" + name : name;
     var ext = "";
     Object.keys(TEMPLATES).forEach(function (e) {
       if (path.toLowerCase().endsWith(e)) ext = e;
     });
-    if (!ext) {
-      path = path + ".py";
-      ext = ".py";
+    if (!ext) { path += ".py"; ext = ".py"; }
+    try {
+      await api("/sandbox/fs/write", "POST", {
+        scope: scope, repo: repo, path: path, content: TEMPLATES[ext] || "",
+      });
+      currentFile = path;
+      await loadTree();
+      await openFile(path);
+      writeLog("created " + path + "\n");
+    } catch (e) {
+      writeLog("file: " + e.message + "\n");
     }
-    saveEditorToFs();
-    fs[path] = TEMPLATES[ext] || "";
-    currentFile = path;
-    cwd = parentDir(path);
-    setCwdLabel();
-    syncEditorFromFs();
-    renderFiles();
-    writeLog("created " + path + "\n");
   }
 
-  function newFolder() {
-    var choice = prompt("1 = create folder name\n2 = open folder from phone\n\nType 1 or 2:", "1");
+  async function newFolder() {
+    if (!repo) { writeLog("create a repo first\n"); return; }
+    var choice = prompt("1 = create folder\n2 = import from phone\n\n1 or 2:", "1");
     if (choice === "2") {
       var inp = $("folderPickerInput");
       if (inp) inp.click();
@@ -325,84 +322,226 @@
     }
     var name = prompt("Folder name:", "src");
     if (!name || !name.trim()) return;
-    var d = norm(name.trim());
-    ensureDir(d);
-    cwd = d;
-    setCwdLabel();
-    renderFiles();
-    writeLog("mkdir " + d + "\n");
+    var path = cwd ? cwd + "/" + name.trim() : name.trim();
+    try {
+      await api("/sandbox/fs/mkdir", "POST", { scope: scope, repo: repo, path: path });
+      cwd = path;
+      await loadTree();
+      writeLog("mkdir " + path + "\n");
+    } catch (e) {
+      writeLog("mkdir: " + e.message + "\n");
+    }
   }
 
-  function onFolderPicked(ev) {
+  async function onFolderPicked(ev) {
     var list = ev.target.files;
-    if (!list || !list.length) return;
+    if (!list || !list.length || !repo) return;
+    var n = 0;
     for (var i = 0; i < list.length; i++) {
-      (function (file) {
-        var rel = file.webkitRelativePath || file.name;
-        var path = norm(rel);
-        ensureDir(parentDir(path));
-        if (file.size < 400000) {
+      await (function (file) {
+        return new Promise(function (resolve) {
+          var rel = file.webkitRelativePath || file.name;
+          if (file.size > 400000) return resolve();
           var reader = new FileReader();
-          reader.onload = function () {
-            fs[path] = String(reader.result || "");
-            renderFiles();
+          reader.onload = async function () {
+            try {
+              await api("/sandbox/fs/write", "POST", {
+                scope: scope, repo: repo, path: rel,
+                content: String(reader.result || ""),
+              });
+              n++;
+            } catch (e) {}
+            resolve();
           };
           reader.readAsText(file);
-        }
+        });
       })(list[i]);
     }
-    writeLog("imported " + list.length + " files\n");
+    writeLog("imported " + n + " files\n");
+    await loadTree();
     ev.target.value = "";
   }
 
-  function goHome() {
-    var panel = $("codePanel");
-    if (panel) panel.style.setProperty("display", "none", "important");
-    if (typeof window.acdGoHomeStrict === "function") window.acdGoHomeStrict();
-    hideHomePrompt();
+  async function importMemory() {
+    if (!repo) { writeLog("create a repo first\n"); return; }
+    writeLog("importing from /documents…\n");
+    try {
+      var docs = await api("/documents?limit=20");
+      var rows = Array.isArray(docs) ? docs : (docs.items || docs.documents || []);
+      if (!rows.length) {
+        writeLog("no documents/artifacts found\n");
+        return;
+      }
+      // nested picker screen via prompt for demo speed
+      var names = rows.slice(0, 12).map(function (r, i) {
+        return (i + 1) + ". " + (r.title || r.name || r.kind || r.id);
+      }).join("\n");
+      var pick = prompt("Import which document?\n" + names + "\n\nNumber:", "1");
+      var idx = parseInt(pick, 10) - 1;
+      if (isNaN(idx) || idx < 0 || idx >= rows.length) return;
+      var row = rows[idx];
+      var content = row.content || row.text || row.body || JSON.stringify(row, null, 2);
+      var fname = "import_" + (row.id || Date.now()).toString().slice(0, 8) + ".md";
+      await api("/sandbox/fs/write", "POST", {
+        scope: scope, repo: repo, path: fname, content: String(content),
+      });
+      await loadTree();
+      await openFile(fname);
+      writeLog("imported → " + fname + "\n");
+    } catch (e) {
+      writeLog("import: " + e.message + "\n");
+    }
   }
 
-  function showPanel() {
+  async function pushRepo() {
+    if (!repo) { writeLog("no repo\n"); return; }
+    await saveFile();
+    var msg = prompt("Push message:", "codespace snapshot") || "push";
+    try {
+      var data = await api("/sandbox/repos/" + encodeURIComponent(repo) + "/push", "POST", {
+        scope: scope, repo: repo, message: msg,
+      });
+      writeLog("push ok · " + data.files + " files · " + (data.note || "") + "\n");
+    } catch (e) {
+      writeLog("push: " + e.message + "\n");
+    }
+  }
+
+  function toggleView() {
+    if (viewMode === "edit") {
+      viewMode = "preview";
+      var text = monacoEditor ? monacoEditor.getValue() : "";
+      showPreview(text);
+      writeLog("view: preview\n");
+    } else {
+      viewMode = "edit";
+      showEditor();
+      writeLog("view: editor\n");
+    }
+  }
+
+  async function runActive() {
+    if (!monacoEditor) {
+      writeLog("editor not ready\n");
+      return;
+    }
+    await saveFile();
+    var source = monacoEditor.getValue();
+    var lang = detectLang(currentFile);
+    if (lang === "html" || lang === "css" || lang === "markdown") {
+      writeLog("cannot execute " + lang + "\n");
+      return;
+    }
+    if (lang === "typescript") lang = "javascript";
+    if (lang === "shell") lang = "bash";
+    if (lang === "plaintext") lang = "python";
+    writeLog("$ run " + currentFile + "\n");
+    try {
+      var data = await api("/sandbox/run", "POST", {
+        source: source,
+        filename: currentFile.split("/").pop(),
+        lang: lang,
+        context: scope,
+        repo: repo,
+      });
+      if (data.stdout) writeLog(data.stdout.replace(/\n?$/, "\n"));
+      if (data.stderr) writeLog(data.stderr.replace(/\n?$/, "\n"));
+      if (data.error) writeLog("ERROR: " + data.error + "\n");
+      writeLog("[exit " + data.exit_code + " · " + data.backend + "]\n");
+    } catch (e) {
+      writeLog("run: " + e.message + "\n");
+    }
+  }
+
+  async function onCmd(line) {
+    line = (line || "").trim();
+    if (!line) return;
+    writeLog("$ " + line + "\n");
+    var parts = line.split(/\s+/);
+    var cmd = parts[0].toLowerCase();
+    var arg = parts[1] || "";
+    if (cmd === "help") {
+      writeLog("pwd ls cd cat run clear help · toolbar: Repo File Folder Save Import View Push\n");
+      return;
+    }
+    if (cmd === "clear") { log = ""; writeLog(""); return; }
+    if (cmd === "pwd") { writeLog("/" + (repo || "") + "/" + cwd + "\n"); return; }
+    if (cmd === "ls") { await loadTree(); writeLog("(tree refreshed)\n"); return; }
+    if (cmd === "cd") {
+      if (!arg || arg === "/") cwd = "";
+      else if (arg === "..") {
+        var p = cwd.split("/").filter(Boolean); p.pop(); cwd = p.join("/");
+      } else cwd = cwd ? cwd + "/" + arg : arg;
+      await loadTree();
+      return;
+    }
+    if (cmd === "cat" && arg) {
+      try {
+        var data = await api(
+          "/sandbox/fs/read?scope=" + encodeURIComponent(scope) +
+          "&repo=" + encodeURIComponent(repo) +
+          "&path=" + encodeURIComponent(cwd ? cwd + "/" + arg : arg)
+        );
+        writeLog(data.content + (data.content.endsWith("\n") ? "" : "\n"));
+      } catch (e) { writeLog(e.message + "\n"); }
+      return;
+    }
+    if (cmd === "run") { await runActive(); return; }
+    writeLog("unknown: " + cmd + "\n");
+  }
+
+  async function showPanel() {
     var panel = $("codePanel");
     if (!panel) return;
     panel.style.setProperty("display", "flex", "important");
     panel.style.flexDirection = "column";
-    setCwdLabel();
-    renderFiles();
     initMonaco();
+    try {
+      await ensureDefaultRepo();
+    } catch (e) {
+      writeLog("boot: " + e.message + "\n");
+    }
     setTimeout(function () {
       if (monacoEditor) try { monacoEditor.layout(); } catch (e) {}
       var input = $("consoleInput");
       if (input) input.focus();
-    }, 120);
-  }
-
-  function hideHomePrompt() {
-    var input = $("inputArea");
-    if (input && !window.currentRoomId) {
-      input.style.setProperty("display", "none", "important");
-    }
+    }, 150);
   }
 
   function bind() {
-    hideHomePrompt();
     var panel = $("codePanel");
     if (panel) panel.style.setProperty("display", "none", "important");
 
     function wire(id, fn) {
       var el = $(id);
-      if (el) el.onclick = function (e) { e.preventDefault(); e.stopPropagation(); fn(); };
+      if (el) el.onclick = function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        fn();
+      };
     }
-    wire("btnCodeBack", goHome);
+
+    wire("btnCodeBack", nestedBack);
     wire("btnCloseCode", goHome);
-    wire("btnRunCode", runActiveFile); // SINGLE run path
+    wire("btnRunCode", runActive);
+    wire("btnNewRepo", createRepo);
     wire("btnNewFile", newFile);
     wire("btnNewFolder", newFolder);
-    wire("btnSaveFile", function () {
-      saveEditorToFs();
-      writeLog("saved " + norm(currentFile) + "\n");
-    });
+    wire("btnSaveFile", saveFile);
+    wire("btnImportMem", importMemory);
+    wire("btnViewToggle", toggleView);
+    wire("btnPushRepo", pushRepo);
     wire("btnHomeCode", showPanel);
+
+    var sel = $("codeRepoSelect");
+    if (sel) {
+      sel.onchange = async function () {
+        repo = sel.value || null;
+        cwd = "";
+        await loadTree();
+        try { await openFile("main.py"); } catch (e) {}
+      };
+    }
 
     var input = $("consoleInput");
     if (input) {
@@ -411,7 +550,7 @@
           e.preventDefault();
           var v = input.value;
           input.value = "";
-          onCommand(v);
+          onCmd(v);
         }
       };
     }
@@ -421,10 +560,7 @@
     var picker = $("folderPickerInput");
     if (picker) picker.onchange = onFolderPicked;
 
-    // keep home prompt dead when no room
-    setInterval(hideHomePrompt, 1500);
-
-    writeLog("Accodite terminal ready. Type help.\n");
+    writeLog("Codespace Phase 2 · type help\n");
   }
 
   window.openCodePanel = showPanel;

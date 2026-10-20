@@ -1352,3 +1352,11 @@ body.workspace-active #inputArea,
 body.workspace-active #mainScreen > .input-area {
   display: flex !important;
 }
+
+
+/* ACCD-HOME-PROMPT-KILL */
+body.home-active #inputArea,
+#mainScreen:not(.workspace-on) #inputArea,
+#inputArea[data-home-hide="1"] {
+  display: none !important;
+}

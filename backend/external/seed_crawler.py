@@ -1,14 +1,14 @@
 """
 Accodite Seed Crawler — Domain Dispatcher
 =========================================
-Bootstraps the memory grid with 100 documents across 9 domains.
+Bootstraps the memory grid with about 2300 documents across 90 domains.
 
 Per domain, calls the matching adapter from external.py, normalizes the
 result, and writes to the grid through the shared WebCrawler/grid path.
 The crawler_scheduler still governs refetch timing for URLs; this module
 only handles the *first* fill.
 
-Domain plan (318 docs):
+Domain plan (2316 docs / 90 domains):
 """
 from __future__ import annotations
 import os
@@ -17,58 +17,114 @@ from typing import Any, Dict, List, Optional
 try:
     from training.caps import MAX_EXTERNAL_LINKS_PER_RUN
 except ImportError:
-    MAX_EXTERNAL_LINKS_PER_RUN = 100
+    MAX_EXTERNAL_LINKS_PER_RUN = 2500
 
 
 # ============================================================================
 # DOMAIN PLAN + QUERIES
 # ============================================================================
 DOMAIN_PLAN = [
-    # ====================== CORE CODE (Heavy Weight) ======================
-    ("code",          28),
-    ("gsp",           18),
-    ("sandbox",       16),
-    ("rules",         14),
-    ("workflows",     14),
-    ("console",       12),
-    ("licensing",     10),
-    ("systems",       12),
-    ("ai_ml",         14),
-    ("data",          12),
-    ("security",      11),
-    ("cloud",         11),
-
-    # ====================== LANGUAGE & LINGUISTICS ======================
-    ("language",      10),
-    ("dialect",        9),
-    ("nlp",            8),
-
-    # ====================== KNOWLEDGE & SCIENCE ======================
-    ("knowledge",     10),
-    ("science",        8),
-    ("mathematics",    8),
-    ("engineering",    8),
-
-    # ====================== BUSINESS & WORLD ======================
-    ("finance",        8),
-    ("business",       7),
-    ("startup",        7),
-    ("news",           7),
-
-    # ====================== CULTURE & SOCIETY ======================
-    ("literature",     6),
-    ("religion",       6),
-    ("education",      7),
-    ("philosophy",     5),
-    ("history",        5),
-
-    # ====================== MEDIA & OTHERS ======================
-    ("media",          6),
-    ("design",         5),
-    ("health",         5),
-    ("law",            4),
-    ("agriculture",    4),
+    # ====================== CORE CODE (Heavy) ======================
+    ("code", 52),
+    ("gsp", 48),
+    ("sandbox", 42),
+    ("rules", 36),
+    ("workflows", 36),
+    ("console", 34),
+    ("licensing", 28),
+    ("systems", 40),
+    ("ai_ml", 52),
+    ("data", 40),
+    ("security", 36),
+    ("cloud", 36),
+    ("devops", 34),
+    ("testing", 32),
+    ("api_design", 32),
+    ("databases", 34),
+    ("frontend", 34),
+    ("backend", 36),
+    ("mobile", 26),
+    ("protocols", 26),
+    # ====================== LANGUAGE ======================
+    ("language", 32),
+    ("dialect", 28),
+    ("nlp", 34),
+    ("yoruba", 26),
+    ("french", 24),
+    ("translation", 24),
+    ("linguistics", 20),
+    ("speech", 20),
+    # ====================== KNOWLEDGE / SCIENCE ======================
+    ("knowledge", 34),
+    ("science", 28),
+    ("mathematics", 32),
+    ("engineering", 32),
+    ("physics", 22),
+    ("biology", 20),
+    ("chemistry", 20),
+    ("research", 24),
+    # ====================== BUSINESS ======================
+    ("finance", 28),
+    ("business", 26),
+    ("startup", 32),
+    ("news", 26),
+    ("markets", 20),
+    ("product", 24),
+    ("growth", 20),
+    ("ops", 20),
+    # ====================== CULTURE / SOCIETY ======================
+    ("literature", 20),
+    ("religion", 20),
+    ("education", 26),
+    ("philosophy", 18),
+    ("history", 20),
+    ("ethics", 18),
+    ("policy", 18),
+    ("civic", 18),
+    # ====================== MEDIA / INFRA / PRODUCT ======================
+    ("media", 22),
+    ("design", 20),
+    ("health", 20),
+    ("law", 20),
+    ("agriculture", 20),
+    ("energy", 18),
+    ("climate", 18),
+    ("transport", 18),
+    ("logistics", 18),
+    ("maps", 22),
+    ("geo", 18),
+    ("iot", 20),
+    ("hardware", 20),
+    ("robotics", 20),
+    ("gaming", 18),
+    ("ux", 20),
+    ("accessibility", 18),
+    ("privacy", 20),
+    ("compliance", 18),
+    ("observability", 24),
+    ("messaging", 24),
+    ("search", 30),
+    ("indexing", 26),
+    ("cdn", 24),
+    ("streaming", 24),
+    ("realtime", 24),
+    ("auth", 26),
+    ("identity", 20),
+    ("payments", 20),
+    ("ecommerce", 20),
+    ("community", 18),
+    ("collaboration", 20),
+    ("docs", 24),
+    ("opensource", 24),
+    ("multilingual", 24),
+    ("nigeria", 24),
+    ("africa_tech", 22),
+    ("yc_startup", 22),
 ]
+
+
+
+
 
 
 DOMAIN_QUERIES: Dict[str, List[str]] = {
@@ -257,6 +313,178 @@ DOMAIN_QUERIES: Dict[str, List[str]] = {
         "agritech", "precision agriculture", "agricultural data", "food systems",
         "sustainable agriculture technology",
     ],
+    "devops": [
+        "ci cd pipeline", "infrastructure as code", "gitops", "release engineering", "sre practices",
+    ],
+    "testing": [
+        "unit testing", "integration testing", "test driven development", "pytest", "mocking strategies",
+    ],
+    "api_design": [
+        "rest api design", "openapi", "graphql schema", "api versioning", "rate limiting",
+    ],
+    "databases": [
+        "postgres indexing", "sql optimization", "nosql patterns", "database migrations", "replication",
+    ],
+    "frontend": [
+        "react hooks", "css architecture", "web accessibility", "spa routing", "state management",
+    ],
+    "backend": [
+        "fastapi tutorial", "nodejs architecture", "service design", "middleware patterns", "background jobs",
+    ],
+    "mobile": [
+        "mobile app architecture", "react native", "android development", "ios patterns", "offline first",
+    ],
+    "protocols": [
+        "http2", "grpc", "websocket patterns", "tcp ip", "quic protocol",
+    ],
+    "yoruba": [
+        "Yoruba language", "Yoruba orthography", "Yoruba computing", "Yoruba NLP", "tone marking Yoruba",
+    ],
+    "french": [
+        "French language", "French grammar", "French NLP", "AZERTY keyboard", "French technical writing",
+    ],
+    "translation": [
+        "machine translation", "multilingual embeddings", "code switching", "localization engineering",
+    ],
+    "linguistics": [
+        "phonology", "morphology", "syntax", "computational linguistics",
+    ],
+    "speech": [
+        "speech recognition", "text to speech", "audio features", "voice interfaces",
+    ],
+    "physics": [
+        "classical mechanics", "electromagnetism", "thermodynamics", "quantum basics",
+    ],
+    "biology": [
+        "cell biology", "genetics basics", "bioinformatics", "molecular biology",
+    ],
+    "chemistry": [
+        "organic chemistry basics", "chemical bonding", "stoichiometry", "materials chemistry",
+    ],
+    "research": [
+        "research methodology", "literature review", "experimental design", "scientific writing",
+    ],
+    "markets": [
+        "market structure", "liquidity", "order books", "market microstructure",
+    ],
+    "product": [
+        "product management", "roadmaps", "user research", "prioritization frameworks",
+    ],
+    "growth": [
+        "growth loops", "acquisition channels", "retention metrics", "activation",
+    ],
+    "ops": [
+        "operations management", "process design", "incident response", "oncall",
+    ],
+    "ethics": [
+        "ethics of ai", "responsible AI", "fairness in ML", "tech ethics",
+    ],
+    "policy": [
+        "tech policy", "digital regulation", "data governance", "platform policy",
+    ],
+    "civic": [
+        "civic technology", "open government data", "digital public services",
+    ],
+    "energy": [
+        "renewable energy systems", "grid systems", "energy data", "power systems basics",
+    ],
+    "climate": [
+        "climate data", "climate models", "sustainability technology",
+    ],
+    "transport": [
+        "transport systems", "mobility data", "logistics routing",
+    ],
+    "logistics": [
+        "supply chain", "inventory systems", "warehouse automation",
+    ],
+    "maps": [
+        "OpenStreetMap", "geocoding", "map tiles", "spatial indexing",
+    ],
+    "geo": [
+        "GIS basics", "spatial databases", "coordinate systems",
+    ],
+    "iot": [
+        "iot protocols", "mqtt", "edge computing", "sensor networks",
+    ],
+    "hardware": [
+        "computer architecture", "embedded systems", "hardware software co design",
+    ],
+    "robotics": [
+        "robot control", "path planning", "ros basics", "sensors actuators",
+    ],
+    "gaming": [
+        "game loops", "physics engines", "multiplayer networking",
+    ],
+    "ux": [
+        "user experience design", "interaction design", "usability testing",
+    ],
+    "accessibility": [
+        "wcag", "screen readers", "accessible web", "inclusive design",
+    ],
+    "privacy": [
+        "privacy by design", "differential privacy", "data minimization",
+    ],
+    "compliance": [
+        "gdpr compliance", "soc2", "security compliance",
+    ],
+    "observability": [
+        "metrics logs traces", "opentelemetry", "alerting", "slo sli",
+    ],
+    "messaging": [
+        "message queues", "pubsub", "kafka patterns", "event driven architecture",
+    ],
+    "search": [
+        "information retrieval", "full text search", "ranking algorithms", "search indexing",
+    ],
+    "indexing": [
+        "inverted index", "vector index", "bm25", "approximate nearest neighbor",
+    ],
+    "cdn": [
+        "content delivery network", "edge caching", "cache invalidation",
+    ],
+    "streaming": [
+        "live streaming protocols", "hls dash", "media pipelines",
+    ],
+    "realtime": [
+        "realtime systems", "websockets", "crdt", "presence systems",
+    ],
+    "auth": [
+        "oauth2", "oidc", "session management", "mfa",
+    ],
+    "identity": [
+        "identity management", "sso", "directory services",
+    ],
+    "payments": [
+        "payment rails", "checkout flows", "pci awareness",
+    ],
+    "ecommerce": [
+        "catalog systems", "cart checkout", "inventory ecommerce",
+    ],
+    "community": [
+        "community platforms", "moderation systems", "forums",
+    ],
+    "collaboration": [
+        "collaborative editing", "shared workspaces", "permissions models",
+    ],
+    "docs": [
+        "technical documentation", "docs as code", "api docs",
+    ],
+    "opensource": [
+        "open source governance", "contributor guides", "license compliance",
+    ],
+    "multilingual": [
+        "multilingual search", "unicode handling", "language detection",
+    ],
+    "nigeria": [
+        "Nigeria technology", "Nigerian startup ecosystem", "local payments Nigeria", "NITDA",
+    ],
+    "africa_tech": [
+        "African startups", "mobile money", "last mile connectivity", "africa developer ecosystem",
+    ],
+    "yc_startup": [
+        "yc application", "startup advice", "seed funding", "product market fit", "pitch deck",
+    ],
+
 }
 
 # ============================================================================

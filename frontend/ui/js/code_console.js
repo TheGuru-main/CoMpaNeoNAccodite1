@@ -7,6 +7,18 @@
 (function () {
   "use strict";
 
+
+// ACCD-GSP-CLIENT
+function acdIdentity() {
+  var u = null;
+  try { u = (typeof currentUser !== "undefined" && currentUser) || JSON.parse(localStorage.getItem("coMpaNeoN_user") || "null"); } catch (e) {}
+  return {
+    fullname: (u && (u.full_name || u.name)) || "",
+    uid: (u && (u.phone || u.id || u.user_id)) || "",
+  };
+}
+
+
   var monacoEditor = null;
   var logLines = [];       // completed lines only
   var cmdBuf = "";         // current command being typed
@@ -345,7 +357,7 @@
     if (!name || !name.trim()) return;
     name = name.trim().replace(/\s+/g, "-");
     try {
-      await api("/sandbox/repos", "POST", { name: name, scope: scope });
+      var idn = acdIdentity(); await api("/sandbox/repos", "POST", { name: name, scope: scope, fullname: idn.fullname, uid: String(idn.uid) });
     } catch (e) {
       // if exists, still scaffold / use it
       if (String(e.message || e).indexOf("already") < 0) {
@@ -359,6 +371,7 @@
     await loadTree();
     await openFile("backend/main.py");
     writeLog("repo " + name + " ready (backend/ frontend/ public/)\n");
+    if (typeof showRepoGsp === "function") await showRepoGsp(name);
   }
 
   async function ensureDefaultRepo() {
@@ -684,6 +697,18 @@
     paintTerm();
   }
 
+  
+
+  // ACCD-GSP-SHOW
+  async function showRepoGsp(name) {
+    try {
+      var g = await api("/sandbox/repos/" + encodeURIComponent(name) + "/gsp?scope=" + encodeURIComponent(scope));
+      writeLog("GSP start_row=" + g.start_row + " root=" + g.root_key +
+        " splits=" + (g.splits || []).map(function (s) { return "k" + s.k + "@(" + s.row + "," + s.col + ")"; }).join(" ") + "\n");
+    } catch (e) {}
+  }
+  window.acdShowRepoGsp = showRepoGsp;
+
   window.openCodePanel = showPanel;
   window.closeCodePanel = goHome;
   window.hideCodeScreen = goHome;
@@ -692,5 +717,35 @@
     document.addEventListener("DOMContentLoaded", bind);
   } else {
     bind();
+  }
+})();
+
+
+// ============================================================
+// ACCD-GSP-UID-EOF — start_row only; name + repo_uid for push/commit
+// ============================================================
+(function () {
+  function patchCreate() {
+    if (typeof window.createRepo === "function" || false) return;
+  }
+  // Wrap fetch-free: hook acdOnRepoCreated after any success path that sets window.__lastRepoCreate
+  var _fetch = window.fetch;
+  if (_fetch && !window.__acdGspFetchPatched) {
+    window.__acdGspFetchPatched = true;
+    window.fetch = async function (url, opts) {
+      var res = await _fetch.apply(this, arguments);
+      try {
+        var u = String(url || "");
+        if (u.indexOf("/sandbox/repos") >= 0 && (!opts || (opts.method || "GET").toUpperCase() === "POST") && u.indexOf("/push") < 0 && u.indexOf("/commit") < 0) {
+          var clone = res.clone();
+          clone.json().then(function (data) {
+            if (data && data.repo_uid && typeof window.acdOnRepoCreated === "function") {
+              window.acdOnRepoCreated(data);
+            }
+          }).catch(function () {});
+        }
+      } catch (e) {}
+      return res;
+    };
   }
 })();

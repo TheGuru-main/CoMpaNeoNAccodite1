@@ -1,12 +1,22 @@
 """
-Sandbox API — run + repo/fs (Phase 2)
-Runner isolation stays in sandbox.runner (untouched).
-Persistent workspace: ACCD_SANDBOX_ROOT or /tmp/accd-sandbox
+Sandbox API — run + repo/fs + GSP start_row roots
+
+Repo root (ONLY start_row — no K/D strides or jumps):
+  start_row = ((L + S - 1) % 64) + 1
+  L = len(repo_name)
+  S = digit-sum of system-assigned secret repo_uid
+
+repo_uid is generated on create (secret to user/team).
+commit / push require repo name + repo_uid.
+
+Runner: sandbox.runner (untouched).
 """
 from __future__ import annotations
 
+import json
 import os
 import re
+import secrets
 import shutil
 import time
 from pathlib import Path
@@ -21,6 +31,7 @@ router = APIRouter(prefix="/sandbox", tags=["sandbox"])
 
 ROOT = Path(os.environ.get("ACCD_SANDBOX_ROOT", "/tmp/accd-sandbox")).resolve()
 SAFE_NAME = re.compile(r"^[a-zA-Z0-9._\-]+$")
+R_ROWS = 64
 
 
 def _scope_root(scope: str) -> Path:
@@ -35,8 +46,7 @@ def _scope_root(scope: str) -> Path:
 def _repo_dir(scope: str, repo: str) -> Path:
     if not repo or not SAFE_NAME.match(repo):
         raise HTTPException(400, "invalid repo name (use letters, numbers, . _ -)")
-    d = _scope_root(scope) / repo
-    return d
+    return _scope_root(scope) / repo
 
 
 def _safe_rel(path: str) -> str:
@@ -51,9 +61,78 @@ def _safe_rel(path: str) -> str:
     return "/".join(parts)
 
 
-# ---------------------------------------------------------------------------
-# Run (Phase 1)
-# ---------------------------------------------------------------------------
+def _uid_digit_sum(uid: str) -> int:
+    digits = [int(ch) for ch in (uid or "") if ch.isdigit()]
+    if digits:
+        return sum(digits)
+    return sum((ord(ch) % 10) for ch in (uid or "0") if ch.isalnum()) or 0
+
+
+def compute_start_row(repo_name: str, repo_uid: str) -> dict:
+    L = max(len(repo_name or ""), 1)
+    S = _uid_digit_sum(repo_uid)
+    start_row = ((L + S - 1) % R_ROWS) + 1
+    return {
+        "L": L,
+        "S": S,
+        "start_row": start_row,
+        "root_key": f"r{start_row:02d}",
+        "repo": repo_name,
+        "grid_rows": R_ROWS,
+    }
+
+
+def _new_repo_uid() -> str:
+    return secrets.token_hex(16)
+
+
+def _write_meta(rdir: Path, meta: dict) -> None:
+    (rdir / ".gsp.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+
+
+def _read_meta(rdir: Path) -> Optional[dict]:
+    f = rdir / ".gsp.json"
+    if not f.is_file():
+        return None
+    try:
+        return json.loads(f.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def _verify_repo_key(rdir: Path, repo: str, repo_uid: str) -> dict:
+    meta = _read_meta(rdir)
+    if not meta:
+        raise HTTPException(403, "repo has no GSP key metadata")
+    stored = str(meta.get("repo_uid") or "")
+    if not repo_uid or not secrets.compare_digest(stored, str(repo_uid)):
+        raise HTTPException(403, "invalid repo key (name + uid pair required)")
+    if meta.get("repo") and meta.get("repo") != repo:
+        raise HTTPException(403, "repo name mismatch")
+    return meta
+
+
+def _scaffold_conventional(rdir: Path, name: str) -> None:
+    files = {
+        "backend/main.py": f'# {name}\nprint("Hello from {name}")\n',
+        "backend/__init__.py": "",
+        "frontend/index.html": (
+            f"<!DOCTYPE html>\n<html><head><title>{name}</title></head>"
+            f"<body><h1>{name}</h1></body></html>\n"
+        ),
+        "frontend/js/app.js": f"// {name}\nconsole.log('ok');\n",
+        "frontend/css/style.css": "body { margin: 0; }\n",
+        "public/index.html": f"<!DOCTYPE html>\n<html><body><h1>{name}</h1></body></html>\n",
+        "public/js/main.js": "console.log('public');\n",
+        "public/css/main.css": "body { margin: 0; }\n",
+        "README.md": f"# {name}\n\nGSP start_row rooted Codespace repo.\n",
+    }
+    for rel, body in files.items():
+        p = rdir / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        if not p.exists():
+            p.write_text(body, encoding="utf-8")
+
 
 class RunRequest(BaseModel):
     source: str = Field(..., min_length=1)
@@ -82,13 +161,12 @@ class RunResponse(BaseModel):
 @router.post("/run", response_model=RunResponse)
 async def run_code(req: RunRequest):
     extra = dict(req.extra_files or {})
-    # If repo set, merge saved files from disk into extra_files
     if req.repo:
         try:
             rdir = _repo_dir(req.context, req.repo)
             if rdir.is_dir():
                 for f in rdir.rglob("*"):
-                    if f.is_file():
+                    if f.is_file() and f.name not in (".gsp.json", ".accd_push_log", ".accd_commit_log"):
                         rel = str(f.relative_to(rdir)).replace("\\", "/")
                         if rel == req.filename:
                             continue
@@ -122,20 +200,40 @@ async def run_code(req: RunRequest):
     )
 
 
-# ---------------------------------------------------------------------------
-# Repos
-# ---------------------------------------------------------------------------
+class GspResolveReq(BaseModel):
+    repo_name: str = Field(..., min_length=1, max_length=64)
+    repo_uid: str = Field(..., min_length=8, max_length=128)
+
+
+@router.post("/gsp/resolve")
+async def gsp_resolve(req: GspResolveReq):
+    return compute_start_row(req.repo_name, req.repo_uid)
+
+
+@router.get("/repos/{name}/gsp")
+async def repo_gsp(name: str, scope: str = "user", reveal_uid: bool = False):
+    rdir = _repo_dir(scope, name)
+    if not rdir.exists():
+        raise HTTPException(404, "repo not found")
+    meta = _read_meta(rdir)
+    if not meta:
+        raise HTTPException(404, "no GSP metadata")
+    out = {
+        "repo": meta.get("repo", name),
+        "start_row": meta.get("start_row"),
+        "root_key": meta.get("root_key"),
+        "L": meta.get("L"),
+        "S": meta.get("S"),
+        "grid_rows": meta.get("grid_rows", R_ROWS),
+    }
+    if reveal_uid:
+        out["repo_uid"] = meta.get("repo_uid")
+    return out
+
 
 class RepoCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=64)
     scope: str = Field("user", pattern="^(user|org|ai)$")
-
-
-class RepoInfo(BaseModel):
-    name: str
-    scope: str
-    files: int
-    updated_at: float
 
 
 @router.get("/repos")
@@ -145,12 +243,18 @@ async def list_repos(scope: str = "user"):
     for d in sorted(root.iterdir() if root.exists() else []):
         if not d.is_dir():
             continue
-        nfiles = sum(1 for f in d.rglob("*") if f.is_file())
+        nfiles = sum(
+            1 for f in d.rglob("*")
+            if f.is_file() and f.name not in (".gsp.json", ".accd_push_log", ".accd_commit_log")
+        )
+        meta = _read_meta(d) or {}
         out.append({
             "name": d.name,
             "scope": scope,
             "files": nfiles,
             "updated_at": d.stat().st_mtime,
+            "start_row": meta.get("start_row"),
+            "root_key": meta.get("root_key"),
         })
     return {"repos": out}
 
@@ -163,26 +267,38 @@ async def create_repo(req: RepoCreate):
     if d.exists():
         raise HTTPException(409, "repo already exists")
     d.mkdir(parents=True, exist_ok=True)
-    (d / "README.md").write_text(f"# {req.name}\n\nAccodite Codespace repo.\n", encoding="utf-8")
-    (d / "main.py").write_text(
-        f'# {req.name}\nprint("Hello from {req.name}")\n',
-        encoding="utf-8",
-    )
-    return {"ok": True, "name": req.name, "scope": req.scope}
+
+    repo_uid = _new_repo_uid()
+    gsp = compute_start_row(req.name, repo_uid)
+    meta = {
+        **gsp,
+        "repo_uid": repo_uid,
+        "created_at": time.time(),
+        "scope": req.scope,
+    }
+    _write_meta(d, meta)
+    _scaffold_conventional(d, req.name)
+
+    return {
+        "ok": True,
+        "name": req.name,
+        "scope": req.scope,
+        "start_row": gsp["start_row"],
+        "root_key": gsp["root_key"],
+        "repo_uid": repo_uid,
+        "note": "Save repo_uid secret. Required with repo name for push/commit.",
+    }
 
 
 @router.delete("/repos/{name}")
-async def delete_repo(name: str, scope: str = "user"):
+async def delete_repo(name: str, scope: str = "user", repo_uid: str = ""):
     d = _repo_dir(scope, name)
     if not d.exists():
         raise HTTPException(404, "repo not found")
+    _verify_repo_key(d, name, repo_uid)
     shutil.rmtree(d)
     return {"ok": True}
 
-
-# ---------------------------------------------------------------------------
-# FS
-# ---------------------------------------------------------------------------
 
 class FsWrite(BaseModel):
     scope: str = Field("user", pattern="^(user|org|ai)$")
@@ -210,6 +326,8 @@ async def fs_list(repo: str, scope: str = "user", path: str = ""):
         return {"type": "file", "path": rel, "size": target.stat().st_size}
     entries = []
     for child in sorted(target.iterdir()):
+        if child.name.startswith(".gsp") or child.name.startswith(".accd"):
+            continue
         entries.append({
             "name": child.name,
             "path": str(child.relative_to(rdir)).replace("\\", "/"),
@@ -265,26 +383,59 @@ async def fs_mkdir(req: FsMkdir):
 class PushRequest(BaseModel):
     scope: str = Field("user", pattern="^(user|org|ai)$")
     repo: str
+    repo_uid: str = Field(..., min_length=8)
     message: str = "push from codespace"
+
+
+class CommitRequest(BaseModel):
+    scope: str = Field("user", pattern="^(user|org|ai)$")
+    repo: str
+    repo_uid: str = Field(..., min_length=8)
+    message: str = "commit from codespace"
 
 
 @router.post("/repos/{name}/push")
 async def push_repo(name: str, req: PushRequest):
-    """Snapshot marker — persists repo mtime + push log (local durable store)."""
     if req.repo != name:
         raise HTTPException(400, "repo name mismatch")
     rdir = _repo_dir(req.scope, name)
     if not rdir.exists():
         raise HTTPException(404, "repo not found")
+    meta = _verify_repo_key(rdir, name, req.repo_uid)
     log = rdir / ".accd_push_log"
-    line = f"{time.time():.0f} {req.message.strip() or 'push'}\n"
     with log.open("a", encoding="utf-8") as f:
-        f.write(line)
-    nfiles = sum(1 for f in rdir.rglob("*") if f.is_file() and f.name != ".accd_push_log")
+        f.write(f"{time.time():.0f} start_row={meta.get('start_row')} {req.message.strip() or 'push'}\n")
+    nfiles = sum(
+        1 for f in rdir.rglob("*")
+        if f.is_file() and f.name not in (".accd_push_log", ".gsp.json", ".accd_commit_log")
+    )
     return {
         "ok": True,
         "repo": name,
         "files": nfiles,
         "message": req.message,
-        "note": "snapshot recorded (local sandbox store)",
+        "start_row": meta.get("start_row"),
+        "root_key": meta.get("root_key"),
+        "note": "push accepted (name + uid verified)",
+    }
+
+
+@router.post("/repos/{name}/commit")
+async def commit_repo(name: str, req: CommitRequest):
+    if req.repo != name:
+        raise HTTPException(400, "repo name mismatch")
+    rdir = _repo_dir(req.scope, name)
+    if not rdir.exists():
+        raise HTTPException(404, "repo not found")
+    meta = _verify_repo_key(rdir, name, req.repo_uid)
+    log = rdir / ".accd_commit_log"
+    with log.open("a", encoding="utf-8") as f:
+        f.write(f"{time.time():.0f} start_row={meta.get('start_row')} {req.message.strip() or 'commit'}\n")
+    return {
+        "ok": True,
+        "repo": name,
+        "message": req.message,
+        "start_row": meta.get("start_row"),
+        "root_key": meta.get("root_key"),
+        "note": "commit accepted (name + uid verified)",
     }

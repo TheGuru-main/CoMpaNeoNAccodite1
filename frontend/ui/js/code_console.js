@@ -1,47 +1,36 @@
 /**
- * Accodite Codespace P3
- * Layout: sidebar (closable) | Monaco | terminal ONE surface
- * No second $ input box. Caret lives on the active line.
- * Conventional roots: backend/ frontend/ public/ ...
+ * Accodite Codespace P4
+ * - Terminal: tap surface → ghost input (mobile keyboard)
+ * - ▶ Run = editor file · ▶ Term = terminal line or re-run file
+ * - create path/repo silent · open path swaps Monaco instantly
+ * - repos listed as folders in Explorer
  */
 (function () {
   "use strict";
 
-
-// ACCD-GSP-CLIENT
-function acdIdentity() {
-  var u = null;
-  try { u = (typeof currentUser !== "undefined" && currentUser) || JSON.parse(localStorage.getItem("coMpaNeoN_user") || "null"); } catch (e) {}
-  return {
-    fullname: (u && (u.full_name || u.name)) || "",
-    uid: (u && (u.phone || u.id || u.user_id)) || "",
-  };
-}
-
-
   var monacoEditor = null;
-  var logLines = [];       // completed lines only
-  var cmdBuf = "";         // current command being typed
+  var logLines = [];
+  var cmdBuf = "";
   var scope = "user";
   var repo = null;
   var cwd = "";
-  var currentFile = "backend/main.py";
+  var currentFile = "";
   var sidebarOpen = true;
   var termCollapsed = false;
   var termFocused = false;
-  var ROOT_SCAFFOLD = [
-    "backend/main.py",
-    "backend/__init__.py",
-    "frontend/index.html",
-    "frontend/js/app.js",
-    "frontend/css/style.css",
-    "public/index.html",
-    "public/js/main.js",
-    "public/css/main.css",
-    "README.md",
-  ];
+  var lastRunPath = "";
+
+  var _repoUids = {};
+  try { _repoUids = JSON.parse(sessionStorage.getItem("acd_repo_uids") || "{}"); } catch (e) {}
 
   function $(id) { return document.getElementById(id); }
+
+  function saveRepoUid(name, uid) {
+    if (!name || !uid) return;
+    _repoUids[name] = uid;
+    try { sessionStorage.setItem("acd_repo_uids", JSON.stringify(_repoUids)); } catch (e) {}
+  }
+  function getRepoUid(name) { return _repoUids[name] || ""; }
 
   function authHeaders() {
     var h = { "Content-Type": "application/json" };
@@ -87,23 +76,21 @@ function acdIdentity() {
     return "plaintext";
   }
 
-  function paintTerm() {
-    var out = $("codeOutput");
-    if (!out) return;
-    var caret = termFocused ? "█" : " ";
-    var prompt = "$ ";
-    var body = logLines.join("");
-    out.innerHTML =
-      '<span class="term-log">' + escapeHtml(body) + "</span>" +
-      '<span class="term-line"><span style="color:#22d3ee">' + prompt + "</span>" +
-      escapeHtml(cmdBuf) + '<span style="color:#22d3ee">' + caret + "</span></span>";
-    out.scrollTop = out.scrollHeight;
-  }
-
   function escapeHtml(s) {
     return String(s || "").replace(/[&<>"']/g, function (c) {
       return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c];
     });
+  }
+
+  function paintTerm() {
+    var out = $("codeOutput");
+    if (!out) return;
+    var caret = termFocused ? "█" : "▌";
+    out.innerHTML =
+      '<span class="term-log">' + escapeHtml(logLines.join("")) + "</span>" +
+      '<span class="term-line"><span style="color:#22d3ee">$ </span>' +
+      escapeHtml(cmdBuf) + '<span style="color:#22d3ee">' + caret + "</span></span>";
+    out.scrollTop = out.scrollHeight;
   }
 
   function writeLog(s) {
@@ -114,9 +101,61 @@ function acdIdentity() {
 
   function focusTerm() {
     termFocused = true;
+    var ghost = $("termGhostInput");
+    if (ghost) {
+      try { ghost.focus({ preventScroll: true }); } catch (e) { try { ghost.focus(); } catch (e2) {} }
+      setTimeout(function () {
+        try { ghost.focus(); } catch (e) {}
+      }, 50);
+    }
     var out = $("codeOutput");
-    if (out) out.focus();
+    if (out) out.classList.add("term-focused");
     paintTerm();
+  }
+
+  function blurTerm() {
+    termFocused = false;
+    var out = $("codeOutput");
+    if (out) out.classList.remove("term-focused");
+    paintTerm();
+  }
+
+  function ensureGhostInput() {
+    var cons = $("codeConsole");
+    if (!cons || $("termGhostInput")) return;
+    var inp = document.createElement("input");
+    inp.id = "termGhostInput";
+    inp.type = "text";
+    inp.autocomplete = "off";
+    inp.autocapitalize = "off";
+    inp.spellcheck = false;
+    inp.setAttribute("inputmode", "text");
+    inp.setAttribute("enterkeyhint", "go");
+    inp.style.cssText = "position:absolute;left:0;right:0;bottom:0;height:36px;opacity:0.02;border:0;padding:0;margin:0;z-index:5;width:100%;background:transparent;color:transparent;caret-color:transparent;font-size:16px;";
+    cons.style.position = "relative";
+    cons.appendChild(inp);
+
+    inp.addEventListener("focus", function () { termFocused = true; paintTerm(); });
+    inp.addEventListener("blur", function () {
+      setTimeout(function () {
+        if (document.activeElement !== inp) blurTerm();
+      }, 80);
+    });
+    inp.addEventListener("input", function () { cmdBuf = inp.value; paintTerm(); });
+    inp.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        var line = cmdBuf;
+        cmdBuf = "";
+        inp.value = "";
+        paintTerm();
+        onCommand(line);
+      } else if (e.key === "Escape") {
+        cmdBuf = "";
+        inp.value = "";
+        paintTerm();
+      }
+    });
   }
 
   function setSidebar(open) {
@@ -124,43 +163,47 @@ function acdIdentity() {
     var sb = $("codeSidebar");
     if (!sb) return;
     if (open) {
+      sb.style.display = "block";
       sb.style.width = "180px";
       sb.style.flex = "0 0 180px";
-      sb.style.marginLeft = "0";
-      sb.style.display = "block";
     } else {
+      sb.style.display = "none";
       sb.style.width = "0";
       sb.style.flex = "0 0 0";
-      sb.style.marginLeft = "0";
-      sb.style.display = "none";
     }
-    if (monacoEditor) setTimeout(function () { try { monacoEditor.layout(); } catch (e) {} }, 160);
+    layoutEditor();
   }
 
   function setTermCollapsed(c) {
     termCollapsed = c;
     var cons = $("codeConsole");
     var btn = $("btnToggleTerm");
+    var out = $("codeOutput");
+    var bar = $("termActionBar");
     if (!cons) return;
     if (c) {
-      cons.style.flex = "0 0 28px";
-      cons.style.minHeight = "28px";
-      var out = $("codeOutput");
+      cons.style.flex = "0 0 32px";
+      cons.style.minHeight = "32px";
       if (out) out.style.display = "none";
+      if (bar) bar.style.display = "none";
       if (btn) btn.textContent = "Terminal ▸";
     } else {
-      cons.style.flex = "0 0 28%";
-      cons.style.minHeight = "100px";
-      var out2 = $("codeOutput");
-      if (out2) out2.style.display = "block";
+      cons.style.flex = "0 0 30%";
+      cons.style.minHeight = "120px";
+      if (out) out.style.display = "block";
+      if (bar) bar.style.display = "flex";
       if (btn) btn.textContent = "Terminal ▾";
     }
-    if (monacoEditor) setTimeout(function () { try { monacoEditor.layout(); } catch (e) {} }, 160);
+    layoutEditor();
   }
 
-  /* ---------- tree (VS Code style) ---------- */
+  function layoutEditor() {
+    if (monacoEditor) setTimeout(function () {
+      try { monacoEditor.layout(); } catch (e) {}
+    }, 120);
+  }
+
   function buildTree(entries) {
-    // entries: [{name, path, type}]
     var root = {};
     (entries || []).forEach(function (e) {
       var parts = e.path.split("/").filter(Boolean);
@@ -183,7 +226,7 @@ function acdIdentity() {
     Object.keys(nodeMap).sort().forEach(function (key) {
       var meta = nodeMap[key].__meta;
       var row = document.createElement("div");
-      row.style.cssText = "padding:2px 0 2px " + (depth * 10) + "px; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;";
+      row.style.cssText = "padding:3px 0 3px " + (depth * 10) + "px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
       if (meta.type === "dir") {
         row.textContent = "📁 " + meta.name;
         row.onclick = function (ev) {
@@ -200,10 +243,13 @@ function acdIdentity() {
         renderNode(wrap, meta.children, depth + 1);
       } else {
         row.textContent = "📄 " + meta.name;
-        if (meta.path === currentFile) row.style.color = "#22d3ee";
+        if (meta.path === currentFile) {
+          row.style.color = "#22d3ee";
+          row.style.fontWeight = "600";
+        }
         row.onclick = function (ev) {
           ev.stopPropagation();
-          openFile(meta.path);
+          openFile(meta.path, { silent: true });
         };
         container.appendChild(row);
       }
@@ -214,12 +260,53 @@ function acdIdentity() {
     var box = $("codeFileTree");
     if (!box) return;
     box.innerHTML = "";
-    if (!repo) {
-      box.innerHTML = "<div style='opacity:0.5'>No repo</div>";
-      return;
-    }
+
+    var repoWrap = document.createElement("div");
+    var title = document.createElement("div");
+    title.style.cssText = "opacity:0.55;margin-bottom:4px;font-size:11px;";
+    title.textContent = "REPOS";
+    repoWrap.appendChild(title);
+
     try {
-      // recursive list by walking — use flat list from root and nested
+      var data = await api("/sandbox/repos?scope=" + encodeURIComponent(scope));
+      var repos = data.repos || [];
+      if (!repos.length) {
+        var empty = document.createElement("div");
+        empty.style.opacity = "0.5";
+        empty.textContent = "No repos — + Repo";
+        repoWrap.appendChild(empty);
+      }
+      repos.forEach(function (r) {
+        var row = document.createElement("div");
+        row.style.cssText = "padding:4px 0;cursor:pointer;";
+        var active = r.name === repo;
+        row.innerHTML = (active ? "📂 " : "📁 ") +
+          "<span style='" + (active ? "color:#22d3ee;font-weight:600" : "") + "'>" +
+          escapeHtml(r.name) + "</span>" +
+          (r.start_row != null ? " <span style='opacity:0.45;font-size:10px'>r" + r.start_row + "</span>" : "");
+        row.onclick = async function () {
+          if (repo === r.name) return;
+          repo = r.name;
+          cwd = "";
+          currentFile = "";
+          var sel = $("codeRepoSelect");
+          if (sel) sel.value = repo;
+          await loadTree();
+          try { await openFile("backend/main.py", { silent: true }); }
+          catch (e) { try { await openFile("main.py", { silent: true }); } catch (e2) {} }
+        };
+        repoWrap.appendChild(row);
+      });
+    } catch (e) {}
+    box.appendChild(repoWrap);
+    if (!repo) return;
+
+    var filesTitle = document.createElement("div");
+    filesTitle.style.cssText = "opacity:0.55;margin:8px 0 4px;font-size:11px;";
+    filesTitle.textContent = "FILES · " + repo;
+    box.appendChild(filesTitle);
+
+    try {
       var all = [];
       async function walk(path) {
         var data = await api(
@@ -227,33 +314,23 @@ function acdIdentity() {
           "&repo=" + encodeURIComponent(repo) +
           "&path=" + encodeURIComponent(path || "")
         );
-        (data.entries || []).forEach(function (e) {
-          all.push(e);
-          if (e.type === "dir") {
-            // schedule nested — sequential
-          }
-        });
         for (var i = 0; i < (data.entries || []).length; i++) {
           var e = data.entries[i];
+          all.push(e);
           if (e.type === "dir") await walk(e.path);
         }
       }
       await walk("");
-      var tree = buildTree(all);
-      renderNode(box, tree, 0);
-      if (!all.length) box.innerHTML = "<div style='opacity:0.5'>Empty — use + File</div>";
-    } catch (err) {
-      writeLog("tree: " + errText(err) + "\n");
-    }
+      var treeRoot = document.createElement("div");
+      box.appendChild(treeRoot);
+      renderNode(treeRoot, buildTree(all), 0);
+    } catch (err) {}
   }
 
   function initMonaco() {
     var el = $("monacoContainer");
     if (!el) return;
-    if (monacoEditor) {
-      try { monacoEditor.layout(); } catch (e) {}
-      return;
-    }
+    if (monacoEditor) { layoutEditor(); return; }
     if (typeof require === "undefined") {
       el.innerHTML = "<p style='color:#f87171;padding:1rem'>Monaco missing — hard refresh</p>";
       return;
@@ -271,10 +348,11 @@ function acdIdentity() {
     });
   }
 
-  async function openFile(path) {
+  async function openFile(path, opts) {
+    opts = opts || {};
     if (!repo || !path) return;
     try {
-      if (monacoEditor && currentFile) {
+      if (monacoEditor && currentFile && currentFile !== path) {
         try {
           await api("/sandbox/fs/write", "POST", {
             scope: scope, repo: repo, path: currentFile,
@@ -288,17 +366,20 @@ function acdIdentity() {
         "&path=" + encodeURIComponent(path)
       );
       currentFile = path;
+      lastRunPath = path;
       if (monacoEditor) {
         monacoEditor.setValue(data.content || "");
         try {
           monaco.editor.setModelLanguage(monacoEditor.getModel(), detectLang(path));
         } catch (e) {}
+        layoutEditor();
       }
-      loadTree();
-      // only log once per open
-      writeLog("opened " + path + "\n");
+      var tab = $("codeActivePath");
+      if (tab) tab.textContent = repo + " / " + path;
+      await loadTree();
+      if (!opts.silent) writeLog("opened " + path + "\n");
     } catch (err) {
-      writeLog("open: " + errText(err) + "\n");
+      if (!opts.silent) writeLog("open: " + errText(err) + "\n");
     }
   }
 
@@ -319,37 +400,11 @@ function acdIdentity() {
     repos.forEach(function (r) {
       var o = document.createElement("option");
       o.value = r.name;
-      o.textContent = r.name;
+      o.textContent = r.name + (r.start_row != null ? " · r" + r.start_row : "");
       sel.appendChild(o);
     });
-    if (!repo || !repos.find(function (r) { return r.name === repo; })) {
-      repo = repos[0].name;
-    }
+    if (!repo || !repos.find(function (r) { return r.name === repo; })) repo = repos[0].name;
     sel.value = repo;
-  }
-
-  async function scaffoldRepo(name) {
-    // Conventional app roots
-    for (var i = 0; i < ROOT_SCAFFOLD.length; i++) {
-      var path = ROOT_SCAFFOLD[i];
-      var body = "";
-      if (path.endsWith("main.py") || path.endsWith("__init__.py")) {
-        body = path.indexOf("__init__") >= 0 ? "" : '# ' + name + '\nprint("Hello from ' + name + '")\n';
-      } else if (path.endsWith(".html")) {
-        body = "<!DOCTYPE html>\n<html><head><title>" + name + "</title></head><body><h1>" + name + "</h1></body></html>\n";
-      } else if (path.endsWith(".js")) {
-        body = "// " + path + "\nconsole.log('ok');\n";
-      } else if (path.endsWith(".css")) {
-        body = "/* " + path + " */\nbody { margin: 0; }\n";
-      } else if (path.endsWith(".md")) {
-        body = "# " + name + "\n\nAccodite Codespace repo.\n";
-      }
-      try {
-        await api("/sandbox/fs/write", "POST", {
-          scope: scope, repo: name, path: path, content: body,
-        });
-      } catch (e) {}
-    }
   }
 
   async function createRepo() {
@@ -357,59 +412,37 @@ function acdIdentity() {
     if (!name || !name.trim()) return;
     name = name.trim().replace(/\s+/g, "-");
     try {
-      var idn = acdIdentity(); await api("/sandbox/repos", "POST", { name: name, scope: scope, fullname: idn.fullname, uid: String(idn.uid) });
-    } catch (e) {
-      // if exists, still scaffold / use it
-      if (String(e.message || e).indexOf("already") < 0) {
-        writeLog("repo: " + errText(e) + "\n");
-        return;
+      var created = await api("/sandbox/repos", "POST", { name: name, scope: scope });
+      repo = name;
+      if (created.repo_uid) {
+        saveRepoUid(name, created.repo_uid);
+        writeLog("repo_uid (save): " + created.repo_uid + " · start_row=" + created.start_row + "\n");
       }
-    }
-    repo = name;
-    await scaffoldRepo(name);
-    await refreshRepos();
-    await loadTree();
-    await openFile("backend/main.py");
-    writeLog("repo " + name + " ready (backend/ frontend/ public/)\n");
-    if (typeof showRepoGsp === "function") await showRepoGsp(name);
-  }
-
-  async function ensureDefaultRepo() {
-    await refreshRepos();
-    if (!repo) {
-      try {
-        await api("/sandbox/repos", "POST", { name: "demo", scope: scope });
-      } catch (e) {}
-      repo = "demo";
-      await scaffoldRepo("demo");
+      if (typeof window.acdOnRepoCreated === "function") window.acdOnRepoCreated(created);
       await refreshRepos();
-    }
-    await loadTree();
-    // prefer backend/main.py
-    try {
-      await openFile("backend/main.py");
+      await loadTree();
+      try { await openFile("backend/main.py", { silent: true }); }
+      catch (e) { try { await openFile("main.py", { silent: true }); } catch (e2) {} }
     } catch (e) {
-      try { await openFile("main.py"); } catch (e2) {}
+      writeLog("repo: " + errText(e) + "\n");
     }
   }
 
   async function saveFile() {
-    if (!repo || !monacoEditor) return;
+    if (!repo || !monacoEditor || !currentFile) return;
     try {
       await api("/sandbox/fs/write", "POST", {
         scope: scope, repo: repo, path: currentFile,
         content: monacoEditor.getValue(),
       });
-      writeLog("saved " + currentFile + "\n");
-      await loadTree();
     } catch (e) {
       writeLog("save: " + errText(e) + "\n");
     }
   }
 
   async function newFile() {
-    if (!repo) { writeLog("create a repo first\n"); return; }
-    var name = prompt("Path (e.g. backend/api.py, public/js/x.js):", "backend/app.py");
+    if (!repo) { writeLog("select or create a repo first\n"); return; }
+    var name = prompt("Path (e.g. backend/api.py):", "backend/app.py");
     if (!name || !name.trim()) return;
     var path = name.trim().replace(/^\/+/, "");
     var ext = path.includes(".") ? "." + path.split(".").pop() : ".py";
@@ -422,9 +455,7 @@ function acdIdentity() {
       await api("/sandbox/fs/write", "POST", {
         scope: scope, repo: repo, path: path, content: body,
       });
-      currentFile = path;
-      await loadTree();
-      await openFile(path);
+      await openFile(path, { silent: true });
     } catch (e) {
       writeLog("file: " + errText(e) + "\n");
     }
@@ -432,17 +463,15 @@ function acdIdentity() {
 
   async function newFolder() {
     if (!repo) return;
-    var name = prompt("Folder path (e.g. backend/api, public/assets):", "backend/api");
+    var name = prompt("Folder path (e.g. backend/api):", "backend/api");
     if (!name || !name.trim()) return;
     var path = name.trim().replace(/^\/+/, "");
     try {
       await api("/sandbox/fs/mkdir", "POST", { scope: scope, repo: repo, path: path });
-      // placeholder so tree shows
       await api("/sandbox/fs/write", "POST", {
         scope: scope, repo: repo, path: path + "/.keep", content: "",
       });
       await loadTree();
-      writeLog("mkdir " + path + "\n");
     } catch (e) {
       writeLog("mkdir: " + errText(e) + "\n");
     }
@@ -451,21 +480,23 @@ function acdIdentity() {
   async function pushRepo() {
     if (!repo) return;
     await saveFile();
+    var key = getRepoUid(repo) || prompt("repo_uid for " + repo + ":", "");
+    if (!key) { writeLog("push needs repo_uid\n"); return; }
+    saveRepoUid(repo, key);
+    var msg = prompt("Push message:", "codespace snapshot") || "push";
     try {
       var data = await api("/sandbox/repos/" + encodeURIComponent(repo) + "/push", "POST", {
-        scope: scope, repo: repo, message: "codespace snapshot",
+        scope: scope, repo: repo, repo_uid: key, message: msg,
       });
-      writeLog("push ok · " + (data.files || 0) + " files\n");
+      writeLog("push ok · start_row=" + (data.start_row || "?") + "\n");
     } catch (e) {
       writeLog("push: " + errText(e) + "\n");
     }
   }
 
-  async function runActive() {
-    if (!monacoEditor) {
-      writeLog("editor not ready\n");
-      return;
-    }
+  async function runEditor() {
+    if (!monacoEditor) { writeLog("editor not ready\n"); return; }
+    if (!currentFile) { writeLog("open a file first\n"); return; }
     await saveFile();
     var source = monacoEditor.getValue();
     var lang = detectLang(currentFile);
@@ -477,6 +508,7 @@ function acdIdentity() {
     if (lang === "shell") lang = "bash";
     if (lang === "plaintext") lang = "python";
     writeLog("$ run " + currentFile + "\n");
+    lastRunPath = currentFile;
     try {
       var data = await api("/sandbox/run", "POST", {
         source: source,
@@ -494,6 +526,19 @@ function acdIdentity() {
     }
   }
 
+  async function runTerminal() {
+    if (cmdBuf && cmdBuf.trim()) {
+      var line = cmdBuf.trim();
+      cmdBuf = "";
+      var ghost = $("termGhostInput");
+      if (ghost) ghost.value = "";
+      paintTerm();
+      await onCommand(line);
+      return;
+    }
+    await runEditor();
+  }
+
   async function onCommand(line) {
     line = (line || "").trim();
     if (!line) return;
@@ -502,15 +547,18 @@ function acdIdentity() {
     var cmd = parts[0].toLowerCase();
     var arg = parts.slice(1).join(" ");
 
+    if (typeof window.acdGspTermCommand === "function") {
+      var handled = await window.acdGspTermCommand(cmd, parts, {
+        repo: repo, scope: scope, api: api, writeLog: writeLog, errText: errText, arg: arg
+      });
+      if (handled) return;
+    }
+
     if (cmd === "help") {
-      writeLog("pwd  ls  cd  cat  run  clear  help  mkdir  touch\n");
+      writeLog("pwd ls cd cat run clear help mkdir touch\nkey <uid>  push|commit [msg]\n");
       return;
     }
-    if (cmd === "clear") {
-      logLines = [];
-      paintTerm();
-      return;
-    }
+    if (cmd === "clear") { logLines = []; paintTerm(); return; }
     if (cmd === "pwd") {
       writeLog("/" + (repo || "") + (cwd ? "/" + cwd : "") + "\n");
       return;
@@ -526,21 +574,14 @@ function acdIdentity() {
           return e.type === "dir" ? e.name + "/" : e.name;
         });
         writeLog((names.join("  ") || "(empty)") + "\n");
-      } catch (e) {
-        writeLog(errText(e) + "\n");
-      }
+      } catch (e) { writeLog(errText(e) + "\n"); }
       return;
     }
     if (cmd === "cd") {
       if (!arg || arg === "/") cwd = "";
       else if (arg === "..") {
-        var p = cwd.split("/").filter(Boolean);
-        p.pop();
-        cwd = p.join("/");
-      } else {
-        cwd = cwd ? cwd + "/" + arg.replace(/^\/+/, "") : arg.replace(/^\/+/, "");
-      }
-      writeLog("");
+        var p = cwd.split("/").filter(Boolean); p.pop(); cwd = p.join("/");
+      } else cwd = cwd ? cwd + "/" + arg.replace(/^\/+/, "") : arg.replace(/^\/+/, "");
       return;
     }
     if (cmd === "cat" && arg) {
@@ -552,17 +593,42 @@ function acdIdentity() {
           "&path=" + encodeURIComponent(path)
         );
         writeLog(data.content + (String(data.content).endsWith("\n") ? "" : "\n"));
-      } catch (e) {
-        writeLog(errText(e) + "\n");
-      }
+      } catch (e) { writeLog(errText(e) + "\n"); }
       return;
     }
     if (cmd === "run") {
       if (arg) {
         var rp = cwd ? cwd + "/" + arg : arg;
-        await openFile(rp);
+        await openFile(rp, { silent: true });
       }
-      await runActive();
+      await runEditor();
+      return;
+    }
+    if (cmd === "key" || cmd === "uid") {
+      if (!repo) { writeLog("no repo\n"); return; }
+      if (arg) { saveRepoUid(repo, arg.trim()); writeLog("uid set\n"); return; }
+      writeLog(getRepoUid(repo) ? "uid in session\n" : "no uid\n");
+      return;
+    }
+    if (cmd === "push" || cmd === "commit") {
+      if (!repo) { writeLog("no repo\n"); return; }
+      var key = getRepoUid(repo);
+      var msg = arg || (cmd + " from codespace");
+      if (parts[1] && /^[a-f0-9]{16,}$/i.test(parts[1])) {
+        key = parts[1]; saveRepoUid(repo, key);
+        msg = parts.slice(2).join(" ").trim() || msg;
+      }
+      if (!key) {
+        key = prompt("repo_uid:", "") || "";
+        if (!key) { writeLog("needs repo_uid\n"); return; }
+        saveRepoUid(repo, key);
+      }
+      try {
+        var data = await api("/sandbox/repos/" + encodeURIComponent(repo) + "/" + cmd, "POST", {
+          scope: scope, repo: repo, repo_uid: key, message: msg,
+        });
+        writeLog(cmd + " ok · start_row=" + (data.start_row || "?") + "\n");
+      } catch (e) { writeLog(cmd + ": " + errText(e) + "\n"); }
       return;
     }
     if (cmd === "mkdir" && arg) {
@@ -571,7 +637,6 @@ function acdIdentity() {
         await api("/sandbox/fs/mkdir", "POST", { scope: scope, repo: repo, path: mp });
         await api("/sandbox/fs/write", "POST", { scope: scope, repo: repo, path: mp + "/.keep", content: "" });
         await loadTree();
-        writeLog("mkdir " + mp + "\n");
       } catch (e) { writeLog(errText(e) + "\n"); }
       return;
     }
@@ -579,40 +644,11 @@ function acdIdentity() {
       var tp = cwd ? cwd + "/" + arg : arg;
       try {
         await api("/sandbox/fs/write", "POST", { scope: scope, repo: repo, path: tp, content: "" });
-        await loadTree();
-        writeLog("touch " + tp + "\n");
+        await openFile(tp, { silent: true });
       } catch (e) { writeLog(errText(e) + "\n"); }
       return;
     }
-    writeLog("unknown: " + cmd + " (try help)\n");
-  }
-
-  function onTermKey(e) {
-    if (!termFocused) return;
-    if (e.key === "Enter") {
-      e.preventDefault();
-      var line = cmdBuf;
-      cmdBuf = "";
-      paintTerm();
-      onCommand(line);
-      return;
-    }
-    if (e.key === "Backspace") {
-      e.preventDefault();
-      cmdBuf = cmdBuf.slice(0, -1);
-      paintTerm();
-      return;
-    }
-    if (e.key === "Escape") {
-      cmdBuf = "";
-      paintTerm();
-      return;
-    }
-    if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
-      e.preventDefault();
-      cmdBuf += e.key;
-      paintTerm();
-    }
+    writeLog("unknown: " + cmd + " (help)\n");
   }
 
   function goHome() {
@@ -626,28 +662,35 @@ function acdIdentity() {
     if (!panel) return;
     panel.style.setProperty("display", "flex", "important");
     panel.style.flexDirection = "column";
+    ensureGhostInput();
     setSidebar(true);
     setTermCollapsed(false);
     initMonaco();
     try {
-      await ensureDefaultRepo();
+      await refreshRepos();
+      await loadTree();
+      if (repo) {
+        try { await openFile("backend/main.py", { silent: true }); }
+        catch (e) { try { await openFile("main.py", { silent: true }); } catch (e2) {} }
+      }
     } catch (e) {
       writeLog("boot: " + errText(e) + "\n");
     }
     setTimeout(function () {
-      if (monacoEditor) try { monacoEditor.layout(); } catch (e) {}
+      layoutEditor();
       focusTerm();
-    }, 150);
+    }, 200);
   }
 
   function bind() {
     var panel = $("codePanel");
     if (panel) panel.style.setProperty("display", "none", "important");
+    ensureGhostInput();
 
     function wire(id, fn) {
       var el = $(id);
       if (el) el.onclick = function (e) {
-       e.preventDefault();
+        e.preventDefault();
         e.stopPropagation();
         fn();
       };
@@ -655,7 +698,8 @@ function acdIdentity() {
 
     wire("btnCodeBack", goHome);
     wire("btnCloseCode", goHome);
-    wire("btnRunCode", runActive);
+    wire("btnRunCode", runEditor);
+    wire("btnTermRun", runTerminal);
     wire("btnNewRepo", createRepo);
     wire("btnNewFile", newFile);
     wire("btnNewFolder", newFolder);
@@ -671,81 +715,43 @@ function acdIdentity() {
       sel.onchange = async function () {
         repo = sel.value || null;
         cwd = "";
+        currentFile = "";
         await loadTree();
-        try { await openFile("backend/main.py"); } catch (e) {}
+        try { await openFile("backend/main.py", { silent: true }); } catch (e) {}
       };
     }
 
     var out = $("codeOutput");
     if (out) {
-      out.addEventListener("click", focusTerm);
-      out.addEventListener("focus", function () { termFocused = true; paintTerm(); });
-      out.addEventListener("blur", function () { termFocused = false; paintTerm(); });
+      out.addEventListener("click", function (e) {
+        e.preventDefault();
+        focusTerm();
+      });
+      out.addEventListener("touchend", function (e) {
+        e.preventDefault();
+        focusTerm();
+      });
     }
-    document.addEventListener("keydown", function (e) {
-      var panel = $("codePanel");
-      if (!panel || panel.style.display === "none") return;
-      // don't steal keys from Monaco
-      var ae = document.activeElement;
-      if (ae && (ae.closest && ae.closest(".monaco-editor"))) return;
-      if (ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.tagName === "SELECT")) return;
-      if (!termFocused && e.target !== out) return;
-      onTermKey(e);
-    });
 
-    writeLog("Codespace ready · click terminal · type help\n");
+    var mon = $("monacoContainer");
+    if (mon) {
+      mon.addEventListener("mousedown", function () { blurTerm(); });
+      mon.addEventListener("touchstart", function () { blurTerm(); }, { passive: true });
+    }
+
+    writeLog("Codespace · tap terminal to type · help\n");
     paintTerm();
   }
-
-  
-
-  // ACCD-GSP-SHOW
-  async function showRepoGsp(name) {
-    try {
-      var g = await api("/sandbox/repos/" + encodeURIComponent(name) + "/gsp?scope=" + encodeURIComponent(scope));
-      writeLog("GSP start_row=" + g.start_row + " root=" + g.root_key +
-        " splits=" + (g.splits || []).map(function (s) { return "k" + s.k + "@(" + s.row + "," + s.col + ")"; }).join(" ") + "\n");
-    } catch (e) {}
-  }
-  window.acdShowRepoGsp = showRepoGsp;
 
   window.openCodePanel = showPanel;
   window.closeCodePanel = goHome;
   window.hideCodeScreen = goHome;
+  window.acdSaveRepoUid = saveRepoUid;
+  window.acdGetRepoUid = getRepoUid;
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", bind);
   } else {
     bind();
-  }
-})();
-
-
-// ============================================================
-// ACCD-GSP-UID-EOF — start_row only; name + repo_uid for push/commit
-// ============================================================
-(function () {
-  function patchCreate() {
-    if (typeof window.createRepo === "function" || false) return;
-  }
-  // Wrap fetch-free: hook acdOnRepoCreated after any success path that sets window.__lastRepoCreate
-  var _fetch = window.fetch;
-  if (_fetch && !window.__acdGspFetchPatched) {
-    window.__acdGspFetchPatched = true;
-    window.fetch = async function (url, opts) {
-      var res = await _fetch.apply(this, arguments);
-      try {
-        var u = String(url || "");
-        if (u.indexOf("/sandbox/repos") >= 0 && (!opts || (opts.method || "GET").toUpperCase() === "POST") && u.indexOf("/push") < 0 && u.indexOf("/commit") < 0) {
-          var clone = res.clone();
-          clone.json().then(function (data) {
-            if (data && data.repo_uid && typeof window.acdOnRepoCreated === "function") {
-              window.acdOnRepoCreated(data);
-            }
-          }).catch(function () {});
-        }
-      } catch (e) {}
-      return res;
-    };
   }
 })();

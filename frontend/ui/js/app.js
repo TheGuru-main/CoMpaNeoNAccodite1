@@ -5228,3 +5228,67 @@ document.addEventListener("DOMContentLoaded", () => {
   document.addEventListener("DOMContentLoaded", acdForceRoomInput);
   setTimeout(acdForceRoomInput, 200);
 })();
+
+
+// ============================================================
+// ACCD-USER-BUBBLE-FIX
+// Owner prompt must paint immediately (dept/org/solo).
+// Do not wait for WS or room reload.
+// ============================================================
+(function () {
+  function forceUserBubble(text) {
+    var chatBox = document.getElementById("chatBox");
+    if (!chatBox || !text) return null;
+    var id = "local-" + Date.now() + "-" + Math.random().toString(36).slice(2, 7);
+    var div = document.createElement("div");
+    div.className = "message user";
+    div.dataset.messageId = id;
+    div.style.display = "block";
+    div.style.visibility = "visible";
+    div.style.opacity = "1";
+    var name = (typeof currentUser !== "undefined" && currentUser && (currentUser.full_name || currentUser.phone)) || "You";
+    // plain structure so CSS .message.user applies
+    var body = document.createElement("div");
+    body.className = "msg-body";
+    body.textContent = text;
+    div.appendChild(body);
+    chatBox.appendChild(div);
+    chatBox.scrollTop = chatBox.scrollHeight;
+    if (typeof _renderedIds !== "undefined" && _renderedIds && _renderedIds.add) {
+      _renderedIds.add(id);
+    }
+    return { el: div, id: id };
+  }
+
+  if (typeof sendMessage === "function") {
+    var _sm = sendMessage;
+    sendMessage = async function (text, isFirst) {
+      var painted = null;
+      if (text && String(text).trim() && !isFirst) {
+        painted = forceUserBubble(String(text).trim());
+      }
+      try {
+        var result = await _sm.apply(this, arguments);
+        // bind server id if returned
+        if (painted && result && result.id && painted.el) {
+          painted.el.dataset.messageId = result.id;
+          if (typeof _renderedIds !== "undefined" && _renderedIds) _renderedIds.add(result.id);
+        }
+        // if inner path skipped optimistic and also skipped append, keep our bubble
+        return result;
+      } catch (e) {
+        if (!painted) forceUserBubble(String(text || "").trim());
+        throw e;
+      }
+    };
+  }
+
+  // Also guard btnSend in case it bypasses sendMessage
+  document.addEventListener("click", function (ev) {
+    var t = ev.target;
+    if (!t) return;
+    var btn = t.id === "btnSend" ? t : (t.closest && t.closest("#btnSend"));
+    // don't double-handle; sendMessage wrapper covers normal path
+  }, true);
+})();
+

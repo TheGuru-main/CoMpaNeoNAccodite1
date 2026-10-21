@@ -143,6 +143,7 @@ class RunRequest(BaseModel):
     timeout_s: int = Field(15, ge=1, le=60)
     memory_mb: int = Field(256, ge=64, le=1024)
     repo: Optional[str] = Field(None, max_length=64)
+    network: bool = False
 
 
 class RunResponse(BaseModel):
@@ -179,7 +180,7 @@ async def run_code(req: RunRequest):
         except Exception:
             pass
 
-    runner = SandboxRunner(timeout_s=req.timeout_s, memory_mb=req.memory_mb)
+    runner = SandboxRunner(timeout_s=req.timeout_s, memory_mb=req.memory_mb, network=bool(getattr(req, 'network', False)))
     result = runner.run_code(
         source=req.source,
         filename=req.filename,
@@ -438,4 +439,76 @@ async def commit_repo(name: str, req: CommitRequest):
         "start_row": meta.get("start_row"),
         "root_key": meta.get("root_key"),
         "note": "commit accepted (name + uid verified)",
+    }
+
+class FsDelete(BaseModel):
+    scope: str = Field("user", pattern="^(user|org|ai)$")
+    repo: str = Field(..., min_length=1, max_length=64)
+    path: str = Field(..., min_length=1, max_length=512)
+
+@router.post("/fs/delete")
+async def fs_delete(req: FsDelete):
+    rdir = _repo_dir(req.scope, req.repo)
+    if not rdir.exists():
+        raise HTTPException(404, "repo not found")
+    rel = _safe_rel(req.path)
+    if not rel:
+        raise HTTPException(400, "path required")
+    target = rdir / rel
+    if not target.exists():
+        raise HTTPException(404, "path not found")
+    if target.name in (".gsp.json", ".accd_push_log", ".accd_commit_log"):
+        raise HTTPException(403, "protected path")
+    if target.is_dir():
+        shutil.rmtree(target)
+    else:
+        target.unlink()
+    return {"ok": True, "path": rel}
+
+_BLOCKED = __import__("re").compile(
+    r"(rm\s+-rf\s+/|mkfs|dd\s+if=|shutdown|reboot|passwd\b)",
+    __import__("re").I,
+)
+
+class ExecRequest(BaseModel):
+    command: str = Field(..., min_length=1, max_length=4000)
+    scope: str = Field("user", pattern="^(user|org|ai)$")
+    repo: Optional[str] = Field(None, max_length=64)
+    network: bool = True
+    timeout_s: int = Field(120, ge=5, le=300)
+    memory_mb: int = Field(512, ge=128, le=2048)
+
+@router.post("/exec")
+async def sandbox_exec(req: ExecRequest):
+    cmd = (req.command or "").strip()
+    if not cmd:
+        raise HTTPException(400, "empty command")
+    if _BLOCKED.search(cmd):
+        raise HTTPException(400, "command blocked")
+    workdir = None
+    if req.repo:
+        rdir = _repo_dir(req.scope, req.repo)
+        if not rdir.exists():
+            raise HTTPException(404, "repo not found — create repo first")
+        workdir = str(rdir.resolve())
+    runner = SandboxRunner(
+        timeout_s=req.timeout_s,
+        memory_mb=req.memory_mb,
+        network=bool(req.network),
+    )
+    if not hasattr(runner, "run_shell"):
+        raise HTTPException(501, "runner missing run_shell — deploy network runner.py")
+    result = runner.run_shell(command=cmd, workdir=workdir)
+    return {
+        "ok": result.ok,
+        "backend": result.backend,
+        "exit_code": result.exit_code,
+        "stdout": result.stdout or "",
+        "stderr": result.stderr or "",
+        "duration_s": result.duration_s,
+        "timed_out": result.timed_out,
+        "error": result.error,
+        "network": getattr(result, "network", False),
+        "repo": req.repo,
+        "scope": req.scope,
     }

@@ -96,12 +96,14 @@ class SandboxRunner:
         timeout_s: int = 15,
         memory_mb: int = 256,
         cpus: float = 1.0,
-        prefer: Optional[str] = None,   # "docker" | "bwrap" | "subprocess"
+        prefer: Optional[str] = None,
+        network: bool = False,
     ):
         self.timeout_s = int(timeout_s)
         self.memory_mb = int(memory_mb)
         self.cpus = float(cpus)
         self.prefer = prefer
+        self.network = bool(network)
         self._docker = shutil.which("docker")
         self._bwrap = shutil.which("bwrap")
 
@@ -152,7 +154,7 @@ class SandboxRunner:
 
             docker_cmd = [
                 "docker", "run", "--rm",
-                "--network", "none",
+                *(["--network", "bridge"] if self.network else ["--network", "none"]),
                 "--memory", f"{self.memory_mb}m",
                 "--cpus", str(self.cpus),
                 "--read-only",
@@ -273,3 +275,46 @@ class SandboxRunner:
         except Exception as e:
             return RunResult(ok=False, backend=backend,
                              error=f"{type(e).__name__}: {e}")
+
+    def run_shell(self, *, command: str, workdir: Optional[str] = None, env: Optional[Dict[str, str]] = None) -> "RunResult":
+        """Run bash -lc in workdir. network=True uses docker bridge when docker is available."""
+        import os
+        cwd = workdir or tempfile.mkdtemp(prefix="accd-shell-")
+        owned = workdir is None
+        try:
+            os.makedirs(cwd, exist_ok=True)
+            if self._docker:
+                net = ["--network", "bridge"] if self.network else ["--network", "none"]
+                image = os.environ.get("ACCD_SHELL_IMAGE", "python:3.12-slim")
+                docker_cmd = [
+                    "docker", "run", "--rm", *net,
+                    "--memory", f"{self.memory_mb}m",
+                    "--cpus", str(self.cpus),
+                    "-v", f"{cwd}:/workspace:rw",
+                    "-w", "/workspace",
+                    image, "bash", "-lc", command,
+                ]
+                return self._exec(docker_cmd, backend="docker")
+            full_env = os.environ.copy()
+            if env:
+                full_env.update(env)
+            t0 = time.time()
+            try:
+                proc = subprocess.run(
+                    ["bash", "-lc", command],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    text=True, timeout=self.timeout_s, cwd=cwd, env=full_env,
+                )
+                return RunResult(
+                    ok=(proc.returncode == 0), backend="subprocess",
+                    exit_code=proc.returncode,
+                    stdout=(proc.stdout or "")[-20000:],
+                    stderr=(proc.stderr or "")[-20000:],
+                    duration_s=round(time.time() - t0, 3),
+                )
+            except subprocess.TimeoutExpired:
+                return RunResult(ok=False, backend="subprocess", exit_code=-1,
+                                 stderr="Sandbox timeout", duration_s=round(time.time() - t0, 3), timed_out=True)
+        finally:
+            if owned:
+                shutil.rmtree(cwd, ignore_errors=True)

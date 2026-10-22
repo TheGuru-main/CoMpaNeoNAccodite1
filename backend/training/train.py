@@ -98,7 +98,10 @@ def iter_memorygrid_documents(
     if _store is None:
         return
 
-    _iterable = _store.values() if hasattr(_store, "values") else _store
+    # ACCD-MG-ITER-SNAPSHOT
+    # Freeze document list so concurrent grid writes cannot mutate during iteration.
+    # Does not change MemoryGrid storage, GSP, crawl, or training math.
+    _iterable = list(_store.values()) if hasattr(_store, "values") else list(_store)
 
     for document in _iterable:
 

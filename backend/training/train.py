@@ -1,4 +1,5 @@
 from __future__ import annotations
+import re
 
 import os
 import json
@@ -181,30 +182,34 @@ def load_texts_from_memorygrid(
         # MemoryGrid normally already contains tokenizer output.
         # --------------------------------------------------------------
 
-        if isinstance(
-            stored_tokens,
-            list,
-        ) and stored_tokens:
-
+        # ACCD-KEEP-CRAWLED-TEXT
+        # Usable record == crawled text on the grid. Do not drop docs when
+        # tokenizer returns empty; fall back to whitespace words so the full
+        # document text still enters training (architecture unchanged).
+        if isinstance(stored_tokens, list) and stored_tokens:
             tokens = stored_tokens
-
         else:
-
-            tokens = tokenize(
-                text,
-                language,
-            )
+            try:
+                tokens = tokenize(text, language)
+            except Exception:
+                tokens = []
+            if not tokens:
+                tokens = []
+                for w in re.findall(r"\S+", text):
+                    tokens.append({
+                        "original": w,
+                        "normalized": w,
+                        "stem": w,
+                    })
 
         if not tokens:
+            # truly empty after fallback — only then skip
             continue
 
         training_records.append({
             "text": text,
             "lang": language,
-            "source": document.get(
-                "source",
-                "",
-            ),
+            "source": document.get("source", ""),
             "tokens": tokens,
         })
 

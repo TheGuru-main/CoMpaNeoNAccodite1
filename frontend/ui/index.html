@@ -288,7 +288,7 @@
                     <i class="fa-solid fa-users"></i> <span id="chipMemberCount">0</span>
                 </button>
             </div>
-            <footer class="input-area" id="inputArea" data-home-hide="1" style="display:none !important;">
+            <footer class="input-area" id="inputArea" hidden data-home-hide="1">
                 <div class="ws-composer-box">
                     <div class="ws-attach-row" role="toolbar" aria-label="Attachments">
                         <button type="button" id="btnAttachImage" class="icon-btn attach-btn" title="Image">
@@ -320,12 +320,14 @@
             <!-- Voice recording overlay -->
             <div id="voiceOverlay" class="voice-overlay" style="display:none;">
                 <div class="voice-overlay-inner">
-                    <div class="voice-dot"></div>
+                    <div class="voice-dot" id="voiceDot"></div>
                     <div class="voice-time" id="voiceTimer">0:00</div>
-                    <div class="voice-hint">Recording — tap to stop and send</div>
+                    <canvas id="voiceLevelCanvas" width="280" height="48" aria-label="Voice level"></canvas>
+                    <audio id="voicePreview" controls style="display:none;width:100%;margin-top:8px;"></audio>
+                    <div class="voice-hint" id="voiceHint">Recording — Send or main Send posts the note</div>
                     <div class="voice-actions">
-                        <button id="btnVoiceCancel" class="primary-btn secondary-btn" style="flex:1;">Cancel</button>
-                        <button id="btnVoiceStop" class="primary-btn" style="flex:1;">Send</button>
+                        <button type="button" id="btnVoiceCancel" class="primary-btn secondary-btn" style="flex:1;">Cancel</button>
+                        <button type="button" id="btnVoiceStop" class="primary-btn" style="flex:1;">Send note</button>
                     </div>
                 </div>
             </div>
@@ -498,6 +500,27 @@
                 </div>
             </div>
 
+        </div>
+
+
+        <!-- IMAGE INSPECT: crop + tag before room post -->
+        <div id="imageInspectModal" class="modal" style="display:none;">
+            <div class="modal-content" style="max-width:min(96vw,520px);">
+                <h3><i class="fa-solid fa-crop"></i> Inspect image</h3>
+                <div class="img-inspect-stage">
+                    <canvas id="imgInspectCanvas" style="max-width:100%;display:block;margin:0 auto;background:#0b1220;"></canvas>
+                </div>
+                <div class="img-inspect-tools" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;">
+                    <label style="font-size:.8rem;opacity:.75;">Crop margin %
+                      <input type="range" id="imgCropMargin" min="0" max="40" value="0" />
+                    </label>
+                    <input type="text" id="imgTagComment" placeholder="Tag / comment (optional)" maxlength="500" style="flex:1;min-width:160px;" />
+                </div>
+                <div style="display:flex;gap:0.5rem;margin-top:0.75rem;">
+                    <button type="button" id="btnImgInspectCancel" class="primary-btn secondary-btn" style="flex:1;">Cancel</button>
+                    <button type="button" id="btnImgInspectSend" class="primary-btn" style="flex:1;">Send to room</button>
+                </div>
+            </div>
         </div>
 
         <!-- Org Screen -->

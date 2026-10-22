@@ -1296,6 +1296,11 @@ async function copyOrgCredential() {
         return;
     }
     btn.addEventListener('click', () => {
+        // ACCD: while recording, main Send posts the voice note
+        if (typeof _mediaRecorder !== 'undefined' && _mediaRecorder) {
+            stopVoiceRecording(true);
+            return;
+        }
         const v = (input && input.value) || '';
         if (!v.trim()) return;
         if (input) input.value = '';
@@ -1690,20 +1695,32 @@ function updateInputVisibility() {
     const chips = document.getElementById('roomChips');
     const onMain = document.getElementById('mainScreen')?.classList.contains('active');
     const room = roomList.find(r => r.id === currentRoomId);
+    const active = !!(onMain && currentRoomId);
 
-    if (!onMain || !currentRoomId) {
-        // INPUT-HARD-DISPLAY
-        if (inputArea) inputArea.style.setProperty('display', 'none', 'important');
-        if (chips) chips.style.setProperty('display', 'none', 'important');
-        return;
+    document.body.classList.toggle('ws-room-active', active);
+    document.body.classList.toggle('ws-home', !active);
+
+    if (inputArea) {
+        if (active) inputArea.removeAttribute('hidden');
+        else inputArea.setAttribute('hidden', '');
+        // clear any leftover inline display fights
+        inputArea.style.removeProperty('display');
     }
-    if (inputArea) inputArea.style.setProperty('display', 'flex', 'important');
     if (chips) {
-        const isPrivate = room && room.workspace_type === 'personal_brainstorm';
-        chips.style.display = isPrivate ? 'none' : 'flex';
-        const cnt = document.getElementById('chipMemberCount');
-        if (cnt && room) cnt.textContent = String(room.member_count || 1);
+        if (!active) {
+            chips.style.display = 'none';
+        } else {
+            const isPrivate = room && room.workspace_type === 'personal_brainstorm';
+            chips.style.display = isPrivate ? 'none' : 'flex';
+            const cnt = document.getElementById('chipMemberCount');
+            if (cnt && room) cnt.textContent = String(room.member_count || 1);
+        }
     }
+    // header calls only in room
+    ['btnVoiceCall', 'btnVideoCall'].forEach(function (id) {
+        const el = document.getElementById(id);
+        if (el) el.style.display = active ? '' : 'none';
+    });
 }
 
 // show/hide based on screen
@@ -2675,17 +2692,15 @@ function renderAttachment(att) {
             const f = input.files && input.files[0];
             input.value = '';
             if (!f) return;
-            btn.disabled = true;
-            const original = btn.innerHTML;
-            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-            try {
-                const up = await uploadImage(f);
-                await postMessageWithAttachment({ text: '', attachmentId: up.id });
-            } catch (e) {
-                alert(`Image upload failed: ${e.message}`);
-            } finally {
-                btn.disabled = false;
-                btn.innerHTML = original;
+            if (typeof openImageInspect === 'function') {
+                openImageInspect(f);
+            } else {
+                try {
+                    const up = await uploadImage(f);
+                    await postMessageWithAttachment({ text: '', attachmentId: up.id });
+                } catch (e) {
+                    alert(`Image upload failed: ${e.message}`);
+                }
             }
         });
     }
@@ -2702,6 +2717,10 @@ let _mediaChunks = [];
 let _mediaStream = null;
 let _voiceStart = 0;
 let _voiceTimerHandle = null;
+let _voiceAnalyser = null;
+let _voiceRaf = null;
+let _voiceAudioCtx = null;
+let _pendingVoiceBlob = null;
 
 function _voiceTimerUpdate() {
     const el = document.getElementById('voiceTimer');
@@ -2746,6 +2765,37 @@ async function startVoiceRecording() {
         });
         _mediaRecorder = mr;
         mr.start();
+        _pendingVoiceBlob = null;
+        try {
+            _voiceAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const src = _voiceAudioCtx.createMediaStreamSource(stream);
+            _voiceAnalyser = _voiceAudioCtx.createAnalyser();
+            _voiceAnalyser.fftSize = 256;
+            src.connect(_voiceAnalyser);
+            const canvas = document.getElementById('voiceLevelCanvas');
+            const prev = document.getElementById('voicePreview');
+            if (prev) { prev.style.display = 'none'; prev.removeAttribute('src'); }
+            const hint = document.getElementById('voiceHint');
+            if (hint) hint.textContent = 'Recording — main Send or Send note posts the clip';
+            function drawLevel() {
+                if (!_voiceAnalyser || !canvas) return;
+                const ctx = canvas.getContext('2d');
+                const buf = new Uint8Array(_voiceAnalyser.frequencyBinCount);
+                _voiceAnalyser.getByteFrequencyData(buf);
+                ctx.fillStyle = '#0b1220';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                const n = buf.length;
+                const w = canvas.width / n;
+                for (let i = 0; i < n; i++) {
+                    const h = (buf[i] / 255) * canvas.height;
+                    ctx.fillStyle = '#00ffaa';
+                    ctx.fillRect(i * w, canvas.height - h, Math.max(1, w - 1), h);
+                }
+                _voiceRaf = requestAnimationFrame(drawLevel);
+            }
+            if (_voiceRaf) cancelAnimationFrame(_voiceRaf);
+            drawLevel();
+        } catch (_) {}
 
         _voiceStart = Date.now();
         document.getElementById('voiceOverlay').style.display = 'flex';
@@ -2760,6 +2810,10 @@ function _stopVoiceTracks() {
     try { _mediaStream && _mediaStream.getTracks().forEach(t => t.stop()); } catch (_) {}
     _mediaStream = null;
     if (_voiceTimerHandle) { clearInterval(_voiceTimerHandle); _voiceTimerHandle = null; }
+    if (_voiceRaf) { cancelAnimationFrame(_voiceRaf); _voiceRaf = null; }
+    _voiceAnalyser = null;
+    try { _voiceAudioCtx && _voiceAudioCtx.close(); } catch (_) {}
+    _voiceAudioCtx = null;
 }
 
 async function stopVoiceRecording(send = true) {
@@ -5312,5 +5366,150 @@ document.addEventListener("DOMContentLoaded", () => {
     if (vc) vc.onclick = function () { console.log("voice-call stub"); };
     if (vd) vd.onclick = function () { console.log("video-call stub"); };
   });
+})();
+
+// ACCD-FILE-VIDEO-UPLOAD — same main payload path as image/voice
+async function uploadGenericFile(file, kind) {
+    const fd = new FormData();
+    fd.append('file', file, file.name || (kind + '.bin'));
+    const path = kind === 'video' ? '/uploads/video' : (kind === 'file' ? '/uploads/file' : '/uploads/image');
+    let res = await fetch(_apiBase() + path, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${authToken}` },
+        body: fd,
+    });
+    // fallback: reuse image endpoint if specialized route missing
+    if (res.status === 404 && path !== '/uploads/image') {
+        res = await fetch(_apiBase() + '/uploads/image', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${authToken}` },
+            body: fd,
+        });
+    }
+    const text = await res.text();
+    if (!res.ok) throw new Error(res.status + ' ' + text.slice(0, 200));
+    return JSON.parse(text);
+}
+
+(function wireFileVideoAttach() {
+    function bind(btnId, inputId, kind) {
+        const btn = document.getElementById(btnId);
+        const input = document.getElementById(inputId);
+        if (!btn || !input) return;
+        btn.addEventListener('click', () => input.click());
+        input.addEventListener('change', async () => {
+            const f = input.files && input.files[0];
+            input.value = '';
+            if (!f) return;
+            if (!currentRoomId) { alert('Open a room first.'); return; }
+            btn.disabled = true;
+            try {
+                const up = await uploadGenericFile(f, kind);
+                await postMessageWithAttachment({ text: '', attachmentId: up.id });
+            } catch (e) {
+                alert(kind + ' upload failed: ' + e.message);
+            } finally {
+                btn.disabled = false;
+            }
+        });
+    }
+    bind('btnAttachFile', 'fileInput', 'file');
+    bind('btnShareVideo', 'videoInput', 'video');
+})();
+
+// ============================================================================
+// ACCD-VOICE-READER-IMG-INSPECT
+// ============================================================================
+let _imgInspectSource = null; // HTMLImageElement
+let _imgInspectFile = null;
+
+function openImageInspect(file) {
+    if (!currentRoomId) { alert('Open a room first.'); return; }
+    _imgInspectFile = file;
+    const modal = document.getElementById('imageInspectModal');
+    const canvas = document.getElementById('imgInspectCanvas');
+    const tag = document.getElementById('imgTagComment');
+    const range = document.getElementById('imgCropMargin');
+    if (!modal || !canvas) return;
+    if (tag) tag.value = '';
+    if (range) range.value = '0';
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = function () {
+        _imgInspectSource = img;
+        drawImageInspect();
+        URL.revokeObjectURL(url);
+        modal.style.display = 'flex';
+    };
+    img.onerror = function () {
+        URL.revokeObjectURL(url);
+        alert('Could not load image for inspect');
+    };
+    img.src = url;
+}
+
+function drawImageInspect() {
+    const canvas = document.getElementById('imgInspectCanvas');
+    const range = document.getElementById('imgCropMargin');
+    const img = _imgInspectSource;
+    if (!canvas || !img) return;
+    const marginPct = Math.max(0, Math.min(40, Number(range && range.value) || 0)) / 100;
+    const sw = img.naturalWidth || img.width;
+    const sh = img.naturalHeight || img.height;
+    const mx = Math.floor(sw * marginPct);
+    const my = Math.floor(sh * marginPct);
+    const cw = Math.max(1, sw - 2 * mx);
+    const ch = Math.max(1, sh - 2 * my);
+    const maxW = 480;
+    const scale = Math.min(1, maxW / cw);
+    canvas.width = Math.floor(cw * scale);
+    canvas.height = Math.floor(ch * scale);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#0b1220';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, mx, my, cw, ch, 0, 0, canvas.width, canvas.height);
+}
+
+async function commitImageInspect() {
+    const canvas = document.getElementById('imgInspectCanvas');
+    const tagEl = document.getElementById('imgTagComment');
+    const modal = document.getElementById('imageInspectModal');
+    if (!canvas) return;
+    const comment = (tagEl && tagEl.value || '').trim();
+    await new Promise((resolve, reject) => {
+        canvas.toBlob(async (blob) => {
+            if (!blob) { reject(new Error('crop failed')); return; }
+            try {
+                const file = new File([blob], (_imgInspectFile && _imgInspectFile.name) || 'image.jpg', {
+                    type: blob.type || 'image/jpeg',
+                });
+                const up = await uploadImage(file);
+                await postMessageWithAttachment({
+                    text: comment || '',
+                    attachmentId: up.id,
+                });
+                if (modal) modal.style.display = 'none';
+                _imgInspectSource = null;
+                _imgInspectFile = null;
+                resolve();
+            } catch (e) {
+                reject(e);
+            }
+        }, 'image/jpeg', 0.92);
+    }).catch((e) => alert('Image send failed: ' + e.message));
+}
+
+(function wireImageInspectUI() {
+    const range = document.getElementById('imgCropMargin');
+    if (range) range.addEventListener('input', drawImageInspect);
+    const cancel = document.getElementById('btnImgInspectCancel');
+    if (cancel) cancel.addEventListener('click', () => {
+        const modal = document.getElementById('imageInspectModal');
+        if (modal) modal.style.display = 'none';
+        _imgInspectSource = null;
+        _imgInspectFile = null;
+    });
+    const send = document.getElementById('btnImgInspectSend');
+    if (send) send.addEventListener('click', () => { commitImageInspect(); });
 })();
 

@@ -161,7 +161,7 @@ def collect_memorygrid_tokens() -> List[Dict[str, Any]]:
     token_records: List[Dict[str, Any]] = []
 
     for document in (
-        memory.documents.values() if hasattr(memory, "documents") and hasattr(memory.documents, "values")
+        list(memory.documents.values()) if hasattr(memory, "documents") and hasattr(memory.documents, "values")
         else getattr(memory, "doc_store", None) or getattr(memory, "_documents", None) or []
     ):
 
@@ -216,7 +216,7 @@ def get_unique_words_count() -> int:
     unique = set()
 
     for document in (
-        memory.documents.values() if hasattr(memory, "documents") and hasattr(memory.documents, "values")
+        list(memory.documents.values()) if hasattr(memory, "documents") and hasattr(memory.documents, "values")
         else getattr(memory, "doc_store", None) or getattr(memory, "_documents", None) or []
     ):
 

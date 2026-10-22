@@ -5292,3 +5292,25 @@ document.addEventListener("DOMContentLoaded", () => {
   }, true);
 })();
 
+/* wsRoomChrome: home hides composer; room shows composer + header calls */
+(function () {
+  function setRoomChrome(active) {
+    document.body.classList.toggle("ws-room-active", !!active);
+    document.body.classList.toggle("ws-home", !active);
+    var ia = document.getElementById("inputArea");
+    if (ia) ia.style.display = active ? "block" : "none";
+    ["btnVoiceCall", "btnVideoCall"].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.style.display = active ? "" : "none";
+    });
+  }
+  window.wsRoomChrome = setRoomChrome;
+  document.addEventListener("DOMContentLoaded", function () {
+    setRoomChrome(false);
+    var vc = document.getElementById("btnVoiceCall");
+    var vd = document.getElementById("btnVideoCall");
+    if (vc) vc.onclick = function () { console.log("voice-call stub"); };
+    if (vd) vd.onclick = function () { console.log("video-call stub"); };
+  });
+})();
+

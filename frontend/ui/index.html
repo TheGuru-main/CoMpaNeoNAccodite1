@@ -216,6 +216,12 @@
                 <button id="btnProfile" class="icon-btn" title="Profile">
                     <i class="fa-solid fa-user-circle"></i>
                 </button>
+                <button id="btnVoiceCall" class="icon-btn ws-call-btn" title="Voice call" style="display:none;">
+                    <i class="fa-solid fa-phone"></i>
+                </button>
+                <button id="btnVideoCall" class="icon-btn ws-call-btn" title="Video call" style="display:none;">
+                    <i class="fa-solid fa-video"></i>
+                </button>
                 <button id="btnLogout" class="icon-btn"><i class="fa-solid fa-right-from-bracket"></i></button>
             </header>
 
@@ -283,15 +289,32 @@
                 </button>
             </div>
             <footer class="input-area" id="inputArea" data-home-hide="1" style="display:none !important;">
-                <button id="btnAttachImage" class="icon-btn attach-btn" title="Image">
-                    <i class="fa-solid fa-image"></i>
-                </button>
-                <input type="file" id="imageInput" accept="image/*" style="display:none;" />
-                <button id="btnMic" class="icon-btn attach-btn" title="Voice note">
-                    <i class="fa-solid fa-microphone"></i>
-                </button>
-                <input type="text" id="promptInput" placeholder="Type or @AI to invoke the agent" />
-                <button id="btnSend" class="send-btn"><i class="fa-solid fa-paper-plane"></i></button>
+                <div class="ws-composer-box">
+                    <div class="ws-attach-row" role="toolbar" aria-label="Attachments">
+                        <button type="button" id="btnAttachImage" class="icon-btn attach-btn" title="Image">
+                            <i class="fa-solid fa-image"></i>
+                        </button>
+                        <input type="file" id="imageInput" accept="image/*" style="display:none;" />
+                        <button type="button" id="btnAttachFile" class="icon-btn attach-btn" title="File">
+                            <i class="fa-solid fa-paperclip"></i>
+                        </button>
+                        <input type="file" id="fileInput" style="display:none;" />
+                        <button type="button" id="btnMic" class="icon-btn attach-btn" title="Voice note">
+                            <i class="fa-solid fa-microphone"></i>
+                        </button>
+                        <button type="button" id="btnShareVideo" class="icon-btn attach-btn" title="Share video">
+                            <i class="fa-solid fa-film"></i>
+                        </button>
+                        <input type="file" id="videoInput" accept="video/*" style="display:none;" />
+                        <button type="button" id="btnShareRepo" class="icon-btn attach-btn" title="Share repo">
+                            <i class="fa-solid fa-code-branch"></i>
+                        </button>
+                    </div>
+                    <div class="ws-input-row">
+                        <input type="text" id="promptInput" placeholder="Type or @AI to invoke the agent" />
+                        <button type="button" id="btnSend" class="send-btn"><i class="fa-solid fa-paper-plane"></i></button>
+                    </div>
+                </div>
             </footer>
 
             <!-- Voice recording overlay -->

@@ -1373,3 +1373,29 @@ body.workspace-active #mainScreen > .input-area,
 body.home-active:not(.workspace-active) #inputArea {
   display: none !important;
 }
+
+/* === ws composer: attaches inside box; calls stay in header === */
+#inputArea.input-area {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+  display: none; padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));
+  background: transparent; border: 0; box-shadow: none;
+}
+body.ws-room-active #inputArea.input-area { display: block !important; }
+body.ws-home #inputArea.input-area,
+body:not(.ws-room-active) #inputArea.input-area { display: none !important; }
+.ws-composer-box {
+  max-width: 920px; margin: 0 auto;
+  border-radius: 14px; border: 1px solid rgba(255,255,255,.12);
+  background: rgba(15, 23, 42, .96); overflow: hidden;
+}
+.ws-attach-row {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  padding: 6px 8px 0; align-items: center;
+}
+.ws-input-row {
+  display: flex; gap: 8px; align-items: center; padding: 8px;
+}
+.ws-input-row #promptInput { flex: 1; min-width: 0; }
+#chatBox { padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px)); }
+.ws-call-btn { color: #00ffaa; }
+

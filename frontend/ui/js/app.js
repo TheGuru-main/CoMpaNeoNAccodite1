@@ -5512,3 +5512,12 @@ async function commitImageInspect() {
     if (send) send.addEventListener('click', () => { commitImageInspect(); });
 })();
 
+
+// ACCD-HOME-CODESPACE
+document.addEventListener("click", function (ev) {
+  var btn = ev.target && ev.target.closest && ev.target.closest("[data-hub=codespace], #btnHomeCode");
+  if (!btn) return;
+  ev.preventDefault();
+  if (typeof window.openCodePanel === "function") window.openCodePanel();
+  else if (typeof window.acdNav === "function") window.acdNav("code");
+});

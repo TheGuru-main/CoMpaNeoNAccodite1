@@ -388,6 +388,7 @@
         );
         for (var i = 0; i < (data.entries || []).length; i++) {
           var e = data.entries[i];
+          if (e.name === ".git" || (e.path && e.path.split("/")[0] === ".git")) continue;
           all.push(e);
           if (e.type === "dir") await walk(e.path);
         }
@@ -744,13 +745,17 @@
       return;
     }
     if (cmd === "ls") {
+      if (!requireRepo()) return;
+      var listPath = arg ? resolvePath(arg) : (cwd || "");
       try {
         var data = await api(
           "/sandbox/fs/list?scope=" + encodeURIComponent(scope) +
           "&repo=" + encodeURIComponent(repo) +
-          "&path=" + encodeURIComponent(cwd || "")
+          "&path=" + encodeURIComponent(listPath)
         );
-        var names = (data.entries || []).map(function (e) {
+        var names = (data.entries || []).filter(function (e) {
+          return e.name !== ".git";
+        }).map(function (e) {
           return e.type === "dir" ? e.name + "/" : e.name;
         });
         writeLog((names.join("  ") || "(empty)") + "\n");
@@ -759,9 +764,16 @@
     }
     if (cmd === "cd") {
       if (!requireRepo()) return;
-      if (!arg || arg === "\~" || arg === "/") {
+      if (!arg || arg === "/" || arg === "\~") {
         setCwd("");
         writeLog("/" + repo + "\n");
+        return;
+      }
+      if (arg === "..") {
+        var parts = (cwd || "").split("/").filter(Boolean);
+        parts.pop();
+        setCwd(parts.join("/"));
+        writeLog("/" + repo + (cwd ? "/" + cwd : "") + "\n");
         return;
       }
       var target = resolvePath(arg);
@@ -771,19 +783,36 @@
           "&repo=" + encodeURIComponent(repo) +
           "&path=" + encodeURIComponent(target)
         );
-        if (st.type && st.type !== "dir" && !st.entries) {
+        if (st.type === "file") {
           writeLog("not a directory: " + target + "\n");
           return;
         }
         setCwd(target);
         writeLog("/" + repo + (cwd ? "/" + cwd : "") + "\n");
-      } catch (e) {
-        writeLog(errText(e) + "\n");
-      }
+      } catch (e) { writeLog(errText(e) + "\n"); }
       return;
     }
     
-    if (cmd === "cat" && arg) {
+    
+    if (cmd === "gitimport" || cmd === "pullgh") {
+      if (!requireRepo()) return;
+      var url = arg || "https://github.com/TheGuru-main/CoMpaNeoNAccodite1.git";
+      var line = "git init && git remote remove origin 2>/dev/null; git remote add origin " + url +
+        " && git fetch --depth 1 origin main && git checkout -f -B main FETCH_HEAD";
+      writeLog("$ gitimport force checkout over scaffold\n");
+      try {
+        var data = await api("/sandbox/exec", "POST", {
+          command: line, scope: scope, repo: repo, network: true, timeout_s: 300
+        });
+        if (data.stdout) writeLog(data.stdout.replace(/\n?$/, "\n"));
+        if (data.stderr) writeLog(data.stderr.replace(/\n?$/, "\n"));
+        writeLog("[exit " + data.exit_code + "]\n");
+        cwd = "";
+        await loadTree();
+      } catch (e) { writeLog(errText(e) + "\n"); }
+      return;
+    }
+if (cmd === "cat" && arg) {
       var path = cwd ? cwd + "/" + arg : arg;
       try {
         var data = await api(
@@ -951,6 +980,41 @@
     paintTerm();
   }
 
+  
+  window.acdTermApi = {
+    insert: function (s) {
+      cmdBuf = (cmdBuf || "") + String(s || "");
+      var g = $("termGhostInput"); if (g) g.value = cmdBuf;
+      try { focusTerm(); } catch (e) {}
+      paintTerm();
+    },
+    setLine: function (s) {
+      cmdBuf = String(s || "");
+      var g = $("termGhostInput"); if (g) g.value = cmdBuf;
+      try { focusTerm(); } catch (e) {}
+      paintTerm();
+    },
+    enter: function () {
+      var line = cmdBuf || ""; cmdBuf = "";
+      var g = $("termGhostInput"); if (g) g.value = "";
+      paintTerm(); return onCommand(line);
+    },
+    home: function () {
+      var g = $("termGhostInput"); if (!g) return;
+      try { g.setSelectionRange(0, 0); } catch (e) {}
+      focusTerm();
+    },
+    end: function () {
+      var g = $("termGhostInput"); if (!g) return;
+      var n = (g.value || "").length;
+      try { g.setSelectionRange(n, n); } catch (e) {}
+      focusTerm();
+    },
+    getMods: function () { return { ctrl: !!window.__termCtrl, alt: !!window.__termAlt }; },
+    setCtrl: function (v) { window.__termCtrl = !!v; },
+    setAlt: function (v) { window.__termAlt = !!v; }
+  };
+
   window.openCodePanel = showPanel;
   window.closeCodePanel = goHome;
   window.hideCodeScreen = goHome;
@@ -965,74 +1029,45 @@
 })();
 
 
+
 // ACCD-TERM-KEYBAR
-(function wireTermKeyBar() {
-  function ghost() { return document.getElementById("termGhostInput"); }
-  function syncModUi() {
+(function () {
+  function A() { return window.acdTermApi; }
+  function sync() {
+    var m = A() && A().getMods ? A().getMods() : {};
     document.querySelectorAll("#termKeyBar [data-term-key=ctrl]").forEach(function (b) {
-      b.classList.toggle("is-on", !!termCtrlOn);
+      b.classList.toggle("is-on", !!m.ctrl);
     });
     document.querySelectorAll("#termKeyBar [data-term-key=alt]").forEach(function (b) {
-      b.classList.toggle("is-on", !!termAltOn);
+      b.classList.toggle("is-on", !!m.alt);
     });
   }
-  function insertText(s) {
-    var inp = ghost();
-    if (!inp) return;
-    cmdBuf = (cmdBuf || "") + s;
-    inp.value = cmdBuf;
-    try { focusTerm(); } catch (e) {}
-    paintTerm();
-  }
-  function caretHome() {
-    var inp = ghost();
-    if (!inp) return;
-    try { inp.setSelectionRange(0, 0); } catch (e) {}
-    focusTerm();
-  }
-  function caretEnd() {
-    var inp = ghost();
-    if (!inp) return;
-    var n = (inp.value || "").length;
-    try { inp.setSelectionRange(n, n); } catch (e) {}
-    focusTerm();
-  }
-  function runEnter() {
-    var line = cmdBuf || "";
-    cmdBuf = "";
-    var inp = ghost();
-    if (inp) inp.value = "";
-    paintTerm();
-    if (typeof onCommand === "function") onCommand(line);
-  }
-  document.addEventListener("click", function (ev) {
+  function go(ev) {
     var btn = ev.target && ev.target.closest && ev.target.closest("#termKeyBar .term-key");
     if (!btn) return;
     ev.preventDefault();
+    var api = A();
+    if (!api) { console.warn("open Codespace first"); return; }
     var k = btn.getAttribute("data-term-key");
     var c = btn.getAttribute("data-term-cmd");
-    if (c) {
-      if (c === "cd") {
-        insertText("cd ");
-        return;
-      }
-      cmdBuf = c;
-      var inp = ghost();
-      if (inp) inp.value = c;
-      paintTerm();
-      runEnter();
-      return;
-    }
-    if (k === "ctrl") { termCtrlOn = !termCtrlOn; syncModUi(); focusTerm(); return; }
-    if (k === "alt") { termAltOn = !termAltOn; syncModUi(); focusTerm(); return; }
-    if (k === "home") { caretHome(); return; }
-    if (k === "end") { caretEnd(); return; }
-    if (k === "tilde") { insertText("\~"); return; }
-    if (k === "slash") { insertText("/"); return; }
-    if (k === "enter") { runEnter(); return; }
-  });
-  // When ctrl sticky is on, letter keys can fire T1 chords from soft keyboard later
-  window.acdTermMods = function () { return { ctrl: termCtrlOn, alt: termAltOn }; };
+    if (c === "cd") { api.insert("cd "); return; }
+    if (c) { api.setLine(c); api.enter(); return; }
+    if (k === "ctrl") { api.setCtrl(!api.getMods().ctrl); sync(); return; }
+    if (k === "alt") { api.setAlt(!api.getMods().alt); sync(); return; }
+    if (k === "home") { api.home(); return; }
+    if (k === "end") { api.end(); return; }
+    if (k === "tilde") { api.insert("\~"); return; }
+    if (k === "slash") { api.insert("/"); return; }
+    if (k === "enter") { api.enter(); return; }
+  }
+  function bind() {
+    var bar = document.getElementById("termKeyBar");
+    if (!bar || bar.dataset.bound) return;
+    bar.dataset.bound = "1";
+    bar.addEventListener("click", go);
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", bind);
+  else bind();
 })();
 
 // ACCD-NETWORK-TERM

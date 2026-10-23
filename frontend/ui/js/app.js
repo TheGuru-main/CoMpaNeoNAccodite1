@@ -1694,32 +1694,31 @@ function updateInputVisibility() {
     const inputArea = document.getElementById('inputArea');
     const chips = document.getElementById('roomChips');
     const onMain = document.getElementById('mainScreen')?.classList.contains('active');
-    const room = roomList.find(r => r.id === currentRoomId);
-    const active = !!(onMain && currentRoomId);
+    const room = (typeof roomList !== 'undefined' && roomList)
+      ? roomList.find(r => r.id === currentRoomId) : null;
+    const inRoom = !!(onMain && currentRoomId);
 
-    document.body.classList.toggle('ws-room-active', active);
-    document.body.classList.toggle('ws-home', !active);
+    document.body.classList.toggle('workspace-active', inRoom);
+    document.body.classList.toggle('ws-room-active', inRoom);
+    document.body.classList.toggle('home-active', !!(onMain && !currentRoomId));
 
     if (inputArea) {
-        if (active) inputArea.removeAttribute('hidden');
-        else inputArea.setAttribute('hidden', '');
-        // clear any leftover inline display fights
-        inputArea.style.removeProperty('display');
+      inputArea.style.removeProperty('display');
+      if (inRoom) inputArea.removeAttribute('hidden');
+      else inputArea.setAttribute('hidden', '');
     }
     if (chips) {
-        if (!active) {
-            chips.style.display = 'none';
-        } else {
-            const isPrivate = room && room.workspace_type === 'personal_brainstorm';
-            chips.style.display = isPrivate ? 'none' : 'flex';
-            const cnt = document.getElementById('chipMemberCount');
-            if (cnt && room) cnt.textContent = String(room.member_count || 1);
-        }
+      if (!inRoom) chips.style.display = 'none';
+      else {
+        const isPrivate = room && room.workspace_type === 'personal_brainstorm';
+        chips.style.display = isPrivate ? 'none' : 'flex';
+        const cnt = document.getElementById('chipMemberCount');
+        if (cnt && room) cnt.textContent = String(room.member_count || 1);
+      }
     }
-    // header calls only in room
     ['btnVoiceCall', 'btnVideoCall'].forEach(function (id) {
-        const el = document.getElementById(id);
-        if (el) el.style.display = active ? '' : 'none';
+      const el = document.getElementById(id);
+      if (el) el.style.display = inRoom ? '' : 'none';
     });
 }
 

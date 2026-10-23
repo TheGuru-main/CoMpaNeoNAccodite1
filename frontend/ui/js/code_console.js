@@ -95,12 +95,13 @@
   function paintTerm() {
     var out = $("codeOutput");
     if (!out) return;
+    var nearBottom = (out.scrollHeight - out.scrollTop - out.clientHeight) < 56;
     var caret = termFocused ? "█" : "▌";
     out.innerHTML =
       '<span class="term-log">' + escapeHtml(logLines.join("")) + "</span>" +
       '<span class="term-line"><span style="color:#22d3ee">$ </span>' +
-      escapeHtml(cmdBuf) + '<span style="color:#22d3ee">' + caret + "</span></span>";
-    out.scrollTop = out.scrollHeight;
+      escapeHtml(cmdBuf) + '<span class="term-caret" style="color:#22d3ee">' + caret + "</span></span>';
+    if (nearBottom) out.scrollTop = out.scrollHeight;
   }
 
   function writeLog(s) {
@@ -111,6 +112,8 @@
 
   function focusTerm() {
     termFocused = true;
+    // ACCD-FOCUS-PAINT
+    paintTerm();
     var ghost = $("termGhostInput");
     if (ghost) {
       try { ghost.focus({ preventScroll: true }); } catch (e) { try { ghost.focus(); } catch (e2) {} }
@@ -1007,6 +1010,10 @@
     if (!NET.test(raw) && (cmd || "").toLowerCase() !== "clone") return false;
 
     var line = normalizeNetLine(raw, cmd, parts);
+    if (/^git\s+clone\b/i.test(line) && !(ctx && ctx.repo)) {
+      writeLog("clone: create/open a codespace repo first (Explorer) so files persist\n");
+      return true;
+    }
     var writeLog = (ctx && ctx.writeLog) || function () {};
     var errText = (ctx && ctx.errText) || String;
     var api = ctx && ctx.api;

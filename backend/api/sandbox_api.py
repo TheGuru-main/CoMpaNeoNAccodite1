@@ -485,12 +485,15 @@ async def sandbox_exec(req: ExecRequest):
         raise HTTPException(400, "empty command")
     if _BLOCKED.search(cmd):
         raise HTTPException(400, "command blocked")
-    workdir = None
+    # ACCD-T2-WORKDIR: always persist — never temp+rmtree for net exec
     if req.repo:
         rdir = _repo_dir(req.scope, req.repo)
         if not rdir.exists():
             raise HTTPException(404, "repo not found — create repo first")
         workdir = str(rdir.resolve())
+    else:
+        # scope root (user/org/ai), not a disposable temp
+        workdir = str(_scope_root(req.scope).resolve())
     runner = SandboxRunner(
         timeout_s=req.timeout_s,
         memory_mb=req.memory_mb,

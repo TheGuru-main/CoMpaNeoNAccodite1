@@ -286,6 +286,48 @@
     });
   }
 
+
+  // ACCD-REPO-PATH-SCOPE
+  // All FS paths are relative to active repo. Relative segments append to cwd.
+  function requireRepo() {
+    if (!repo) {
+      writeLog("no active repo — create/open one in Explorer (each repo has its own tree)\n");
+      return false;
+    }
+    return true;
+  }
+
+  function normalizeRel(path) {
+    path = String(path || "").replace(/\\/g, "/").replace(/^\/+/, "");
+    var parts = [];
+    path.split("/").forEach(function (seg) {
+      if (!seg || seg === ".") return;
+      if (seg === "..") {
+        if (parts.length) parts.pop();
+        return;
+      }
+      parts.push(seg);
+    });
+    return parts.join("/");
+  }
+
+  /** Resolve user path against active repo + cwd. Never crosses repos. */
+  function resolvePath(userPath) {
+    userPath = String(userPath || "").trim();
+    if (!userPath || userPath === ".") return cwd || "";
+    // absolute-within-repo
+    if (userPath.startsWith("/") || userPath.startsWith("\~/")) {
+      return normalizeRel(userPath.replace(/^\~/, ""));
+    }
+    // relative → append under cwd
+    var base = cwd || "";
+    return normalizeRel(base ? base + "/" + userPath : userPath);
+  }
+
+  function setCwd(rel) {
+    cwd = normalizeRel(rel || "");
+  }
+
   async function loadTree() {
     var box = $("codeFileTree");
     if (!box) return;
@@ -697,7 +739,8 @@
     }
     if (cmd === "clear") { logLines = []; paintTerm(); return; }
     if (cmd === "pwd") {
-      writeLog("/" + (repo || "") + (cwd ? "/" + cwd : "") + "\n");
+      if (!repo) { writeLog("no active repo\n"); return; }
+      writeLog("/" + repo + (cwd ? "/" + cwd : "") + "\n");
       return;
     }
     if (cmd === "ls") {
@@ -715,12 +758,31 @@
       return;
     }
     if (cmd === "cd") {
-      if (!arg || arg === "/") cwd = "";
-      else if (arg === "..") {
-        var p = cwd.split("/").filter(Boolean); p.pop(); cwd = p.join("/");
-      } else cwd = cwd ? cwd + "/" + arg.replace(/^\/+/, "") : arg.replace(/^\/+/, "");
+      if (!requireRepo()) return;
+      if (!arg || arg === "\~" || arg === "/") {
+        setCwd("");
+        writeLog("/" + repo + "\n");
+        return;
+      }
+      var target = resolvePath(arg);
+      try {
+        var st = await api(
+          "/sandbox/fs/list?scope=" + encodeURIComponent(scope) +
+          "&repo=" + encodeURIComponent(repo) +
+          "&path=" + encodeURIComponent(target)
+        );
+        if (st.type && st.type !== "dir" && !st.entries) {
+          writeLog("not a directory: " + target + "\n");
+          return;
+        }
+        setCwd(target);
+        writeLog("/" + repo + (cwd ? "/" + cwd : "") + "\n");
+      } catch (e) {
+        writeLog(errText(e) + "\n");
+      }
       return;
     }
+    
     if (cmd === "cat" && arg) {
       var path = cwd ? cwd + "/" + arg : arg;
       try {
@@ -769,7 +831,8 @@
       return;
     }
     if (cmd === "mkdir" && arg) {
-      var mp = cwd ? cwd + "/" + arg : arg;
+      if (!requireRepo()) return;
+      var mp = resolvePath(arg);
       try {
         await api("/sandbox/fs/mkdir", "POST", { scope: scope, repo: repo, path: mp });
         await api("/sandbox/fs/write", "POST", { scope: scope, repo: repo, path: mp + "/.keep", content: "" });
@@ -778,7 +841,8 @@
       return;
     }
     if (cmd === "touch" && arg) {
-      var tp = cwd ? cwd + "/" + arg : arg;
+      if (!requireRepo()) return;
+      var tp = resolvePath(arg);
       try {
         await api("/sandbox/fs/write", "POST", { scope: scope, repo: repo, path: tp, content: "" });
         await openFile(tp, { silent: true });

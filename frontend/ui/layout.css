@@ -1434,3 +1434,18 @@ body:not(.ws-room-active) .ws-call-btn { display: none !important; }
 /* image inspect */
 .img-inspect-stage { max-height: 55vh; overflow: auto; border-radius: 10px; border: 1px solid rgba(255,255,255,.1); }
 
+/* terminal mobile keybar */
+.term-keybar {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  padding: 4px 6px; background: #0b1220;
+  border-top: 1px solid rgba(255,255,255,.08);
+}
+.term-key {
+  min-width: 36px; height: 32px; padding: 0 8px;
+  border-radius: 6px; border: 1px solid rgba(255,255,255,.14);
+  background: #1e293b; color: #e2e8f0; font-size: 12px;
+  font-family: ui-monospace, monospace;
+}
+.term-key.is-on { background: #0ea5e9; color: #0b1220; border-color: #38bdf8; }
+.term-key-enter { background: #14532d; border-color: #22c55e; }
+.term-key-cmd { background: #1e1b4b; border-color: #818cf8; }

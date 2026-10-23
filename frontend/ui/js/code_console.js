@@ -19,6 +19,16 @@
   var termCollapsed = false;
   var termFocused = false;
   var lastRunPath = "";
+  var termCtrlOn = false;
+  var termAltOn = false;
+
+  // ACCD-T1-TERM-STATUS — terminal status/sector/eof only (GSP start_row untouched)
+  var currentSector = "CODING";
+  try { currentSector = sessionStorage.getItem("acd_term_sector") || "CODING"; } catch (e) {}
+  var eofMode = false;
+  var eofLines = [];
+  var eofTargetPath = "";
+
 
   var _repoUids = {};
   try { _repoUids = JSON.parse(sessionStorage.getItem("acd_repo_uids") || "{}"); } catch (e) {}
@@ -143,6 +153,19 @@
     });
     inp.addEventListener("input", function () { cmdBuf = inp.value; paintTerm(); });
     inp.addEventListener("keydown", function (e) {
+      // T1 hotkeys — do not alter repo_uid / start_row
+      if (e.ctrlKey && e.shiftKey && (e.key === "S" || e.key === "s")) {
+        e.preventDefault(); printStatus(); return;
+      }
+      if (e.ctrlKey && e.shiftKey && (e.key === "H" || e.key === "h")) {
+        e.preventDefault(); printHelp(); return;
+      }
+      if (e.ctrlKey && e.altKey && (e.key === "T" || e.key === "t")) {
+        e.preventDefault(); toggleSector(); return;
+      }
+      if (e.ctrlKey && e.shiftKey && (e.key === "C" || e.key === "c")) {
+        e.preventDefault(); beginEofStream(""); return;
+      }
       if (e.key === "Enter") {
         e.preventDefault();
         var line = cmdBuf;
@@ -151,6 +174,10 @@
         paintTerm();
         onCommand(line);
       } else if (e.key === "Escape") {
+        if (eofMode) {
+          eofMode = false; eofLines = []; eofTargetPath = "";
+          writeLog("[eof] cancelled\n");
+        }
         cmdBuf = "";
         inp.value = "";
         paintTerm();
@@ -539,6 +566,80 @@
     await runEditor();
   }
 
+
+  function gspStartRowReadOnly() {
+    // DISPLAY ONLY — does not recompute or rewrite repo_uid / start_row assignment.
+    // Uses values already returned by backend / stored for this repo.
+    var name = repo || "";
+    var uid = getRepoUid(name) || "";
+    return { repo: name, repo_uid: uid, note: "start_row from server on create; not recalculated here" };
+  }
+
+  function printStatus() {
+    var g = gspStartRowReadOnly();
+    writeLog("--- status ---\n");
+    writeLog("sector   : " + currentSector + "\n");
+    writeLog("scope    : " + scope + "\n");
+    writeLog("repo     : " + (g.repo || "(none)") + "\n");
+    writeLog("repo_uid : " + (g.repo_uid || "(none)") + "\n");
+    writeLog("cwd      : /" + (repo || "") + (cwd ? "/" + cwd : "") + "\n");
+    writeLog("file     : " + (currentFile || "(none)") + "\n");
+    writeLog("note     : " + g.note + "\n");
+  }
+
+  function printHelp() {
+    writeLog(
+      "pwd ls cd cat run clear help mkdir touch status sector eof\n" +
+      "key <uid>  push|commit [msg]\n" +
+      "git|pip|npm|curl via network exec\n" +
+      "hotkeys (term focus): Ctrl+Shift+S status · Ctrl+Shift+H help\n" +
+      "  Ctrl+Alt+T sector · Ctrl+Shift+C eof stream\n" +
+      "eof: type 'eof [path]' then lines, then EOF alone to write\n"
+    );
+  }
+
+  function toggleSector() {
+    var sectors = ["CODING", "LAW", "HEALTH"];
+    var i = sectors.indexOf(currentSector);
+    if (i < 0) i = 0;
+    currentSector = sectors[(i + 1) % sectors.length];
+    try { sessionStorage.setItem("acd_term_sector", currentSector); } catch (e) {}
+    writeLog("[sector] " + currentSector + "\n");
+  }
+
+  async function finishEofStream() {
+    var body = eofLines.join("\n");
+    var path = eofTargetPath || (cwd ? cwd + "/COMMIT.txt" : "COMMIT.txt");
+    eofMode = false;
+    eofLines = [];
+    eofTargetPath = "";
+    if (!repo) {
+      writeLog("eof: open/create a repo first (GSP uid unchanged)\n");
+      return;
+    }
+    try {
+      await api("/sandbox/fs/write", "POST", {
+        scope: scope,
+        repo: repo,
+        path: path,
+        content: body
+      });
+      writeLog("[eof] wrote " + path + " (" + body.length + " bytes) sector=" + currentSector + "\n");
+      if (typeof loadTree === "function") try { await loadTree(); } catch (e) {}
+      try { await openFile(path, { silent: true }); } catch (e) {}
+    } catch (e) {
+      writeLog("eof: " + errText(e) + "\n");
+    }
+  }
+
+  function beginEofStream(arg) {
+    eofMode = true;
+    eofLines = [];
+    eofTargetPath = (arg || "").trim();
+    writeLog("[eof] enter payload; line with only EOF ends stream\n");
+    if (eofTargetPath) writeLog("[eof] target path: " + eofTargetPath + "\n");
+  }
+
   async function onCommand(line) {
     line = (line || "").trim();
     if (!line) return;
@@ -554,8 +655,41 @@
       if (handled) return;
     }
 
+    // T1 commands (no GSP/repo_uid mutation)
+    if (eofMode) {
+      if (line === "EOF" || line === "eof") {
+        await finishEofStream();
+      } else {
+        eofLines.push(line);
+        writeLog("| " + line + "\n");
+      }
+      return;
+    }
     if (cmd === "help") {
-      writeLog("pwd ls cd cat run clear help mkdir touch\nkey <uid>  push|commit [msg]\n");
+      printHelp();
+      return;
+    }
+    if (cmd === "status") {
+      printStatus();
+      return;
+    }
+    if (cmd === "sector") {
+      if (arg) {
+        var up = arg.trim().toUpperCase();
+        if (["CODING", "LAW", "HEALTH"].indexOf(up) >= 0) {
+          currentSector = up;
+          try { sessionStorage.setItem("acd_term_sector", currentSector); } catch (e) {}
+          writeLog("[sector] " + currentSector + "\n");
+        } else {
+          writeLog("sector: use CODING | LAW | HEALTH\n");
+        }
+      } else {
+        toggleSector();
+      }
+      return;
+    }
+    if (cmd === "eof" || cmd === "commitstream") {
+      beginEofStream(arg);
       return;
     }
     if (cmd === "clear") { logLines = []; paintTerm(); return; }
@@ -763,30 +897,150 @@
   }
 })();
 
+
+// ACCD-TERM-KEYBAR
+(function wireTermKeyBar() {
+  function ghost() { return document.getElementById("termGhostInput"); }
+  function syncModUi() {
+    document.querySelectorAll("#termKeyBar [data-term-key=ctrl]").forEach(function (b) {
+      b.classList.toggle("is-on", !!termCtrlOn);
+    });
+    document.querySelectorAll("#termKeyBar [data-term-key=alt]").forEach(function (b) {
+      b.classList.toggle("is-on", !!termAltOn);
+    });
+  }
+  function insertText(s) {
+    var inp = ghost();
+    if (!inp) return;
+    cmdBuf = (cmdBuf || "") + s;
+    inp.value = cmdBuf;
+    try { focusTerm(); } catch (e) {}
+    paintTerm();
+  }
+  function caretHome() {
+    var inp = ghost();
+    if (!inp) return;
+    try { inp.setSelectionRange(0, 0); } catch (e) {}
+    focusTerm();
+  }
+  function caretEnd() {
+    var inp = ghost();
+    if (!inp) return;
+    var n = (inp.value || "").length;
+    try { inp.setSelectionRange(n, n); } catch (e) {}
+    focusTerm();
+  }
+  function runEnter() {
+    var line = cmdBuf || "";
+    cmdBuf = "";
+    var inp = ghost();
+    if (inp) inp.value = "";
+    paintTerm();
+    if (typeof onCommand === "function") onCommand(line);
+  }
+  document.addEventListener("click", function (ev) {
+    var btn = ev.target && ev.target.closest && ev.target.closest("#termKeyBar .term-key");
+    if (!btn) return;
+    ev.preventDefault();
+    var k = btn.getAttribute("data-term-key");
+    var c = btn.getAttribute("data-term-cmd");
+    if (c) {
+      if (c === "cd") {
+        insertText("cd ");
+        return;
+      }
+      cmdBuf = c;
+      var inp = ghost();
+      if (inp) inp.value = c;
+      paintTerm();
+      runEnter();
+      return;
+    }
+    if (k === "ctrl") { termCtrlOn = !termCtrlOn; syncModUi(); focusTerm(); return; }
+    if (k === "alt") { termAltOn = !termAltOn; syncModUi(); focusTerm(); return; }
+    if (k === "home") { caretHome(); return; }
+    if (k === "end") { caretEnd(); return; }
+    if (k === "tilde") { insertText("\~"); return; }
+    if (k === "slash") { insertText("/"); return; }
+    if (k === "enter") { runEnter(); return; }
+  });
+  // When ctrl sticky is on, letter keys can fire T1 chords from soft keyboard later
+  window.acdTermMods = function () { return { ctrl: termCtrlOn, alt: termAltOn }; };
+})();
+
 // ACCD-NETWORK-TERM
+// ACCD-T2-NET
 (function () {
   var NET = /^(git|pip|pip3|npm|npx|yarn|curl|wget)\b/i;
   if (typeof window === "undefined") return;
+
+  /** Collapse \r progress spam into last segment per line (git/curl style). */
+  function collapseProgress(text) {
+    if (!text) return "";
+    return String(text).split("\n").map(function (line) {
+      if (line.indexOf("\r") === -1) return line;
+      var parts = line.split("\r");
+      return parts[parts.length - 1];
+    }).join("\n");
+  }
+
+  /** Default shallow clone unless user already passed depth/mirror/file. */
+  function normalizeNetLine(line, cmd, parts) {
+    line = (line || "").trim();
+    if ((cmd || "").toLowerCase() === "clone") {
+      line = "git clone " + (parts || []).slice(1).join(" ");
+    }
+    var low = line.toLowerCase();
+    if (/^git\s+clone\b/.test(low)) {
+      if (!/\s--depth(\s|=)/.test(low) &&
+          !/\s--mirror\b/.test(low) &&
+          !/\s--bundle\b/.test(low) &&
+          !/\s--file\b/.test(low)) {
+        line = line.replace(/^git\s+clone\b/i, "git clone --depth 1");
+      }
+    }
+    return line;
+  }
+
   window.acdNetworkTermCommand = async function (cmd, parts, ctx) {
-    var line = (ctx && ctx.line) || (parts || []).join(" ");
-    if (!NET.test(line) && (cmd || "").toLowerCase() !== "clone") return false;
-    if ((cmd || "").toLowerCase() === "clone") line = "git clone " + (parts || []).slice(1).join(" ");
+    var raw = (ctx && ctx.line) || (parts || []).join(" ");
+    if (!NET.test(raw) && (cmd || "").toLowerCase() !== "clone") return false;
+
+    var line = normalizeNetLine(raw, cmd, parts);
     var writeLog = (ctx && ctx.writeLog) || function () {};
     var errText = (ctx && ctx.errText) || String;
     var api = ctx && ctx.api;
     if (!api) { writeLog("no api\n"); return true; }
+
     writeLog("$ " + line + "  [net]\n");
+    var hb = setInterval(function () {
+      writeLog("[net] still working…\n");
+    }, 15000);
+
     try {
       var data = await api("/sandbox/exec", "POST", {
-        command: line, scope: (ctx && ctx.scope) || "user",
-        repo: (ctx && ctx.repo) || null, network: true, timeout_s: 180
+        command: line,
+        scope: (ctx && ctx.scope) || "user",
+        repo: (ctx && ctx.repo) || null,
+        network: true,
+        timeout_s: 300,
+        use_proxy_env: true
       });
-      if (data.stdout) writeLog(data.stdout.replace(/\n?$/, "\n"));
-      if (data.stderr) writeLog(data.stderr.replace(/\n?$/, "\n"));
+      if (data.stdout) writeLog(collapseProgress(data.stdout).replace(/\n?$/, "\n"));
+      if (data.stderr) writeLog(collapseProgress(data.stderr).replace(/\n?$/, "\n"));
       if (data.error) writeLog("ERROR: " + data.error + "\n");
-      writeLog("[exit " + data.exit_code + "]\n");
-      if (ctx && typeof ctx.refreshTree === "function") try { await ctx.refreshTree(); } catch (e) {}
-    } catch (e) { writeLog("exec: " + errText(e) + "\n"); }
+      if (data.timed_out) writeLog("[timed out]\n");
+      writeLog("[exit " + (data.exit_code != null ? data.exit_code : "?") +
+               (data.duration_s != null ? (" · " + data.duration_s + "s") : "") + "]\n");
+      if (ctx && typeof ctx.refreshTree === "function") {
+        try { await ctx.refreshTree(); } catch (e) {}
+      }
+    } catch (e) {
+      writeLog("exec: " + errText(e) + "\n");
+    } finally {
+      clearInterval(hb);
+    }
     return true;
   };
 })();
+

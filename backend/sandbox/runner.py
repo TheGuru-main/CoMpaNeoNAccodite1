@@ -296,6 +296,14 @@ class SandboxRunner:
                 ]
                 return self._exec(docker_cmd, backend="docker")
             full_env = os.environ.copy()
+            # ACCD-T2-PROXY-ENV
+            # Honor proxy vars for network installs/clones (no GSP changes).
+            for _pk in (
+                "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
+                "http_proxy", "https_proxy", "all_proxy", "no_proxy",
+            ):
+                if _pk in os.environ and _pk not in full_env:
+                    full_env[_pk] = os.environ[_pk]
             if env:
                 full_env.update(env)
             t0 = time.time()

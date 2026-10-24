@@ -1454,21 +1454,19 @@ body:not(.ws-room-active) .ws-call-btn { display: none !important; }
 .term-caret { animation: none; }
 .term-log, .term-line { white-space: pre-wrap; word-break: break-word; }
 
-/* ACCD-COMPOSER-FOOTER-FINAL
-   Home: NO prompt. Workspace room: prompt FIXED to viewport bottom.
-   Wins over INPUT-ALWAYS / INPUT-FIXED / relative flex rules. */
+/* ACCD-UI-DEDUP-FINAL — single composer + nav policy (duplicates above are obsolete) */
 #inputArea,
 #mainScreen > .input-area,
 #mainScreen .input-area {
   display: none !important;
   visibility: hidden !important;
   pointer-events: none !important;
+  position: fixed !important;
+  bottom: 0 !important;
 }
-
 body.workspace-active #inputArea,
-body.workspace-active #mainScreen > .input-area,
-body.workspace-active #mainScreen .input-area,
 body.ws-room-active #inputArea,
+body.workspace-active #mainScreen > .input-area,
 body.ws-room-active #mainScreen > .input-area {
   display: flex !important;
   visibility: visible !important;
@@ -1476,50 +1474,6 @@ body.ws-room-active #mainScreen > .input-area {
   position: fixed !important;
   left: 0 !important;
   right: 0 !important;
-  bottom: 0 !important;
-  bottom: env(safe-area-inset-bottom, 0px) !important;
-  top: auto !important;
-  margin: 0 !important;
-  width: 100% !important;
-  max-width: 100vw !important;
-  z-index: 80 !important;
-  padding: 0.5rem 0.75rem calc(0.5rem + env(safe-area-inset-bottom, 0px)) !important;
-  box-sizing: border-box !important;
-  background: rgba(12, 12, 16, 0.98) !important;
-  border-top: 1px solid rgba(255,255,255,0.1) !important;
-  flex-wrap: wrap !important;
-  align-items: center !important;
-  gap: 0.4rem !important;
-}
-
-/* kill gap from old --total-nav / --nav-h offsets */
-body.workspace-active #inputArea,
-body.ws-room-active #inputArea {
-  bottom: 0 !important;
-  transform: none !important;
-}
-
-body.home-active #inputArea,
-body.home-active #mainScreen .input-area,
-body:not(.workspace-active):not(.ws-room-active) #inputArea {
-  display: none !important;
-  visibility: hidden !important;
-  pointer-events: none !important;
-}
-
-/* messages clear the fixed composer */
-body.workspace-active #chatBox,
-body.ws-room-active #chatBox {
-  padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px)) !important;
-}
-
-/* ACCD-COMPOSER-V2 */
-#inputArea { display: none !important; }
-body.workspace-active #inputArea,
-body.ws-room-active #inputArea {
-  display: flex !important;
-  position: fixed !important;
-  left: 0 !important; right: 0 !important;
   bottom: 0 !important;
   margin: 0 !important;
   z-index: 90 !important;
@@ -1530,8 +1484,12 @@ body.ws-room-active #inputArea {
 body.home-active #inputArea,
 body:not(.workspace-active):not(.ws-room-active) #inputArea {
   display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
 }
-body.workspace-active #chatBox {
-  padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)) !important;
+/* obsolete bottom nav under composer */
+body.logged-in .bottom-nav,
+body.logged-in .bottom-nav.bottom-nav-fixed {
+  display: none !important;
 }
 

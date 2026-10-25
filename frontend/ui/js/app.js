@@ -4112,21 +4112,21 @@ function _forceInputVisibleAnywhere() {
 }
 
 // Run on a schedule and on key events
-setTimeout(_forceInputVisibleAnywhere, 100);
-setTimeout(_forceInputVisibleAnywhere, 600);
-setTimeout(_forceInputVisibleAnywhere, 1500);
+/* removed force visible */
+/* removed force visible */
+/* removed force visible */
 
 const _origShowScreenIA = showScreen;
 showScreen = function(id) {
     _origShowScreenIA(id);
-    setTimeout(_forceInputVisibleAnywhere, 40);
-    setTimeout(_forceInputVisibleAnywhere, 300);
+    /* removed force visible */
+    /* removed force visible */
 };
 
 const _origOpenRoomIA = openRoom;
 openRoom = async function(id) {
     const r = await _origOpenRoomIA(id);
-    setTimeout(_forceInputVisibleAnywhere, 40);
+    /* removed force visible */
     return r;
 };
 
@@ -4134,7 +4134,7 @@ openRoom = async function(id) {
 const _origShowHomeStateIA = showHomeState;
 showHomeState = function() {
     _origShowHomeStateIA();
-    setTimeout(_forceInputVisibleAnywhere, 40);
+    /* removed force visible */
 };
 
 // Watch mainScreen for class changes
@@ -4142,7 +4142,7 @@ try {
     const ms = document.getElementById('mainScreen');
     if (ms && typeof MutationObserver !== 'undefined') {
         new MutationObserver(() => {
-            setTimeout(_forceInputVisibleAnywhere, 20);
+            /* removed force visible */
         }).observe(ms, { attributes: true, attributeFilter: ['class', 'style'] });
     }
 } catch (_) {}
@@ -4210,99 +4210,9 @@ console.log('[acd] input-home-room installed');
 // INPUT-PIN-FIXED — force the input row to fixed position above the nav
 // Same rules as layout.css, applied inline with !important so no residual
 // stylesheet can move, hide, or shrink it.
-// ============================================================================
 
-function _pinInputRow() {
-    // # INPUT-PIN-FIXED
-    const ms = document.getElementById('mainScreen');
-    if (!ms || !ms.classList.contains('active')) return;
+// REMOVED: pin-fixed
 
-    const ia = ms.querySelector(':scope > .input-area');
-    if (!ia) return;
-
-    const navH = 64;
-    const navEl = document.querySelector('.bottom-nav');
-    const realNavH = navEl ? Math.round(navEl.getBoundingClientRect().height) : navH;
-
-    ia.style.setProperty('position', 'fixed', 'important');
-    ia.style.setProperty('bottom', realNavH + 'px', 'important');
-    ia.style.setProperty('left', '0', 'important');
-    ia.style.setProperty('right', '0', 'important');
-    ia.style.setProperty('top', 'auto', 'important');
-    ia.style.setProperty('height', 'auto', 'important');
-    ia.style.setProperty('margin', '0', 'important');
-    ia.style.setProperty('padding', '0.75rem 1rem', 'important');
-    ia.style.setProperty('width', '100vw', 'important');
-    ia.style.setProperty('box-sizing', 'border-box', 'important');
-    ia.style.setProperty('display', 'flex', 'important');
-    ia.style.setProperty('visibility', 'visible', 'important');
-    ia.style.setProperty('opacity', '1', 'important');
-    ia.style.setProperty('align-items', 'center', 'important');
-    ia.style.setProperty('gap', '0.5rem', 'important');
-    ia.style.setProperty('z-index', '55', 'important');
-    ia.style.setProperty('flex-wrap', 'nowrap', 'important');
-    ia.style.setProperty('overflow', 'hidden', 'important');
-
-    // inner input shrinks; buttons stay
-    const inner = ia.querySelector('input#promptInput') || ia.querySelector('input');
-    if (inner) {
-        inner.style.setProperty('flex', '1 1 auto', 'important');
-        inner.style.setProperty('min-width', '0', 'important');
-    }
-    ia.querySelectorAll('.send-btn, .attach-btn, .icon-btn').forEach(b => {
-        b.style.setProperty('flex', '0 0 auto', 'important');
-    });
-
-    // chat box: pad the bottom so messages don't hide behind the input + nav
-    const cb = ms.querySelector(':scope > .chat-box');
-    if (cb) {
-        cb.style.setProperty('padding-bottom', (realNavH + 68) + 'px', 'important');
-        cb.style.setProperty('overflow-y', 'auto', 'important');
-    }
-}
-
-// run on load and on every important event
-setTimeout(_pinInputRow, 100);
-setTimeout(_pinInputRow, 400);
-setTimeout(_pinInputRow, 1000);
-
-window.addEventListener('resize', () => setTimeout(_pinInputRow, 40));
-window.addEventListener('orientationchange', () => setTimeout(_pinInputRow, 60));
-
-// wrap the screen / room transitions
-const _origShowScreenPin = showScreen;
-showScreen = function(id) {
-    _origShowScreenPin(id);
-    setTimeout(_pinInputRow, 40);
-    setTimeout(_pinInputRow, 250);
-};
-
-const _origOpenRoomPin = openRoom;
-openRoom = async function(id) {
-    const r = await _origOpenRoomPin(id);
-    setTimeout(_pinInputRow, 40);
-    setTimeout(_pinInputRow, 250);
-    return r;
-};
-
-const _origShowHomeStatePin = showHomeState;
-showHomeState = function() {
-    _origShowHomeStatePin();
-    setTimeout(_pinInputRow, 40);
-};
-
-// watch mainScreen for class/style changes
-try {
-    const ms = document.getElementById('mainScreen');
-    if (ms && typeof MutationObserver !== 'undefined') {
-        new MutationObserver(() => {
-            setTimeout(_pinInputRow, 20);
-        }).observe(ms, { attributes: true, attributeFilter: ['class', 'style'] });
-    }
-} catch (_) {}
-
-window.pinInputRow = _pinInputRow;
-console.log('[acd] input pin-fixed installed');
 
 
 // ============================================================================
@@ -4311,87 +4221,9 @@ console.log('[acd] input pin-fixed installed');
 // No CSS involved — inline styles with !important, set by JS.
 // ============================================================================
 
-(function forceInputAlways() {
-    // ACCD-KILL-FORCE-INPUT — disabled (was forcing home prompt)
-    return;
-    /*
-    // # FORCE-INPUT-ALWAYS
 
-    window.updateInputVisibility = function() {
-        const ms = document.getElementById('mainScreen');
-        if (!ms || !ms.classList.contains('active')) return;
+// REMOVED: forceInputAlways
 
-        // find the input row (works whether it lives in mainScreen or body)
-        let ia = ms.querySelector('.input-area');
-        if (!ia) ia = document.querySelector('.input-area');
-        if (!ia) return;
-
-        const navH = 64;
-        const light = document.body.classList.contains('light-mode');
-
-        ia.style.setProperty('position', 'fixed', 'important');
-        ia.style.setProperty('bottom', navH + 'px', 'important');
-        ia.style.setProperty('left', '0', 'important');
-        ia.style.setProperty('right', '0', 'important');
-        ia.style.setProperty('top', 'auto', 'important');
-        ia.style.setProperty('display', 'flex', 'important');
-        ia.style.setProperty('visibility', 'visible', 'important');
-        ia.style.setProperty('opacity', '1', 'important');
-        ia.style.setProperty('z-index', '9000', 'important');
-        ia.style.setProperty('width', '100vw', 'important');
-        ia.style.setProperty('box-sizing', 'border-box', 'important');
-        ia.style.setProperty('padding', '0.75rem 1rem', 'important');
-        ia.style.setProperty('margin', '0', 'important');
-        ia.style.setProperty('align-items', 'center', 'important');
-        ia.style.setProperty('gap', '0.5rem', 'important');
-        ia.style.setProperty('flex-wrap', 'nowrap', 'important');
-        ia.style.setProperty('overflow', 'hidden', 'important');
-        ia.style.setProperty('background',
-            light ? 'rgba(255,255,255,0.96)' : 'rgba(12,12,16,0.96)', 'important');
-        ia.style.setProperty('border-top',
-            '1px solid ' + (light ? 'rgba(24,20,32,0.10)' : 'rgba(255,255,255,0.09)'),
-            'important');
-
-        const inner = ia.querySelector('input');
-        if (inner) {
-            inner.style.setProperty('flex', '1 1 auto', 'important');
-            inner.style.setProperty('min-width', '0', 'important');
-        }
-        ia.querySelectorAll('.send-btn, .attach-btn, .icon-btn').forEach(b => {
-            b.style.setProperty('flex', '0 0 auto', 'important');
-            b.style.setProperty('display', 'grid', 'important');
-            b.style.setProperty('visibility', 'visible', 'important');
-        });
-
-        // chat box: pad bottom so messages don't hide behind input + nav
-        const cb = ms.querySelector('.chat-box');
-        if (cb) {
-            cb.style.setProperty('padding-bottom', (navH + 72) + 'px', 'important');
-        }
-    };
-
-    // run now and on a schedule
-    window.updateInputVisibility();
-    setTimeout(window.updateInputVisibility, 100);
-    setTimeout(window.updateInputVisibility, 400);
-    setTimeout(window.updateInputVisibility, 1000);
-    setTimeout(window.updateInputVisibility, 2000);
-
-    window.addEventListener('resize', window.updateInputVisibility);
-    window.addEventListener('orientationchange', () => setTimeout(window.updateInputVisibility, 100));
-
-    // watch for any DOM change on mainScreen
-    try {
-        const ms = document.getElementById('mainScreen');
-        if (ms && typeof MutationObserver !== 'undefined') {
-            new MutationObserver(() => window.updateInputVisibility())
-                .observe(ms, { attributes: true, attributeFilter: ['class', 'style'] });
-        }
-    } catch (_) {}
-
-    */
-    console.log('[acd] FORCE-INPUT-ALWAYS DISABLED');
-})();
 
 
 // ============================================================================
@@ -4792,30 +4624,9 @@ document.addEventListener("DOMContentLoaded", () => {
     console.log("[ACCD] code console ready – call openCodePanel()");
 });
 
-// ============================================================
-// ACCD-INPUT-BOTTOM (appended at EOF)
-// Ensure prompt input is at the bottom and visible on home + workspace
-// ============================================================
-(function () {
-    function ensureInputVisible() {
-        // ACCD-KILL-INPUT-BOTTOM
-        return;
-        const input = document.getElementById("inputArea");
-        if (!input) return;
-        // Always show on main screen (home / workspace)
-        input.style.display = "flex";
-    }
-    document.addEventListener("DOMContentLoaded", ensureInputVisible);
-    // Re-run when rooms change
-    const orig = window.loadRooms || window.loadWorkspaces;
-    if (typeof orig === "function") {
-        window.loadRooms = window.loadWorkspaces = async function () {
-            const r = await orig.apply(this, arguments);
-            ensureInputVisible();
-            return r;
-        };
-    }
-})();
+
+// REMOVED: ACCD-INPUT-BOTTOM
+
 
 // ============================================================
 // ACCD-SCREEN-MODE (EOF)
@@ -5540,42 +5351,68 @@ document.addEventListener("click", function (ev) {
   else if (typeof window.acdNav === "function") window.acdNav("code");
 });
 
-
-// ACCD-HUB-CODESPACE-V2
-document.addEventListener("click", function (ev) {
-  var btn = ev.target && ev.target.closest && ev.target.closest(
-    "[data-hub=codespace], #btnHomeCode, [data-hub='codespace']"
-  );
-  if (!btn) return;
-  ev.preventDefault();
-  ev.stopPropagation();
-  function open() {
-    if (typeof window.openCodePanel === "function") {
-      window.openCodePanel();
-      return true;
+// =============================================================================
+// ACCD-CLEAN-UI (single controller — no force-show, no duplicate routers)
+// =============================================================================
+(function () {
+  function setPrompt(on) {
+    var ia = document.getElementById("inputArea");
+    if (!ia) return;
+    if (on) {
+      ia.removeAttribute("hidden");
+      ia.style.setProperty("display", "flex", "important");
+      ia.style.setProperty("visibility", "visible", "important");
+      ia.style.setProperty("pointer-events", "auto", "important");
+      ia.style.setProperty("position", "fixed", "important");
+      ia.style.setProperty("bottom", "0", "important");
+      ia.style.setProperty("left", "0", "important");
+      ia.style.setProperty("right", "0", "important");
+      ia.style.setProperty("z-index", "90", "important");
+    } else {
+      ia.setAttribute("hidden", "");
+      ia.style.setProperty("display", "none", "important");
+      ia.style.setProperty("visibility", "hidden", "important");
+      ia.style.setProperty("pointer-events", "none", "important");
     }
-    var panel = document.getElementById("codePanel") || document.getElementById("codeScreen");
+  }
+
+  window.updateInputVisibility = function () {
+    var ms = document.getElementById("mainScreen");
+    var onMain = !!(ms && ms.classList.contains("active"));
+    var inRoom = !!(onMain && typeof currentRoomId !== "undefined" && currentRoomId);
+    document.body.classList.toggle("workspace-active", inRoom);
+    document.body.classList.toggle("home-active", !!(onMain && !inRoom));
+    setPrompt(inRoom);
+    var hub = document.getElementById("homeHub");
+    if (hub) hub.style.display = (onMain && !inRoom) ? "flex" : "none";
+  };
+
+  window.acdOpenCodespace = function (ev) {
+    if (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+    }
+    // Do not call acdNav — its default case is home
+    if (typeof window.openCodePanel === "function") {
+      try { window.openCodePanel(); } catch (e) {}
+    }
+    var panel = document.getElementById("codePanel");
     if (panel) {
       panel.style.setProperty("display", "flex", "important");
-      panel.classList.add("active");
-      return true;
+      panel.style.flexDirection = "column";
+      panel.style.zIndex = "9999";
     }
+    setPrompt(false);
     return false;
-  }
-  if (!open()) {
-    console.warn("[acd] openCodePanel missing — retry");
-    setTimeout(open, 200);
-    setTimeout(open, 800);
-  }
-}, true);
+  };
 
-document.addEventListener("click", function (ev) {
-  var btn = ev.target && ev.target.closest && ev.target.closest("[data-hub]");
-  if (!btn) return;
-  var hub = btn.getAttribute("data-hub");
-  if (hub === "codespace") return; // handled above
-  if (hub === "messages" && typeof openDMPanel === "function") openDMPanel();
-  if (hub === "search" && typeof openResearch === "function") openResearch();
-  if (hub === "docs" && typeof openDocuments === "function") openDocuments();
-  if (hub === "train" && typeof openTrainingModal === "function") openTrainingModal();
-}, false);
+  document.addEventListener("click", function (ev) {
+    var b = ev.target && ev.target.closest &&
+      ev.target.closest("#btnHomeCode, [data-hub=codespace]");
+    if (b) window.acdOpenCodespace(ev);
+  }, true);
+
+  setTimeout(window.updateInputVisibility, 0);
+  setTimeout(window.updateInputVisibility, 400);
+  console.log("[acd] CLEAN-UI only");
+})();

@@ -5342,14 +5342,7 @@ async function commitImageInspect() {
 })();
 
 
-// ACCD-HOME-CODESPACE
-document.addEventListener("click", function (ev) {
-  var btn = ev.target && ev.target.closest && ev.target.closest("[data-hub=codespace], #btnHomeCode");
-  if (!btn) return;
-  ev.preventDefault();
-  if (typeof window.openCodePanel === "function") window.openCodePanel();
-  else if (typeof window.acdNav === "function") window.acdNav("code");
-});
+// REMOVED: ACCD-HOME-CODESPACE (dup of CLEAN-UI)
 
 // =============================================================================
 // ACCD-CLEAN-UI (single controller — no force-show, no duplicate routers)
@@ -5407,13 +5400,12 @@ document.addEventListener("click", function (ev) {
   };
 
   document.addEventListener("click", function (ev) {
-    // Only home hub Codespace — never intercept clicks inside #codePanel
     if (ev.target && ev.target.closest && ev.target.closest("#codePanel")) return;
     var b = ev.target && ev.target.closest &&
       ev.target.closest("#btnHomeCode, [data-hub=codespace]");
     if (!b) return;
     if (typeof window.acdOpenCodespace === "function") window.acdOpenCodespace(ev);
-  }, true);
+  }, false);
 
   setTimeout(window.updateInputVisibility, 0);
   setTimeout(window.updateInputVisibility, 400);

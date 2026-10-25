@@ -888,6 +888,37 @@ if (cmd === "cat" && arg) {
     writeLog("unknown: " + cmd + " (help)\n");
   }
 
+
+  // ACCD-TOOLBAR-DELEGATE — single click router for codespace toolbar
+  function bindToolbarDelegate() {
+    var panel = $("codePanel");
+    if (!panel || panel.dataset.acdToolbar === "1") return;
+    panel.dataset.acdToolbar = "1";
+    panel.addEventListener("click", function (ev) {
+      var btn = ev.target && ev.target.closest && ev.target.closest("button");
+      if (!btn || !panel.contains(btn)) return;
+      var id = btn.id || "";
+      if (!id) return;
+      ev.preventDefault();
+      try {
+        if (id === "btnCodeBack" || id === "btnCloseCode") return goHome();
+        if (id === "btnRunCode") return runEditor();
+        if (id === "btnTermRun") return runTerminal();
+        if (id === "btnNewRepo") return createRepo();
+        if (id === "btnNewFile") return newFile();
+        if (id === "btnNewFolder") return newFolder();
+        if (id === "btnSaveFile") return saveFile();
+        if (id === "btnPushRepo") return pushRepo();
+        if (id === "btnToggleSidebar") return setSidebar(!sidebarOpen);
+        if (id === "btnCloseSidebar") return setSidebar(false);
+        if (id === "btnToggleTerm") return setTermCollapsed(!termCollapsed);
+      } catch (err) {
+        console.error("[codespace]", id, err);
+        try { writeLog("ui:" + id + " " + (err.message || err) + "\n"); } catch (e) {}
+      }
+    });
+  }
+
   function goHome() {
     var panel = $("codePanel");
     if (panel) panel.style.setProperty("display", "none", "important");
@@ -950,6 +981,7 @@ if (cmd === "cat" && arg) {
   function bind() {
     var panel = $("codePanel");
     if (panel) panel.style.setProperty("display", "none", "important");
+    bindToolbarDelegate();
     ensureGhostInput();
     bindToolbar();
 

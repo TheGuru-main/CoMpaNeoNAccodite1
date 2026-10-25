@@ -1210,6 +1210,30 @@ def seed_crawl(
         print(f"[seed] grid_unique_docs={nd} duplicates_detected={dup} tokens_indexed={tok}")
     except Exception as e:
         print("[seed] grid stats error", e)
+
+    # ACCD-SEED-SAVE-GRID
+    try:
+        import os
+        path = None
+        try:
+            from memory.memory_grid import save_grid, set_process_grid
+            try:
+                set_process_grid(grid)
+            except Exception:
+                pass
+            path = save_grid(grid, os.environ.get("ACCD_GRID_PATH") or None)
+        except Exception:
+            from memory_grid import save_grid, set_process_grid
+            try:
+                set_process_grid(grid)
+            except Exception:
+                pass
+            path = save_grid(grid, os.environ.get("ACCD_GRID_PATH") or None)
+        stats["grid_path"] = path
+        print(f"[seed] saved grid path={path} unique_docs={len(getattr(grid, 'documents', {}) or {})}")
+    except Exception as e:
+        print("[seed] save_grid failed:", type(e).__name__, e)
+
     return stats
 
 

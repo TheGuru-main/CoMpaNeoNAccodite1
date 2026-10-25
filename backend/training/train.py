@@ -1217,7 +1217,23 @@ def ensure_seed_crawl(*, force: bool = False, grid=None):
             except Exception:
                 return {"ok": False, "reason": "no grid"}
 
-    docs = getattr(grid, "documents", None)
+    
+    # ACCD-ENSURE-SEED-LOAD — restore persisted seed before counting
+    try:
+        _docs0 = getattr(grid, "documents", None) or {}
+        if len(_docs0) == 0:
+            try:
+                from memory.memory_grid import load_grid
+            except Exception:
+                from memory_grid import load_grid
+            g2 = load_grid()
+            if g2 is not None and len(getattr(g2, "documents", {}) or {}) > 0:
+                grid = g2
+                print("[seed] loaded grid snapshot docs=", len(grid.documents))
+    except Exception as e:
+        print("[seed] load_grid skip:", e)
+
+docs = getattr(grid, "documents", None)
     current = len(docs) if docs else 0
     if current >= SEED_THRESHOLD and not force:
         print(f"[seed] skip (grid already has {current} docs)")
@@ -1240,6 +1256,20 @@ def ensure_seed_crawl(*, force: bool = False, grid=None):
     print(f"[seed] running (grid has {current} docs, threshold {SEED_THRESHOLD})")
     try:
         stats = seed_crawl(grid=grid)
+        # ACCD-ENSURE-SEED-SAVE (seed_crawl also saves; re-save if path missing)
+        try:
+            if not (stats or {}).get("grid_path"):
+                import os
+                try:
+                    from memory.memory_grid import save_grid
+                except Exception:
+                    from memory_grid import save_grid
+                path = save_grid(grid, os.environ.get("ACCD_GRID_PATH") or None)
+                if isinstance(stats, dict):
+                    stats["grid_path"] = path
+                print("[seed] ensure save_grid", path)
+        except Exception as e:
+            print("[seed] ensure save_grid skip:", e)
         return {"ok": True, "stats": stats}
     except Exception as e:
         print(f"[seed] failed: {type(e).__name__}: {e}")

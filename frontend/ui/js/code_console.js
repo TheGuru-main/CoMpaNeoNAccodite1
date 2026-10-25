@@ -1150,3 +1150,17 @@ if (cmd === "cat" && arg) {
   };
 })();
 
+
+// ACCD-OPEN-CODE-RESCUE
+(function () {
+  var _open = window.openCodePanel;
+  window.openCodePanel = function () {
+    if (typeof _open === "function") { try { _open(); } catch (e) {} }
+    var panel = document.getElementById("codePanel");
+    if (panel) {
+      panel.style.setProperty("display", "flex", "important");
+      panel.style.flexDirection = "column";
+      panel.classList.add("active");
+    }
+  };
+})();

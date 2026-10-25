@@ -789,9 +789,10 @@ async function loadRooms() {
         roomList = [];
     }
     renderRoomBar();
-    if (!currentRoomId && roomList.length > 0) {
-        await openRoom(roomList[0].id);
-    }
+    // ACCD-NO-AUTO-ROOM — stay on home until user picks a workspace
+    // if (!currentRoomId && roomList.length > 0) {
+    //     await openRoom(roomList[0].id);
+    // }
 }
 
 function renderRoomBar() {
@@ -1703,9 +1704,21 @@ function updateInputVisibility() {
     document.body.classList.toggle('home-active', !!(onMain && !currentRoomId));
 
     if (inputArea) {
-      inputArea.style.removeProperty('display');
-      if (inRoom) inputArea.removeAttribute('hidden');
-      else inputArea.setAttribute('hidden', '');
+      if (inRoom) {
+        inputArea.removeAttribute('hidden');
+        inputArea.style.setProperty('display', 'flex', 'important');
+        inputArea.style.setProperty('visibility', 'visible', 'important');
+        inputArea.style.setProperty('pointer-events', 'auto', 'important');
+      } else {
+        inputArea.setAttribute('hidden', '');
+        inputArea.style.setProperty('display', 'none', 'important');
+        inputArea.style.setProperty('visibility', 'hidden', 'important');
+        inputArea.style.setProperty('pointer-events', 'none', 'important');
+      }
+    }
+    var hub = document.getElementById('homeHub');
+    if (hub) {
+      hub.style.display = (onMain && !currentRoomId) ? 'flex' : 'none';
     }
     if (chips) {
       if (!inRoom) chips.style.display = 'none';
@@ -1766,9 +1779,8 @@ loadRooms = async function() {
         return;
     }
     // else if no active room, open the first
-    if (!currentRoomId && roomList.length > 0) {
-        await openRoom(roomList[0].id);
-    }
+    // ACCD-NO-AUTO-ROOM
+
     updateInputVisibility();
 };
 
@@ -4300,6 +4312,9 @@ console.log('[acd] input pin-fixed installed');
 // ============================================================================
 
 (function forceInputAlways() {
+    // ACCD-KILL-FORCE-INPUT — disabled (was forcing home prompt)
+    return;
+    /*
     // # FORCE-INPUT-ALWAYS
 
     window.updateInputVisibility = function() {
@@ -4374,7 +4389,8 @@ console.log('[acd] input pin-fixed installed');
         }
     } catch (_) {}
 
-    console.log('[acd] FORCE-INPUT-ALWAYS installed');
+    */
+    console.log('[acd] FORCE-INPUT-ALWAYS DISABLED');
 })();
 
 
@@ -4782,6 +4798,8 @@ document.addEventListener("DOMContentLoaded", () => {
 // ============================================================
 (function () {
     function ensureInputVisible() {
+        // ACCD-KILL-INPUT-BOTTOM
+        return;
         const input = document.getElementById("inputArea");
         if (!input) return;
         // Always show on main screen (home / workspace)
@@ -5521,3 +5539,43 @@ document.addEventListener("click", function (ev) {
   if (typeof window.openCodePanel === "function") window.openCodePanel();
   else if (typeof window.acdNav === "function") window.acdNav("code");
 });
+
+
+// ACCD-HUB-CODESPACE-V2
+document.addEventListener("click", function (ev) {
+  var btn = ev.target && ev.target.closest && ev.target.closest(
+    "[data-hub=codespace], #btnHomeCode, [data-hub='codespace']"
+  );
+  if (!btn) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+  function open() {
+    if (typeof window.openCodePanel === "function") {
+      window.openCodePanel();
+      return true;
+    }
+    var panel = document.getElementById("codePanel") || document.getElementById("codeScreen");
+    if (panel) {
+      panel.style.setProperty("display", "flex", "important");
+      panel.classList.add("active");
+      return true;
+    }
+    return false;
+  }
+  if (!open()) {
+    console.warn("[acd] openCodePanel missing — retry");
+    setTimeout(open, 200);
+    setTimeout(open, 800);
+  }
+}, true);
+
+document.addEventListener("click", function (ev) {
+  var btn = ev.target && ev.target.closest && ev.target.closest("[data-hub]");
+  if (!btn) return;
+  var hub = btn.getAttribute("data-hub");
+  if (hub === "codespace") return; // handled above
+  if (hub === "messages" && typeof openDMPanel === "function") openDMPanel();
+  if (hub === "search" && typeof openResearch === "function") openResearch();
+  if (hub === "docs" && typeof openDocuments === "function") openDocuments();
+  if (hub === "train" && typeof openTrainingModal === "function") openTrainingModal();
+}, false);

@@ -1077,6 +1077,42 @@ def _get_seed_loop():
     return _SEED_LOOP
 
 
+
+# ACCD-SEED-CHUNK
+def _chunk_text_for_grid(text: str, max_chars: int = 512, min_chars: int = 40):
+    """Split one adapter body into paragraph/sentence chunks for unique grid docs."""
+    text = (text or "").strip()
+    if not text:
+        return []
+    if len(text) <= max_chars:
+        return [text] if len(text) >= min_chars else ([text] if text else [])
+    import re
+    parts = re.split(r"\n\s*\n|(?<=[.!?])\s+(?=[A-Z0-9])", text)
+    out = []
+    buf = ""
+    for part in parts:
+        part = (part or "").strip()
+        if not part:
+            continue
+        if len(part) > max_chars:
+            if buf:
+                out.append(buf.strip())
+                buf = ""
+            for i in range(0, len(part), max_chars):
+                piece = part[i:i + max_chars].strip()
+                if len(piece) >= min_chars:
+                    out.append(piece)
+            continue
+        if len(buf) + len(part) + 1 <= max_chars:
+            buf = (buf + " " + part).strip()
+        else:
+            if len(buf) >= min_chars:
+                out.append(buf)
+            buf = part
+    if buf and len(buf) >= min_chars:
+        out.append(buf)
+    return out or ([text[:max_chars]] if text else [])
+
 def seed_crawl(
     *,
     grid=None,
@@ -1139,16 +1175,20 @@ def seed_crawl(
                 for chunk in chunks:
                     if not isinstance(chunk, str) or not chunk.strip():
                         continue
-                    try:
-                        grid.add_document(
-                            chunk[:8192],
-                            source=f"seed:{domain}",
-                        )
-                        written += 1
-                    except Exception as e:
-                        failed += 1
-                        stats["errors"].append(f"{domain}: add_document {e}")
-                        print(f"[seed-err] {domain}: {type(e).__name__}: {e}")  # SHOW-ERRORS
+                    # ACCD-SEED-CHUNK: paragraph/sentence units → unique hashes → more grid docs
+                    units = _chunk_text_for_grid(chunk[:8192])
+                    for ui, unit in enumerate(units):
+                        try:
+                            grid.add_document(
+                                unit,
+                                source=f"seed:{domain}",
+                                metadata={"domain": domain, "chunk_i": ui},
+                            )
+                            written += 1
+                        except Exception as e:
+                            failed += 1
+                            stats["errors"].append(f"{domain}: add_document {e}")
+                            print(f"[seed-err] {domain}: {type(e).__name__}: {e}")
             except Exception as e:
                 failed += 1
                 stats["errors"].append(f"{domain}: {type(e).__name__}: {e}")
@@ -1163,6 +1203,13 @@ def seed_crawl(
         f"[seed] TOTAL written={stats['written']} failed={stats['failed']} "
         f"planned={stats['planned']}"
     )
+    try:
+        nd = len(getattr(grid, "documents", {}) or {})
+        dup = int(getattr(grid, "duplicates_detected", 0) or 0)
+        tok = int(getattr(grid, "tokens_added", 0) or 0)
+        print(f"[seed] grid_unique_docs={nd} duplicates_detected={dup} tokens_indexed={tok}")
+    except Exception as e:
+        print("[seed] grid stats error", e)
     return stats
 
 

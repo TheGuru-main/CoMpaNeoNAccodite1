@@ -899,6 +899,8 @@ if (cmd === "cat" && arg) {
     if (!panel) return;
     panel.style.setProperty("display", "flex", "important");
     panel.style.flexDirection = "column";
+    panel.style.zIndex = "9999";
+    bindToolbar();
     ensureGhostInput();
     setSidebar(true);
     setTermCollapsed(false);
@@ -919,33 +921,37 @@ if (cmd === "cat" && arg) {
     }, 200);
   }
 
+  function wireBtn(id, fn) {
+    var el = $(id);
+    if (!el) return;
+    el.onclick = function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      try { fn(); } catch (err) { console.warn("[codespace]", id, err); }
+    };
+  }
+
+  function bindToolbar() {
+    wireBtn("btnCodeBack", goHome);
+    wireBtn("btnCloseCode", goHome);
+    wireBtn("btnRunCode", runEditor);
+    wireBtn("btnTermRun", runTerminal);
+    wireBtn("btnNewRepo", createRepo);
+    wireBtn("btnNewFile", newFile);
+    wireBtn("btnNewFolder", newFolder);
+    wireBtn("btnSaveFile", saveFile);
+    wireBtn("btnPushRepo", pushRepo);
+    wireBtn("btnToggleSidebar", function () { setSidebar(!sidebarOpen); });
+    wireBtn("btnCloseSidebar", function () { setSidebar(false); });
+    wireBtn("btnToggleTerm", function () { setTermCollapsed(!termCollapsed); });
+    // hub open is owned by app.js acdOpenCodespace — do not steal btnHomeCode here
+  }
+
   function bind() {
     var panel = $("codePanel");
     if (panel) panel.style.setProperty("display", "none", "important");
     ensureGhostInput();
-
-    function wire(id, fn) {
-      var el = $(id);
-      if (el) el.onclick = function (e) {
-        e.preventDefault();
-        e.stopPropagation();
-        fn();
-      };
-    }
-
-    wire("btnCodeBack", goHome);
-    wire("btnCloseCode", goHome);
-    wire("btnRunCode", runEditor);
-    wire("btnTermRun", runTerminal);
-    wire("btnNewRepo", createRepo);
-    wire("btnNewFile", newFile);
-    wire("btnNewFolder", newFolder);
-    wire("btnSaveFile", saveFile);
-    wire("btnPushRepo", pushRepo);
-    wire("btnToggleSidebar", function () { setSidebar(!sidebarOpen); });
-    wire("btnCloseSidebar", function () { setSidebar(false); });
-    wire("btnToggleTerm", function () { setTermCollapsed(!termCollapsed); });
-    wire("btnHomeCode", showPanel);
+    bindToolbar();
 
     var sel = $("codeRepoSelect");
     if (sel) {

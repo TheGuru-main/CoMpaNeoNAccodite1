@@ -5407,9 +5407,12 @@ document.addEventListener("click", function (ev) {
   };
 
   document.addEventListener("click", function (ev) {
+    // Only home hub Codespace — never intercept clicks inside #codePanel
+    if (ev.target && ev.target.closest && ev.target.closest("#codePanel")) return;
     var b = ev.target && ev.target.closest &&
       ev.target.closest("#btnHomeCode, [data-hub=codespace]");
-    if (b) window.acdOpenCodespace(ev);
+    if (!b) return;
+    if (typeof window.acdOpenCodespace === "function") window.acdOpenCodespace(ev);
   }, true);
 
   setTimeout(window.updateInputVisibility, 0);

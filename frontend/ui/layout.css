@@ -1528,3 +1528,43 @@ body.home-active #inputArea {
   pointer-events: none !important;
 }
 
+/* ACCD-UI-SEAT-FINAL — room composer on bottom; hide conflicting nav rules */
+body.workspace-active .bottom-nav,
+body.ws-room-active .bottom-nav,
+body.workspace-active .bottom-nav.bottom-nav-fixed,
+body.ws-room-active .bottom-nav.bottom-nav-fixed {
+  display: none !important;
+}
+body.home-active #inputArea,
+body.home-active #mainScreen > .input-area {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+body.workspace-active #inputArea,
+body.ws-room-active #inputArea {
+  display: flex !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+  position: fixed !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  z-index: 90 !important;
+  margin: 0 !important;
+  padding: 0.55rem 0.75rem calc(0.55rem + env(safe-area-inset-bottom, 0px)) !important;
+  background: rgba(12, 12, 16, 0.98) !important;
+  border-top: 1px solid rgba(255,255,255,0.12) !important;
+  box-sizing: border-box !important;
+}
+body.workspace-active #chatBox,
+body.ws-room-active #chatBox {
+  padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px)) !important;
+}
+#codePanel, #codePanel * {
+  pointer-events: auto;
+}
+#codePanel {
+  z-index: 9999 !important;
+}
+

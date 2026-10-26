@@ -5432,6 +5432,64 @@ async function commitImageInspect() {
     window.__acdCodespaceNavWrapped = true;
   }
 
+
+  // ACCD-ROOM-OPEN-IMMEDIATE-V1
+  // Enter workspace mode immediately; never route through Home first.
+  if (!window.__acdImmediateRoomOpenInstalled &&
+      typeof window.openRoom === "function") {
+    var _acdOpenRoomImmediate = window.openRoom;
+
+    window.openRoom = function (roomId) {
+      var main = document.getElementById("mainScreen");
+      var input = document.getElementById("inputArea");
+      var hub = document.getElementById("homeHub");
+
+      if (roomId && main && main.classList.contains("active")) {
+        document.body.classList.remove("home-active", "codespace-active");
+        document.body.classList.add("workspace-active", "ws-room-active");
+
+        if (input) input.removeAttribute("hidden");
+        if (hub) hub.style.display = "none";
+      }
+
+      // Start room loading only after the visible state has switched.
+      var result;
+      try {
+        result = _acdOpenRoomImmediate.apply(this, arguments);
+      } catch (error) {
+        throw error;
+      }
+
+      return Promise.resolve(result).then(function (value) {
+        var inRoom = !!(
+          main &&
+          main.classList.contains("active") &&
+          typeof currentRoomId !== "undefined" &&
+          currentRoomId
+        );
+
+        document.body.classList.toggle("workspace-active", inRoom);
+        document.body.classList.toggle("ws-room-active", inRoom);
+        document.body.classList.toggle("home-active", !!(
+          main && main.classList.contains("active") && !inRoom
+        ));
+
+        if (input) {
+          if (inRoom && !document.body.classList.contains("codespace-active")) {
+            input.removeAttribute("hidden");
+          } else {
+            input.setAttribute("hidden", "");
+          }
+        }
+
+        if (hub) hub.style.display = inRoom ? "none" : "flex";
+        return value;
+      });
+    };
+
+    window.__acdImmediateRoomOpenInstalled = true;
+  }
+
   console.log("[acd] CLEAN-UI only");
 })();
 

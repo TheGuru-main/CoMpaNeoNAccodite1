@@ -10,7 +10,7 @@ from memory_grid import MemoryGrid
 from web_crawler import WebCrawler
 from tokenizer import tokenize, normalize_lang, grid_dims, supported_languages
 from word_understanding import WordUnderstanding
-from ai_model import MiniCompanionAI
+from model.ai_model import MiniCompanionAI
 from data_mixer import DataMixer
 from external import fetch_dictionary, fetch_news, fetch_books, fetch_elibrary, fetch_wikipedia
 from prompts_manager import build_prompt

@@ -35,7 +35,7 @@ from typing import AsyncGenerator, Optional, Dict, Any
 import torch
 import torch.nn.functional as F
 
-from ai_model import MiniCompanionAI
+from model.ai_model import MiniCompanionAI
 from tokenizer import tokenize, normalize_lang
 
 

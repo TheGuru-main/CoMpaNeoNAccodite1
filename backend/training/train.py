@@ -25,7 +25,7 @@ except ImportError:
     def detect(_): return "en"
     class LangDetectException(Exception): pass
 
-from ai_model import MiniCompanionAI
+from model.ai_model import MiniCompanionAI
 from tokenizer import tokenize, normalize_lang
 from memory_grid import MemoryGrid
 

@@ -23,7 +23,7 @@ except ImportError:
     class LangDetectException(Exception): pass
 
 try:
-    from ai_model import MiniCompanionAI
+    from model.ai_model import MiniCompanionAI
 except ImportError:
     MiniCompanionAI = None
 

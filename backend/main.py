@@ -30,7 +30,7 @@ from datetime import datetime
 from phone_util import normalize_phone, variants
 from database import engine, SessionLocal, Base
 from db_models import User, Workspace, Message, APIKey
-from ai_model import MiniCompanionAI
+from model.ai_model import MiniCompanionAI
 from auth import get_current_user, hash_password, verify_password, create_access_token, validate_phone, compute_user_cell, get_db
 from api_auth import verify_api_key, rate_limiter
 from tokenizer import tokenize, normalize_lang, grid_dims, supported_languages

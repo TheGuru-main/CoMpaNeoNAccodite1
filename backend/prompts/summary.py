@@ -35,7 +35,7 @@ except ImportError:
         F = None
         TORCH_AVAILABLE = False
 
-from ai_model import MiniCompanionAI
+from model.ai_model import MiniCompanionAI
 from tokenizer import tokenize, normalize_lang
 from memory_grid import MemoryGrid
 from word_understanding import WordUnderstanding

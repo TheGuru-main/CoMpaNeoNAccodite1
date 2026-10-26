@@ -1704,16 +1704,10 @@ function updateInputVisibility() {
     document.body.classList.toggle('home-active', !!(onMain && !currentRoomId));
 
     if (inputArea) {
-      if (inRoom) {
+      if (inRoom && !document.body.classList.contains('codespace-active')) {
         inputArea.removeAttribute('hidden');
-        inputArea.style.setProperty('display', 'flex', 'important');
-        inputArea.style.setProperty('visibility', 'visible', 'important');
-        inputArea.style.setProperty('pointer-events', 'auto', 'important');
       } else {
         inputArea.setAttribute('hidden', '');
-        inputArea.style.setProperty('display', 'none', 'important');
-        inputArea.style.setProperty('visibility', 'hidden', 'important');
-        inputArea.style.setProperty('pointer-events', 'none', 'important');
       }
     }
     var hub = document.getElementById('homeHub');
@@ -4642,7 +4636,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const input = document.getElementById("inputArea");
     if (input) {
-      input.style.display = mode === "workspace" ? "flex" : "none";
+      if (mode === "workspace" &&
+          !document.body.classList.contains("codespace-active")) {
+        input.removeAttribute("hidden");
+      } else {
+        input.setAttribute("hidden", "");
+      }
     }
     const home = document.getElementById("homeActions");
     if (home) {
@@ -4733,13 +4732,11 @@ document.addEventListener("DOMContentLoaded", () => {
     var input = document.getElementById("inputArea");
     if (hub) hub.style.display = on ? "flex" : "none";
     if (input) {
-      // only workspaces get the chat prompt
-      if (on) {
-        input.style.setProperty("display", "none", "important");
-      } else if (window.currentRoomId) {
-        input.style.setProperty("display", "flex", "important");
+      if (!on && window.currentRoomId &&
+          !document.body.classList.contains("codespace-active")) {
+        input.removeAttribute("hidden");
       } else {
-        input.style.setProperty("display", "none", "important");
+        input.setAttribute("hidden", "");
       }
     }
   }
@@ -4905,7 +4902,7 @@ document.addEventListener("DOMContentLoaded", () => {
       var inputArea = document.getElementById("inputArea");
       var onHome = !currentRoomId || document.body.classList.contains("home-active");
       if (onHome && inputArea) {
-        inputArea.style.setProperty("display", "none", "important");
+        inputArea.setAttribute("hidden", "");
       }
     };
   }
@@ -4920,6 +4917,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function goHomeStrict() {
+    document.body.classList.remove("codespace-active", "ws-room-active");
     document.body.classList.add("home-active");
     document.body.classList.remove("workspace-active");
     currentRoomId = null;
@@ -5025,18 +5023,18 @@ document.addEventListener("DOMContentLoaded", () => {
     var onMain = document.getElementById("mainScreen") &&
       document.getElementById("mainScreen").classList.contains("active");
     var inRoom = !!(typeof currentRoomId !== "undefined" && currentRoomId);
-    // Home / no room → hide. Open workspace → show.
-    if (onMain && inRoom) {
+    // Room state controls visibility; CSS owns composer layout.
+    var codespaceOpen = document.body.classList.contains("codespace-active");
+    if (onMain && inRoom && !codespaceOpen) {
       document.body.classList.remove("home-active");
       document.body.classList.add("workspace-active");
-      ia.style.setProperty("display", "flex", "important");
-      ia.style.setProperty("visibility", "visible", "important");
-      ia.style.setProperty("opacity", "1", "important");
-      ia.style.setProperty("z-index", "55", "important");
-    } else if (onMain && !inRoom) {
-      document.body.classList.add("home-active");
-      document.body.classList.remove("workspace-active");
-      ia.style.setProperty("display", "none", "important");
+      ia.removeAttribute("hidden");
+    } else {
+      ia.setAttribute("hidden", "");
+      if (onMain && !inRoom) {
+        document.body.classList.add("home-active");
+        document.body.classList.remove("workspace-active");
+      }
     }
   }
   window.acdForceRoomInput = acdForceRoomInput;
@@ -5180,7 +5178,13 @@ document.addEventListener("DOMContentLoaded", () => {
     document.body.classList.toggle("ws-room-active", !!active);
     document.body.classList.toggle("ws-home", !active);
     var ia = document.getElementById("inputArea");
-    if (ia) ia.style.display = active ? "block" : "none";
+    if (ia) {
+      if (active && !document.body.classList.contains("codespace-active")) {
+        ia.removeAttribute("hidden");
+      } else {
+        ia.setAttribute("hidden", "");
+      }
+    }
     ["btnVoiceCall", "btnVideoCall"].forEach(function (id) {
       var el = document.getElementById(id);
       if (el) el.style.display = active ? "" : "none";
@@ -5351,21 +5355,19 @@ async function commitImageInspect() {
   function setPrompt(on) {
     var ia = document.getElementById("inputArea");
     if (!ia) return;
+
+    // JavaScript owns visibility state; CSS owns layout and positioning.
+    [
+      "display", "visibility", "pointer-events",
+      "position", "bottom", "left", "right", "z-index"
+    ].forEach(function (property) {
+      ia.style.removeProperty(property);
+    });
+
     if (on) {
       ia.removeAttribute("hidden");
-      ia.style.setProperty("display", "flex", "important");
-      ia.style.setProperty("visibility", "visible", "important");
-      ia.style.setProperty("pointer-events", "auto", "important");
-      ia.style.setProperty("position", "fixed", "important");
-      ia.style.setProperty("bottom", "0", "important");
-      ia.style.setProperty("left", "0", "important");
-      ia.style.setProperty("right", "0", "important");
-      ia.style.setProperty("z-index", "90", "important");
     } else {
       ia.setAttribute("hidden", "");
-      ia.style.setProperty("display", "none", "important");
-      ia.style.setProperty("visibility", "hidden", "important");
-      ia.style.setProperty("pointer-events", "none", "important");
     }
   }
 
@@ -5385,6 +5387,11 @@ async function commitImageInspect() {
       ev.preventDefault();
       ev.stopPropagation();
     }
+    // Codespace is an overlay, not a workspace composer state.
+    document.body.classList.add("codespace-active");
+    var input = document.getElementById("inputArea");
+    if (input) input.setAttribute("hidden", "");
+
     // Do not call acdNav — its default case is home
     if (typeof window.openCodePanel === "function") {
       try { window.openCodePanel(); } catch (e) {}
@@ -5409,6 +5416,22 @@ async function commitImageInspect() {
 
   setTimeout(window.updateInputVisibility, 0);
   setTimeout(window.updateInputVisibility, 400);
+
+  // Keep Codespace actions out of acdNav's default-home branch.
+  var originalNav = window.acdNav;
+  if (!window.__acdCodespaceNavWrapped) {
+    window.acdNav = function (action, el) {
+      if (action === "code" || action === "codespace") {
+        window.acdOpenCodespace(null);
+        return false;
+      }
+      return typeof originalNav === "function"
+        ? originalNav(action, el)
+        : false;
+    };
+    window.__acdCodespaceNavWrapped = true;
+  }
+
   console.log("[acd] CLEAN-UI only");
 })();
 
@@ -5418,86 +5441,3 @@ document.addEventListener("click", function (ev) {
     /* allow codespace toolbar; do not stop */
   }
 }, true);
-
-// =============================================================================
-// ACCD-CS-FINAL — last open router (never acdNav; never default-home)
-// =============================================================================
-(function () {
-  function openCs(ev) {
-    if (ev) {
-      try { ev.preventDefault(); } catch (e) {}
-      try { ev.stopPropagation(); } catch (e) {}
-      try { ev.stopImmediatePropagation(); } catch (e) {}
-    }
-    // never call acdNav — default case is home
-    if (typeof window.openCodePanel === "function") {
-      try { window.openCodePanel(); } catch (e) { console.warn("[cs]", e); }
-    }
-    var panel = document.getElementById("codePanel");
-    if (panel) {
-      panel.style.setProperty("display", "flex", "important");
-      panel.style.flexDirection = "column";
-      panel.style.zIndex = "9999";
-      panel.style.pointerEvents = "auto";
-      panel.classList.add("active");
-    }
-    try {
-      document.body.classList.remove("home-active");
-      var hub = document.getElementById("homeHub");
-      if (hub) hub.style.display = "none";
-    } catch (e) {}
-    return false;
-  }
-  window.acdOpenCodespace = openCs;
-
-  document.addEventListener("click", function (ev) {
-    if (ev.target && ev.target.closest && ev.target.closest("#codePanel")) return;
-    var b = ev.target && ev.target.closest &&
-      ev.target.closest("#btnHomeCode, [data-hub=codespace], [data-hub='codespace']");
-    if (!b) return;
-    openCs(ev);
-  }, true);
-
-  // patch acdNav so action "code" never falls into default home
-  var _nav = window.acdNav;
-  window.acdNav = function (action, el) {
-    if (action === "code" || action === "codespace") {
-      openCs(null);
-      return false;
-    }
-    if (typeof _nav === "function") return _nav(action, el);
-    return false;
-  };
-  console.log("[acd] ACCD-CS-FINAL installed");
-})();
-
-// ACCD-CS-SOFT — open codespace; never acdNav default-home; do not kill panel clicks
-(function () {
-  function openCs(ev) {
-    if (ev) { try { ev.preventDefault(); } catch (e) {} }
-    if (typeof window.openCodePanel === "function") {
-      try { window.openCodePanel(); } catch (e) { console.warn("[cs]", e); }
-    }
-    var panel = document.getElementById("codePanel");
-    if (panel) {
-      panel.style.setProperty("display", "flex", "important");
-      panel.style.zIndex = "9999";
-      panel.style.pointerEvents = "auto";
-    }
-    document.dispatchEvent(new CustomEvent("acd-codespace-open"));
-    return false;
-  }
-  window.acdOpenCodespace = openCs;
-  document.addEventListener("click", function (ev) {
-    if (ev.target.closest && ev.target.closest("#codePanel")) return;
-    var b = ev.target.closest && ev.target.closest("#btnHomeCode, [data-hub=codespace]");
-    if (!b) return;
-    openCs(ev);
-  }, false);
-  var _nav = window.acdNav;
-  window.acdNav = function (action, el) {
-    if (action === "code" || action === "codespace") return openCs(null);
-    return typeof _nav === "function" ? _nav(action, el) : false;
-  };
-  console.log("[acd] CS-SOFT");
-})();

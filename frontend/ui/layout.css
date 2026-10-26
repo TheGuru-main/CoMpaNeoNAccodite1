@@ -1250,11 +1250,7 @@ body.light-mode #mainScreen .input-area {
     border-top-color: rgba(0, 0, 0, 0.1) !important;
 }
 
-/* Kill any remaining fixed bottom-nav rules so nothing sits under the input */
-.bottom-nav,
-.bottom-nav.bottom-nav-fixed {
-    display: none !important;
-}
+/* Removed obsolete global nav-hiding rule; screen state controls visibility. */
 
 /* Panels that were previously bottom-offset to the old nav */
 #mainScreen > .research-panel,
@@ -1454,117 +1450,124 @@ body:not(.ws-room-active) .ws-call-btn { display: none !important; }
 .term-caret { animation: none; }
 .term-log, .term-line { white-space: pre-wrap; word-break: break-word; }
 
-/* ACCD-UI-DEDUP-FINAL — single composer + nav policy (duplicates above are obsolete) */
+/* ACCD-COMPOSER-NAV-SINGLE-SOURCE
+   One visibility and positioning policy for the composer and navigation.
+   Home: nav visible, composer hidden.
+   Workspace: composer above nav.
+   Codespace: editor overlay owns the screen.
+*/
+
+/* Composer is hidden outside active workspace rooms. */
 #inputArea,
 #mainScreen > .input-area,
 #mainScreen .input-area {
-  display: none !important;
-  visibility: hidden !important;
-  pointer-events: none !important;
-  position: fixed !important;
-  bottom: 0 !important;
+  display: none;
+  visibility: hidden;
+  pointer-events: none;
 }
+
+/* The HTML hidden attribute must not suppress the composer in a room. */
 body.workspace-active #inputArea,
 body.ws-room-active #inputArea,
 body.workspace-active #mainScreen > .input-area,
-body.ws-room-active #mainScreen > .input-area {
-  display: flex !important;
-  visibility: visible !important;
-  pointer-events: auto !important;
-  position: fixed !important;
-  left: 0 !important;
-  right: 0 !important;
-  bottom: 0 !important;
-  margin: 0 !important;
-  z-index: 90 !important;
-  padding: 0.5rem 0.75rem calc(0.5rem + env(safe-area-inset-bottom, 0px)) !important;
-  background: rgba(12,12,16,0.98) !important;
-  border-top: 1px solid rgba(255,255,255,0.1) !important;
-}
-body.home-active #inputArea,
-body:not(.workspace-active):not(.ws-room-active) #inputArea {
-  display: none !important;
-  visibility: hidden !important;
-  pointer-events: none !important;
-}
-/* obsolete bottom nav under composer */
-body.logged-in .bottom-nav,
-body.logged-in .bottom-nav.bottom-nav-fixed {
-  display: none !important;
+body.ws-room-active #mainScreen > .input-area,
+body.workspace-active #inputArea[hidden],
+body.ws-room-active #inputArea[hidden] {
+  display: flex;
+  visibility: visible;
+  pointer-events: auto;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--nav-h, 68px) + env(safe-area-inset-bottom, 0px));
+  z-index: 40;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 0.55rem 0.75rem;
+  background: rgba(12, 12, 16, 0.98);
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
 }
 
-/* ACCD-WS-COMPOSER-SEAT — room prompt sits on bottom; not under bottom-nav */
-body.workspace-active .bottom-nav,
-body.ws-room-active .bottom-nav,
-body.workspace-active .bottom-nav.bottom-nav-fixed,
-body.ws-room-active .bottom-nav.bottom-nav-fixed {
-  display: none !important;
+/* Home and non-workspace screens never display the composer. */
+body.home-active #inputArea,
+body.home-active #mainScreen > .input-area,
+body:not(.workspace-active):not(.ws-room-active) #inputArea {
+  display: none;
+  visibility: hidden;
+  pointer-events: none;
 }
-body.workspace-active #inputArea,
-body.ws-room-active #inputArea {
-  display: flex !important;
-  visibility: visible !important;
-  pointer-events: auto !important;
-  position: fixed !important;
-  left: 0 !important;
-  right: 0 !important;
-  bottom: 0 !important;
-  bottom: env(safe-area-inset-bottom, 0px) !important;
-  z-index: 90 !important;
-  margin: 0 !important;
-  padding: 0.55rem 0.75rem calc(0.55rem + env(safe-area-inset-bottom, 0px)) !important;
-  background: rgba(12, 12, 16, 0.98) !important;
-  border-top: 1px solid rgba(255,255,255,0.12) !important;
-  box-sizing: border-box !important;
+
+/* Keep the navigation visible on the home and workspace screens. */
+.bottom-nav.bottom-nav-fixed {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
 }
+
+/* Reserve space so room messages can scroll above the composer and nav. */
 body.workspace-active #chatBox,
 body.ws-room-active #chatBox,
 body.workspace-active #mainScreen .chat-box {
-  padding-bottom: calc(110px + env(safe-area-inset-bottom, 0px)) !important;
+  padding-bottom: calc(150px + env(safe-area-inset-bottom, 0px));
 }
-body.home-active #inputArea {
+
+/* Codespace remains an interactive foreground overlay. */
+#codePanel,
+#codePanel * {
+  pointer-events: auto;
+}
+
+#codePanel {
+  z-index: 9999;
+}
+
+
+/* ACCD-VISIBILITY-POLICY-V2
+   Final visibility precedence: Codespace overlay > workspace composer > home.
+   Auth visibility remains controlled by the existing logged-in rules.
+*/
+body.codespace-active #inputArea,
+body.codespace-active #mainScreen .input-area {
   display: none !important;
   visibility: hidden !important;
   pointer-events: none !important;
 }
 
-/* ACCD-UI-SEAT-FINAL — room composer on bottom; hide conflicting nav rules */
-body.workspace-active .bottom-nav,
-body.ws-room-active .bottom-nav,
-body.workspace-active .bottom-nav.bottom-nav-fixed,
-body.ws-room-active .bottom-nav.bottom-nav-fixed {
-  display: none !important;
-}
-body.home-active #inputArea,
-body.home-active #mainScreen > .input-area {
-  display: none !important;
-  visibility: hidden !important;
-  pointer-events: none !important;
-}
-body.workspace-active #inputArea,
-body.ws-room-active #inputArea {
+body.workspace-active:not(.codespace-active) #inputArea,
+body.ws-room-active:not(.codespace-active) #inputArea,
+body.workspace-active:not(.codespace-active) #mainScreen > .input-area,
+body.ws-room-active:not(.codespace-active) #mainScreen > .input-area {
   display: flex !important;
   visibility: visible !important;
   pointer-events: auto !important;
-  position: fixed !important;
-  left: 0 !important;
-  right: 0 !important;
-  bottom: 0 !important;
-  z-index: 90 !important;
-  margin: 0 !important;
-  padding: 0.55rem 0.75rem calc(0.55rem + env(safe-area-inset-bottom, 0px)) !important;
-  background: rgba(12, 12, 16, 0.98) !important;
-  border-top: 1px solid rgba(255,255,255,0.12) !important;
-  box-sizing: border-box !important;
-}
-body.workspace-active #chatBox,
-body.ws-room-active #chatBox {
-  padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px)) !important;
-}
-#codePanel, #codePanel * {
-  pointer-events: auto;
-}
-#codePanel {
-  z-index: 9999 !important;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--nav-h, 68px) + env(safe-area-inset-bottom, 0px));
+  z-index: 40;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
 }
 
+body.home-active:not(.workspace-active) #inputArea,
+body.home-active:not(.workspace-active) #mainScreen > .input-area {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+body.logged-in .bottom-nav.bottom-nav-fixed,
+body.logged-in .bottom-nav {
+  display: flex !important;
+  visibility: visible !important;
+}
+
+body.codespace-active #codePanel {
+  display: flex !important;
+  pointer-events: auto !important;
+  z-index: 9999 !important;
+}

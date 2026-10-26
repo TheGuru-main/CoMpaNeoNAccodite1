@@ -100,7 +100,7 @@
     out.innerHTML =
       '<span class="term-log">' + escapeHtml(logLines.join("")) + "</span>" +
       '<span class="term-line"><span style="color:#22d3ee">$ </span>' +
-      escapeHtml(cmdBuf) + '<span class="term-caret" style="color:#22d3ee">' + caret + "</span></span>';
+      escapeHtml(cmdBuf) + '<span class="term-caret" style="color:#22d3ee">' + caret + '</span></span>';
     if (nearBottom) out.scrollTop = out.scrollHeight;
   }
 
@@ -889,37 +889,8 @@ if (cmd === "cat" && arg) {
   }
 
 
-  // ACCD-TOOLBAR-DELEGATE — single click router for codespace toolbar
-  function bindToolbarDelegate() {
-    var panel = $("codePanel");
-    if (!panel || panel.dataset.acdToolbar === "1") return;
-    panel.dataset.acdToolbar = "1";
-    panel.addEventListener("click", function (ev) {
-      var btn = ev.target && ev.target.closest && ev.target.closest("button");
-      if (!btn || !panel.contains(btn)) return;
-      var id = btn.id || "";
-      if (!id) return;
-      ev.preventDefault();
-      try {
-        if (id === "btnCodeBack" || id === "btnCloseCode") return goHome();
-        if (id === "btnRunCode") return runEditor();
-        if (id === "btnTermRun") return runTerminal();
-        if (id === "btnNewRepo") return createRepo();
-        if (id === "btnNewFile") return newFile();
-        if (id === "btnNewFolder") return newFolder();
-        if (id === "btnSaveFile") return saveFile();
-        if (id === "btnPushRepo") return pushRepo();
-        if (id === "btnToggleSidebar") return setSidebar(!sidebarOpen);
-        if (id === "btnCloseSidebar") return setSidebar(false);
-        if (id === "btnToggleTerm") return setTermCollapsed(!termCollapsed);
-      } catch (err) {
-        console.error("[codespace]", id, err);
-        try { writeLog("ui:" + id + " " + (err.message || err) + "\n"); } catch (e) {}
-      }
-    });
-  }
-
   function goHome() {
+    document.body.classList.remove("codespace-active");
     var panel = $("codePanel");
     if (panel) panel.style.setProperty("display", "none", "important");
     if (typeof window.acdGoHomeStrict === "function") window.acdGoHomeStrict();
@@ -981,7 +952,6 @@ if (cmd === "cat" && arg) {
   function bind() {
     var panel = $("codePanel");
     if (panel) panel.style.setProperty("display", "none", "important");
-    bindToolbarDelegate();
     ensureGhostInput();
     bindToolbar();
 
@@ -1193,6 +1163,9 @@ if (cmd === "cat" && arg) {
 (function () {
   var _open = window.openCodePanel;
   window.openCodePanel = function () {
+    document.body.classList.add("codespace-active");
+    var input = document.getElementById("inputArea");
+    if (input) input.setAttribute("hidden", "");
     if (typeof _open === "function") { try { _open(); } catch (e) {} }
     var panel = document.getElementById("codePanel");
     if (panel) {
@@ -1203,113 +1176,36 @@ if (cmd === "cat" && arg) {
   };
 })();
 
-// ACCD-TOOLBAR-LIVE
+// ACCD-CODESPACE-INTERACTION — terminal focus and panel interaction only.
 (function () {
-  function $(id) { return document.getElementById(id); }
-  function rewire() {
-    var panel = $("codePanel");
+  function wireInteraction() {
+    var panel = document.getElementById("codePanel");
     if (!panel) return;
+
     panel.style.pointerEvents = "auto";
     panel.style.zIndex = "9999";
-    // clear stale dataset so we can re-attach after hot reload
-    var map = {
-      btnCodeBack: function () { if (window.closeCodePanel) window.closeCodePanel(); },
-      btnCloseCode: function () { if (window.closeCodePanel) window.closeCodePanel(); },
-      btnRunCode: function () {
-        var api = window.acdTermApi;
-        // prefer editor run via click simulation of internal if exposed
-        var el = $("btnRunCode");
-        if (el && el._acdFn) return el._acdFn();
-      },
-      btnTermRun: function () {
-        if (window.acdTermApi && window.acdTermApi.enter) window.acdTermApi.enter();
-      },
-      btnToggleSidebar: function () {
-        var sb = $("codeSidebar");
-        if (sb) sb.style.display = (sb.style.display === "none" ? "block" : "none");
-      },
-      btnCloseSidebar: function () {
-        var sb = $("codeSidebar");
-        if (sb) sb.style.display = "none";
-      },
-      btnToggleTerm: function () {
-        var c = $("codeConsole");
-        if (!c) return;
-        var h = c.style.height || "";
-        c.style.height = (h === "0px" || h === "0") ? "" : "0px";
-      }
-    };
-    // Use capture ON PANEL so nothing outside steals; call real handlers from original wire if present
-    if (panel.dataset.acdLive !== "1") {
-      panel.dataset.acdLive = "1";
-      panel.addEventListener("click", function (ev) {
-        var btn = ev.target && ev.target.closest && ev.target.closest("button");
-        if (!btn || !panel.contains(btn)) return;
-        var id = btn.id;
-        if (!id) return;
-        // Let existing onclick run if set; also ensure preventDefault does not kill terminal keys
-        if (btn.onclick) return; // original wire handles it
-        ev.preventDefault();
-        if (map[id]) map[id]();
-      }, false);
-    }
-    // Force re-bind onclick for core toolbar (idempotent)
-    function wire(id, fn) {
-      var el = $(id);
-      if (!el) return;
-      el._acdFn = fn;
-      el.onclick = function (e) {
-        e.preventDefault();
-        e.stopPropagation();
-        try { fn(); } catch (err) { console.error("[cs-btn]", id, err); }
-      };
-      el.style.pointerEvents = "auto";
-      el.style.cursor = "pointer";
-    }
-    // Hook into openCodePanel to rewire every open
-    var _open = window.openCodePanel;
-    window.openCodePanel = function () {
-      if (typeof _open === "function") {
-        try { return _open.apply(this, arguments); }
-        catch (e) { console.warn(e); }
-      }
-      var panel = $("codePanel");
-      if (panel) {
-        panel.style.setProperty("display", "flex", "important");
-        panel.style.zIndex = "9999";
-        panel.style.pointerEvents = "auto";
-      }
-      setTimeout(function () {
-        // re-call internal bind path: dispatch custom
-        document.dispatchEvent(new CustomEvent("acd-codespace-open"));
-      }, 50);
-    };
-    document.addEventListener("acd-codespace-open", function () {
-      // Try to invoke original showPanel side effects already done; ensure buttons clickable
-      ["btnCodeBack","btnCloseCode","btnRunCode","btnTermRun","btnNewRepo","btnNewFile",
-       "btnNewFolder","btnSaveFile","btnPushRepo","btnToggleSidebar","btnCloseSidebar","btnToggleTerm"
-      ].forEach(function (id) {
-        var el = $(id);
-        if (el) {
-          el.style.pointerEvents = "auto";
-          el.style.zIndex = "2";
+
+    var out = document.getElementById("codeOutput");
+    if (out && out.dataset.acdFocusBound !== "1") {
+      out.dataset.acdFocusBound = "1";
+      out.addEventListener("click", function () {
+        var input = document.getElementById("termGhostInput");
+        if (input) {
+          try { input.focus({ preventScroll: true }); }
+          catch (e) { try { input.focus(); } catch (e2) {} }
         }
       });
-      var out = $("codeOutput");
-      if (out) {
-        out.style.pointerEvents = "auto";
-        out.onclick = function () {
-          var g = $("termGhostInput");
-          if (g) try { g.focus(); } catch (e) {}
-        };
-      }
-      var bar = $("termKeyBar");
-      if (bar) bar.style.pointerEvents = "auto";
-    });
+    }
+
+    var bar = document.getElementById("termKeyBar");
+    if (bar) bar.style.pointerEvents = "auto";
   }
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", rewire);
-  else rewire();
-  // also after 1s in case scripts reorder
-  setTimeout(rewire, 800);
-  console.log("[acd] TOOLBAR-LIVE installed");
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", wireInteraction);
+  } else {
+    wireInteraction();
+  }
+
+  document.addEventListener("acd-codespace-open", wireInteraction);
 })();

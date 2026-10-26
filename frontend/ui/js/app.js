@@ -5411,3 +5411,62 @@ async function commitImageInspect() {
   setTimeout(window.updateInputVisibility, 400);
   console.log("[acd] CLEAN-UI only");
 })();
+
+// ACCD-CODEPANEL-CLICK-PASS
+document.addEventListener("click", function (ev) {
+  if (ev.target && ev.target.closest && ev.target.closest("#codePanel button")) {
+    /* allow codespace toolbar; do not stop */
+  }
+}, true);
+
+// =============================================================================
+// ACCD-CS-FINAL — last open router (never acdNav; never default-home)
+// =============================================================================
+(function () {
+  function openCs(ev) {
+    if (ev) {
+      try { ev.preventDefault(); } catch (e) {}
+      try { ev.stopPropagation(); } catch (e) {}
+      try { ev.stopImmediatePropagation(); } catch (e) {}
+    }
+    // never call acdNav — default case is home
+    if (typeof window.openCodePanel === "function") {
+      try { window.openCodePanel(); } catch (e) { console.warn("[cs]", e); }
+    }
+    var panel = document.getElementById("codePanel");
+    if (panel) {
+      panel.style.setProperty("display", "flex", "important");
+      panel.style.flexDirection = "column";
+      panel.style.zIndex = "9999";
+      panel.style.pointerEvents = "auto";
+      panel.classList.add("active");
+    }
+    try {
+      document.body.classList.remove("home-active");
+      var hub = document.getElementById("homeHub");
+      if (hub) hub.style.display = "none";
+    } catch (e) {}
+    return false;
+  }
+  window.acdOpenCodespace = openCs;
+
+  document.addEventListener("click", function (ev) {
+    if (ev.target && ev.target.closest && ev.target.closest("#codePanel")) return;
+    var b = ev.target && ev.target.closest &&
+      ev.target.closest("#btnHomeCode, [data-hub=codespace], [data-hub='codespace']");
+    if (!b) return;
+    openCs(ev);
+  }, true);
+
+  // patch acdNav so action "code" never falls into default home
+  var _nav = window.acdNav;
+  window.acdNav = function (action, el) {
+    if (action === "code" || action === "codespace") {
+      openCs(null);
+      return false;
+    }
+    if (typeof _nav === "function") return _nav(action, el);
+    return false;
+  };
+  console.log("[acd] ACCD-CS-FINAL installed");
+})();

@@ -123,6 +123,16 @@ class CognitionControl:
         Returns {segments, binding_plan, bundle}.
         """
         # ---- mode classification ----
+        # Keep each request's policy local: this controller may serve concurrent requests.
+        effective_policy = {
+            "code_mode": self.cfg.code_mode,
+            "verification_level": self.cfg.verification_level,
+            "max_iterations": self.cfg.max_iterations,
+            "allow_mutations": self.cfg.allow_mutations,
+            "domain_pack": self.cfg.domain_pack,
+            "dialect": self.cfg.dialect,
+            "approval_required_for": sorted(self.cfg.require_approval_for),
+        }
         try:
             _decision = _classify_mode(
                 text=query,
@@ -131,14 +141,15 @@ class CognitionControl:
             )
             _policy = _policy_for(_decision.mode)
             self._current_mode = _decision
-            # apply policy to the live cfg (advisory; caller may override)
-            self.cfg.code_mode = _policy.code_mode
-            self.cfg.verification_level = _policy.verification_level
-            self.cfg.max_iterations = _policy.max_iterations
-            self.cfg.allow_mutations = _policy.allow_mutations
+            effective_policy.update({
+                "code_mode": _policy.code_mode,
+                "verification_level": _policy.verification_level,
+                "max_iterations": _policy.max_iterations,
+                "allow_mutations": _policy.allow_mutations,
+            })
             if _policy.prompt_domain:
-                self.cfg.domain_pack = _policy.prompt_domain
-        except Exception as _e:
+                effective_policy["domain_pack"] = _policy.prompt_domain
+        except Exception:
             _decision = None
             _policy = None
         # ---- /mode ----
@@ -187,19 +198,28 @@ class CognitionControl:
             binding_plan=binding_plan,
             role=role,
             preference_context=pref_block,
+            policy_overrides=effective_policy,
         )
 
         self._trace("plan_query", {
             "segments": [s.segment_id for s in segments],
             "binding": {k: (v.segment_id if v else None)
                         for k, v in binding_plan.assignments.items()},
-            "code_mode": self.cfg.code_mode,
-            "verification_level": self.cfg.verification_level,
+            "code_mode": effective_policy["code_mode"],
+            "verification_level": effective_policy["verification_level"],
+            "mode": _decision.mode.value if _decision else None,
+            "mode_confidence": _decision.confidence if _decision else None,
         })
 
         try:
             bundle["mode"] = _decision.mode.value if _decision else None
             bundle["mode_confidence"] = _decision.confidence if _decision else None
+            bundle["mode_reasons"] = list(_decision.reasons) if _decision else []
+            bundle["decision_confidence_band"] = (
+                "high" if _decision and _decision.confidence >= 0.8
+                else "medium" if _decision and _decision.confidence >= 0.55
+                else "low"
+            )
             if _policy:
                 bundle["mode_policy"] = {
                     "code_mode": _policy.code_mode,
@@ -231,18 +251,13 @@ class CognitionControl:
         binding_plan,
         role: str,
         preference_context: str = "",
+        policy_overrides: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Prefer prompt_manager if it exposes a builder; otherwise
         return a minimal bundle that the caller can extend.
         """
-        payload = {
-            "query": query,
-            "intent": intent or {},
-            "segments": [s.segment_id for s in segments],
-            "binding": {k: (v.segment_id if v else None)
-                        for k, v in binding_plan.assignments.items()},
-            "role": role,
+        effective = {
             "code_mode": self.cfg.code_mode,
             "verification_level": self.cfg.verification_level,
             "max_iterations": self.cfg.max_iterations,
@@ -250,6 +265,23 @@ class CognitionControl:
             "domain_pack": self.cfg.domain_pack,
             "dialect": self.cfg.dialect,
             "approval_required_for": sorted(self.cfg.require_approval_for),
+        }
+        if policy_overrides:
+            effective.update(policy_overrides)
+        payload = {
+            "query": query,
+            "intent": intent or {},
+            "segments": [s.segment_id for s in segments],
+            "binding": {k: (v.segment_id if v else None)
+                        for k, v in binding_plan.assignments.items()},
+            "role": role,
+            "code_mode": effective["code_mode"],
+            "verification_level": effective["verification_level"],
+            "max_iterations": effective["max_iterations"],
+            "allow_mutations": effective["allow_mutations"],
+            "domain_pack": effective["domain_pack"],
+            "dialect": effective["dialect"],
+            "approval_required_for": effective["approval_required_for"],
             "preference_context": preference_context,
         }
 

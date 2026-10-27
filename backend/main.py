@@ -2047,100 +2047,50 @@ try:
 
     @app.post("/generate/stream")
     async def generate_stream(req: GenerateRequest):
-
         query = (req.prompt or "").strip()
-
         if not query:
-            raise HTTPException(
-                400,
-                "Prompt cannot be empty.",
-            )
-
-        analysis = _accd_general_analyze(
-            query=query,
-            language="en",
-            previous_context={
-                "conversation_history": (
-                    req.conversation_history or ""
-                ),
-            },
-        )
-
-        try:
-            memory_context = (
-                get_context_from_memory(query)
-            )
-        except Exception:
-            memory_context = ""
-
-        prompt = _accd_general_prompt(
-            req=req,
-            analysis=analysis,
-            memory_context=memory_context,
-        )
+            raise HTTPException(400, "Prompt cannot be empty.")
 
         async def event_generator():
-
             if model is None:
-                yield (
-                    "data: "
-                    + json.dumps(
-                        {
-                            "event": "error",
-                            "error": (
-                                "Model is not loaded."
-                            ),
-                        },
-                        ensure_ascii=False,
-                    )
-                    + "\n\n"
-                )
+                yield "data: " + json.dumps({"event": "error", "error": "Model is not loaded."}, ensure_ascii=False) + "\n\n"
                 return
 
-            streamer = ResponseStream(
-                model=model,
-                vocab=tokenizer_vocab or {},
-                reverse=reverse_vocab or {},
-                model_version="1.0.0.1idr",
-                device=device,
-            )
+            # Flush a visible progress event before slow preprocessing starts.
+            yield "data: " + json.dumps({
+                "event": "status", "stage": "preparing", "label": "Preparing",
+                "description": "Understanding your request and gathering context."
+            }, ensure_ascii=False) + "\n\n"
+            await asyncio.sleep(0.01)
 
-            context = streamer.create_context(
-                language="en",
-            )
+            try:
+                analysis = await asyncio.to_thread(
+                    _accd_general_analyze, query=query, language="en",
+                    previous_context={"conversation_history": req.conversation_history or ""})
+                try:
+                    memory_context = await asyncio.to_thread(get_context_from_memory, query)
+                except Exception as exc:
+                    print("[ACCD-STREAM] memory context skipped:", type(exc).__name__, exc)
+                    memory_context = ""
+                prompt = _accd_general_prompt(req=req, analysis=analysis, memory_context=memory_context)
+            except Exception as exc:
+                yield "data: " + json.dumps({
+                    "event": "error", "error": "Request preparation failed: " + type(exc).__name__ + ": " + str(exc)
+                }, ensure_ascii=False) + "\n\n"
+                return
 
+            streamer = ResponseStream(model=model, vocab=tokenizer_vocab or {},
+                reverse=reverse_vocab or {}, model_version="1.0.0.1idr", device=device)
+            context = streamer.create_context(language="en")
             async for event in streamer.generate(
-                prompt=prompt,
-                context=context,
-                max_len=min(
-                    max(int(req.max_len), 1),
-                    2048,
-                ),
-                temperature=max(
-                    float(req.temperature),
-                    0.05,
-                ),
-                stream_delay=0.0,
-            ):
+                prompt=prompt, context=context,
+                max_len=min(max(int(req.max_len), 1), 2048),
+                temperature=max(float(req.temperature), 0.05), stream_delay=0.0):
+                yield "data: " + json.dumps(event, ensure_ascii=False) + "\n\n"
 
-                yield (
-                    "data: "
-                    + json.dumps(
-                        event,
-                        ensure_ascii=False,
-                    )
-                    + "\n\n"
-                )
-
-        return StreamingResponse(
-            event_generator(),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Accel-Buffering": "no",
-            },
-        )
+        return StreamingResponse(event_generator(), media_type="text/event-stream", headers={
+            "Cache-Control": "no-cache, no-transform", "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"})
 
     print(
         "[ACCD-STREAM] /generate/stream mounted"

@@ -798,6 +798,20 @@ def _accd_top_p_filter(
     return filtered
 
 
+def _accd_render_stream_text(tokens) -> str:
+    """Join tokens without inserting spaces before common closing punctuation."""
+    result = ""
+    closing = set(".,!?;:%)]}»”’")
+    opening = set("([{«“‘")
+    for item in tokens or []:
+        token = str(item or "")
+        if not token: continue
+        if not result: result = token
+        elif token[0] in closing or result[-1] in opening or token.startswith(("'", "’")): result += token
+        else: result += " " + token
+    return result
+
+
 def _accd_frontend_token(text: str) -> str:
     """
     Frontend rendering contract.
@@ -940,192 +954,56 @@ async def _accd_response_generate_v2(
             "generating",
         )
 
-        input_ids = encode_prompt(
-            prompt,
-            self.vocab,
-            context.language,
-        )
+        input_ids = encode_prompt(prompt, self.vocab, context.language)
+        if not input_ids:
+            input_ids = [self.vocab.get("<start>", 2)]
+        input_tensor = torch.tensor([input_ids], dtype=torch.long, device=self.device)
+        kv_cache: Dict[int, Dict[str, Any]] = {}
+        safe_temperature = max(min(float(temperature), 2.0), 0.05)
 
-        input_tensor = torch.tensor(
-            [input_ids],
-            dtype=torch.long,
-            device=self.device,
-        )
+        # Prefill once, then decode each new token through the existing KV cache.
+        with torch.inference_mode():
+            logits = self.model(input_tensor, kv_cache=kv_cache)[0, -1, :].clone()
 
-        for token_index in range(
-            max(int(max_len), 1)
-        ):
-
-            if cancellation.is_cancelled(
-                context.response_id
-            ):
-                yield make_event(
-                    "cancelled",
-                    context,
-                    generated_tokens=len(
-                        generated_ids
-                    ),
-                )
+        for token_index in range(max(int(max_len), 1)):
+            if cancellation.is_cancelled(context.response_id):
+                yield make_event("cancelled", context, generated_tokens=len(generated_ids))
                 return
-
-            with torch.no_grad():
-
-                logits = self.model(
-                    input_tensor
-                )[0, -1, :].clone()
-
-            # --------------------------------------------------------
-            # REPETITION CONTROL
-            # --------------------------------------------------------
-
-            logits = _accd_apply_repetition_penalty(
-                logits,
-                generated_ids[-64:],
-                repetition_penalty,
-            )
-
-            # --------------------------------------------------------
-            # TEMPERATURE
-            # --------------------------------------------------------
-
-            logits = (
-                logits / safe_temperature
-            )
-
-            # --------------------------------------------------------
-            # TOP-K
-            # --------------------------------------------------------
-
-            logits = _accd_top_k_filter(
-                logits,
-                top_k,
-            )
-
-            # --------------------------------------------------------
-            # TOP-P
-            # --------------------------------------------------------
-
-            logits = _accd_top_p_filter(
-                logits,
-                top_p,
-            )
-
-            probs = F.softmax(
-                logits,
-                dim=-1,
-            )
-
-            # Numerical safety.
-            if (
-                torch.isnan(probs).any()
-                or torch.isinf(probs).any()
-                or float(probs.sum()) <= 0
-            ):
-                probs = F.softmax(
-                    torch.nan_to_num(
-                        logits,
-                        nan=0.0,
-                        posinf=0.0,
-                        neginf=0.0,
-                    ),
-                    dim=-1,
-                )
-
-            next_id = torch.multinomial(
-                probs,
-                1,
-            ).item()
-
-            generated_ids.append(
-                next_id
-            )
-
-            input_tensor = torch.cat(
-                [
-                    input_tensor,
-                    torch.tensor(
-                        [[next_id]],
-                        dtype=torch.long,
-                        device=self.device,
-                    ),
-                ],
-                dim=1,
-            )
-
-            # --------------------------------------------------------
-            # END TOKEN
-            # --------------------------------------------------------
-
-            if next_id == self.vocab.get(
-                "<end>",
-                3,
-            ):
+            with torch.inference_mode():
+                step_logits = _accd_apply_repetition_penalty(logits.clone(), generated_ids[-64:], repetition_penalty)
+                step_logits = step_logits / safe_temperature
+                step_logits = _accd_top_k_filter(step_logits, top_k)
+                step_logits = _accd_top_p_filter(step_logits, top_p)
+                probs = F.softmax(step_logits, dim=-1)
+                if torch.isnan(probs).any() or torch.isinf(probs).any() or float(probs.sum()) <= 0:
+                    probs = F.softmax(torch.nan_to_num(step_logits, nan=0.0, posinf=0.0, neginf=0.0), dim=-1)
+                next_id = int(torch.multinomial(probs, 1).item())
+            generated_ids.append(next_id)
+            if next_id == self.vocab.get("<end>", 3):
                 break
 
-            token_text = decode_token(
-                next_id,
-                self.reverse,
-                self.vocab,
-            )
+            token_text = decode_token(next_id, self.reverse, self.vocab)
+            if token_text is not None:
+                generated_text.append(token_text)
+                rendered_text = _accd_render_stream_text(generated_text)
+                yield make_event("token", context, text=token_text,
+                    display_token=_accd_frontend_token(token_text),
+                    token_index=token_index, token_id=next_id,
+                    stream_text=rendered_text, generated_tokens=len(generated_ids))
+                if stream_delay > 0:
+                    await asyncio.sleep(stream_delay)
+                else:
+                    await asyncio.sleep(0)
 
-            if token_text is None:
-                continue
-
-            generated_text.append(
-                token_text
-            )
-
-            frontend_token = (
-                _accd_frontend_token(
-                    token_text
-                )
-            )
-
-            # --------------------------------------------------------
-            # TOKEN EVENT
-            # --------------------------------------------------------
-
-            yield make_event(
-                "token",
-                context,
-
-                # Raw model vocabulary token.
-                text=token_text,
-
-                # Frontend-safe rendering contract.
-                display_token=frontend_token,
-
-                # Explicit sequence.
-                token_index=token_index,
-
-                # Existing model vocabulary ID.
-                token_id=next_id,
-
-                # Cumulative response.
-                stream_text=" ".join(
-                    generated_text
-                ),
-
-                # Useful for debugging/client reconciliation.
-                generated_tokens=len(
-                    generated_ids
-                ),
-            )
-
-            if stream_delay > 0:
-                await asyncio.sleep(
-                    stream_delay
-                )
-            else:
-                await asyncio.sleep(0)
+            next_tensor = torch.tensor([[next_id]], dtype=torch.long, device=self.device)
+            with torch.inference_mode():
+                logits = self.model(next_tensor, kv_cache=kv_cache)[0, -1, :].clone()
 
         # ------------------------------------------------------------
         # COMPLETE
         # ------------------------------------------------------------
 
-        final_text = " ".join(
-            generated_text
-        )
+        final_text = _accd_render_stream_text(generated_text)
 
         yield activity_event(
             context,

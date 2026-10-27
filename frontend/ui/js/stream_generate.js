@@ -11,9 +11,21 @@ async function streamGenerate(prompt, onToken, onDone, onError, options) {
   };
   let res;
   try {
+    var headers = {
+      "Content-Type": "application/json",
+      "Accept": "text/event-stream"
+    };
+    // ACCD-STREAM-AUTH: match app.js token key; required after /generate/stream auth gate
+    try {
+      var tok = (options.token
+        || (typeof authToken !== "undefined" && authToken)
+        || (typeof localStorage !== "undefined" && localStorage.getItem("coMpaNeoN_token"))
+        || "");
+      if (tok) headers["Authorization"] = "Bearer " + tok;
+    } catch (e) {}
     res = await fetch("/generate/stream", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
+      headers: headers,
       body: JSON.stringify(body), signal: options.signal, cache: "no-store"
     });
   } catch (err) {

@@ -63,6 +63,9 @@ class RateLimiter:
 
 # Global rate limiter instance
 rate_limiter = RateLimiter(max_requests=60, window_seconds=60)
+# Stricter bucket for train/crawl (still process-local; multi-worker needs Redis)
+heavy_rate_limiter = RateLimiter(max_requests=6, window_seconds=60)
+
 
 def enforce_rate_limit(client_id: str, *, limiter: RateLimiter = None):
     """Raise 429 if client exceeds the process-local limit. Multi-worker needs shared store later."""

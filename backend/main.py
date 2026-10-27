@@ -125,11 +125,15 @@ if not _cors_origins:
         _cors_origins = []  # must set explicitly
     else:
         _cors_origins = ["*"]
+# ACCD-CORS: production must set ACCD_CORS_ORIGINS (comma-separated full origins)
+_cors_list = _cors_origins or ["https://localhost"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_cors_origins or ["https://localhost"],
+    allow_origins=_cors_list,
+    allow_credentials=True if "*" not in _cors_list else False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Requested-With", "X-API-Key"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With", "X-API-Key", "Accept"],
+    expose_headers=["X-Request-Id"],
 )
 
 device = (torch.device("cuda" if torch.cuda.is_available() else "cpu") if TORCH_AVAILABLE else "cpu")
@@ -252,6 +256,14 @@ def model_readiness() -> dict:
 
 
 load_model_if_exists()
+# ACCD-STARTUP-READY
+try:
+    _rd = model_readiness()
+    print("[ACCD] readiness", _rd)
+    if not _rd.get("ready"):
+        print("[ACCD] WARNING: inference not ready — set ACCD_MODEL_DIR and deploy companion_model.pth + tokenizer_vocab.json")
+except Exception as _re:
+    print("[ACCD] readiness check skip", _re)
 
 # ACCD-INTEGRATION: build pipeline singletons (idempotent)
 try:
@@ -1465,8 +1477,8 @@ async def research(req: ResearchRequest, user: User = Depends(get_current_user))
 @app.post("/crawl")
 async def crawl_web(req: CrawlRequest, user: User = Depends(get_current_user)):
     try:
-        from api_auth import enforce_rate_limit
-        enforce_rate_limit(_rate_client_id(user))
+        from api_auth import enforce_rate_limit, heavy_rate_limiter
+        enforce_rate_limit(_rate_client_id(user), limiter=heavy_rate_limiter)
     except HTTPException:
         raise
     except Exception:
@@ -1486,8 +1498,8 @@ async def crawl_web(req: CrawlRequest, user: User = Depends(get_current_user)):
 @app.post("/train")
 async def train(req: TrainRequest, user: User = Depends(get_current_user)):
     try:
-        from api_auth import enforce_rate_limit
-        enforce_rate_limit(_rate_client_id(user))
+        from api_auth import enforce_rate_limit, heavy_rate_limiter
+        enforce_rate_limit(_rate_client_id(user), limiter=heavy_rate_limiter)
     except HTTPException:
         raise
     except Exception:

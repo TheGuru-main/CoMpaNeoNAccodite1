@@ -86,3 +86,18 @@ def prune_rate_limiter(max_clients: int = 10000):
     )
     for k, _ in items[: len(items) // 2]:
         rate_limiter.requests.pop(k, None)
+
+# Optional multi-worker rate limiting via Redis URL (ACCD_RATE_REDIS).
+# When unset, process-local RateLimiter is used (demo-safe; not cross-worker).
+def get_active_rate_limiter():
+    url = (os.environ.get("ACCD_RATE_REDIS") or "").strip()
+    if not url:
+        return rate_limiter
+    try:
+        # Soft optional: if redis package missing, fall back
+        import redis  # type: ignore
+        # Future: shared counters; for now still local with log
+        print("[acd] ACCD_RATE_REDIS set — install shared limiter later; using process-local for now")
+    except Exception:
+        pass
+    return rate_limiter

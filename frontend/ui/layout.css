@@ -1619,33 +1619,58 @@ body.codespace-active #mainScreen > .input-area {
   visibility: hidden !important;
   pointer-events: none !important;
 }
-/* ACCD-UI-SEAT-FINAL */
+
+/* ACCD-UI-POLICY-FINAL — single source (last wins)
+   home: no composer
+   workspace room: composer fixed to viewport bottom (bottom-nav hidden)
+   codespace: no chat composer
+*/
 body.workspace-active .bottom-nav,
 body.ws-room-active .bottom-nav,
-body.workspace-active .bottom-nav.bottom-nav-fixed {
+body.workspace-active .bottom-nav.bottom-nav-fixed,
+body.ws-room-active .bottom-nav.bottom-nav-fixed,
+body.codespace-active .bottom-nav,
+body.codespace-active .bottom-nav.bottom-nav-fixed {
   display: none !important;
 }
-body.home-active #inputArea {
+
+body.home-active #inputArea,
+body.home-active #mainScreen > .input-area,
+body.codespace-active #inputArea,
+body.codespace-active #mainScreen > .input-area {
   display: none !important;
+  visibility: hidden !important;
   pointer-events: none !important;
 }
-body.workspace-active #inputArea,
-body.ws-room-active #inputArea {
+
+body.workspace-active:not(.codespace-active) #inputArea,
+body.ws-room-active:not(.codespace-active) #inputArea,
+body.workspace-active:not(.codespace-active) #mainScreen > .input-area,
+body.ws-room-active:not(.codespace-active) #mainScreen > .input-area {
   display: flex !important;
   visibility: visible !important;
+  opacity: 1 !important;
   pointer-events: auto !important;
   position: fixed !important;
   left: 0 !important;
   right: 0 !important;
   bottom: 0 !important;
-  z-index: 90 !important;
+  top: auto !important;
+  width: 100% !important;
   margin: 0 !important;
+  z-index: 90 !important;
   padding: 0.55rem 0.75rem calc(0.55rem + env(safe-area-inset-bottom, 0px)) !important;
   box-sizing: border-box !important;
   background: rgba(12, 12, 16, 0.98) !important;
+  border-top: 1px solid rgba(255,255,255,0.12) !important;
 }
-body.workspace-active #chatBox,
-body.ws-room-active #chatBox {
+
+body.workspace-active:not(.codespace-active) #chatBox,
+body.ws-room-active:not(.codespace-active) #chatBox {
   padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px)) !important;
 }
-#codePanel { z-index: 9999 !important; pointer-events: auto !important; }
+
+#codePanel {
+  z-index: 9999 !important;
+  pointer-events: auto !important;
+}

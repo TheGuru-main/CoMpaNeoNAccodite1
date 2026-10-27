@@ -2133,13 +2133,7 @@ updateInputVisibility = function() {
 };
 
 
-// ORG-BTN-VIS — toggle org button visibility on hasOrg
-const _origUpdateInputVisibilityForOrgBtn = updateInputVisibility;
-updateInputVisibility = function() {
-    _origUpdateInputVisibilityForOrgBtn();
-    const btn = document.getElementById('btnOrg');
-    if (btn) btn.style.display = hasOrg ? '' : 'none';
-};
+// REMOVED: duplicate ORG-BTN-VIS wrapper
 
 
 // ============================================================================
@@ -3940,66 +3934,8 @@ console.log('[acd] ROUTER-V2 installed');
 
 
 // ============================================================================
-// INPUT-HARD-DISPLAY — final guard, runs after every other patch
-// ============================================================================
 
-function _forceInputVisible() {
-    const ms = document.getElementById('mainScreen');
-    if (!ms || !ms.classList.contains('active')) return;
-    const ia = ms.querySelector(':scope > .input-area');
-    if (!ia) return;
-    const room = (typeof roomList !== 'undefined' && Array.isArray(roomList))
-        ? roomList.find(r => r.id === currentRoomId)
-        : null;
-    const showIt = !!currentRoomId && !!room;
-    ia.style.setProperty('display', showIt ? 'flex' : 'none', 'important');
-    if (showIt) {
-        ia.style.setProperty('visibility', 'visible', 'important');
-        ia.style.setProperty('opacity', '1', 'important');
-        ia.style.setProperty('flex', '0 0 auto', 'important');
-        ia.style.setProperty('position', 'relative', 'important');
-        ia.style.setProperty('bottom', 'auto', 'important');
-        ia.style.setProperty('width', '100%', 'important');
-        ia.style.setProperty('z-index', '10', 'important');
-    }
-}
-
-// Re-assert at multiple points after page load to defeat stacked patches
-setTimeout(_forceInputVisible, 150);
-setTimeout(_forceInputVisible, 600);
-setTimeout(_forceInputVisible, 1500);
-
-// Wrap showScreen and openRoom
-if (typeof showScreen === 'function') {
-    const _origShowScreenInput = showScreen;
-    showScreen = function(id) {
-        _origShowScreenInput(id);
-        setTimeout(_forceInputVisible, 40);
-    };
-}
-if (typeof openRoom === 'function') {
-    const _origOpenRoomInput = openRoom;
-    openRoom = async function(id) {
-        const r = await _origOpenRoomInput(id);
-        setTimeout(_forceInputVisible, 40);
-        return r;
-    };
-}
-
-// Watch the DOM for mainScreen class changes
-try {
-    const ms = document.getElementById('mainScreen');
-    if (ms && typeof MutationObserver !== 'undefined') {
-        const obs = new MutationObserver(() => {
-            setTimeout(_forceInputVisible, 20);
-        });
-        obs.observe(ms, { attributes: true, attributeFilter: ['class', 'style'] });
-    }
-} catch (_) {}
-
-// Expose
-window.forceInputVisible = _forceInputVisible;
-console.log('[acd] input hard-display installed');
+// REMOVED: INPUT-HARD-DISPLAY (superseded by ACCD-UI-SINGLE)
 
 
 // ============================================================================
@@ -4068,135 +4004,8 @@ console.log('[acd] theme toggle installed');
 // INPUT-HOME-ROOM — input row visible both in rooms and on the home screen
 // ============================================================================
 
-function _forceInputVisibleAnywhere() {
-    // # INPUT-HOME-ROOM
-    const ms = document.getElementById('mainScreen');
-    if (!ms || !ms.classList.contains('active')) return;
 
-    const ia = ms.querySelector(':scope > .input-area');
-    if (!ia) return;
-
-    // always show the input row on the main screen
-    ia.style.setProperty('display', 'flex', 'important');
-    ia.style.setProperty('visibility', 'visible', 'important');
-    ia.style.setProperty('opacity', '1', 'important');
-    ia.style.setProperty('flex', '0 0 auto', 'important');
-    ia.style.setProperty('position', 'relative', 'important');
-    ia.style.setProperty('bottom', 'auto', 'important');
-    ia.style.setProperty('width', '100%', 'important');
-    ia.style.setProperty('box-sizing', 'border-box', 'important');
-    ia.style.setProperty('padding', '0.75rem 1rem', 'important');
-    ia.style.setProperty('margin', '0', 'important');
-    ia.style.setProperty('z-index', '20', 'important');
-
-    // adjust placeholder depending on room context
-    const input = ia.querySelector('input#promptInput') || ia.querySelector('input');
-    if (input) {
-        if (!currentRoomId) {
-            input.placeholder = 'Start a brainstorm — type to open a new room';
-        } else {
-            const room = (typeof roomList !== 'undefined')
-                ? roomList.find(r => r.id === currentRoomId) : null;
-            const isPersonal = room && room.workspace_type === 'personal_brainstorm';
-            input.placeholder = isPersonal
-                ? 'Type a message…'
-                : 'Type a message…  (@AI to invoke the agent)';
-        }
-    }
-}
-
-// Run on a schedule and on key events
-/* removed force visible */
-/* removed force visible */
-/* removed force visible */
-
-const _origShowScreenIA = showScreen;
-showScreen = function(id) {
-    _origShowScreenIA(id);
-    /* removed force visible */
-    /* removed force visible */
-};
-
-const _origOpenRoomIA = openRoom;
-openRoom = async function(id) {
-    const r = await _origOpenRoomIA(id);
-    /* removed force visible */
-    return r;
-};
-
-// Override showHomeState to also re-show the input row
-const _origShowHomeStateIA = showHomeState;
-showHomeState = function() {
-    _origShowHomeStateIA();
-    /* removed force visible */
-};
-
-// Watch mainScreen for class changes
-try {
-    const ms = document.getElementById('mainScreen');
-    if (ms && typeof MutationObserver !== 'undefined') {
-        new MutationObserver(() => {
-            /* removed force visible */
-        }).observe(ms, { attributes: true, attributeFilter: ['class', 'style'] });
-    }
-} catch (_) {}
-
-// Typing in the input while on home auto-creates a personal brainstorm
-(function wireHomeInput() {
-    const inp = document.getElementById('promptInput');
-    const btn = document.getElementById('btnSend');
-    if (!inp) return;
-
-    // Intercept Enter when there's no active room
-    inp.addEventListener('keydown', async (e) => {
-        if (e.key !== 'Enter' || e.shiftKey) return;
-        if (currentRoomId) return;         // sendMessage handles it normally
-        if (!inp.value.trim()) return;
-        e.preventDefault();
-        e.stopPropagation();
-        const text = inp.value.trim();
-        inp.value = '';
-        try {
-            const room = await api('/rooms', 'POST', {
-                workspace_type: 'personal_brainstorm',
-                project_name: text.slice(0, 60) || 'Quick brainstorm',
-            });
-            currentRoomId = room.id;
-            await loadRooms();
-            await openRoom(room.id);
-            // send the text into the freshly created room
-            setTimeout(() => sendMessage(text), 100);
-        } catch (err) {
-            alert('Could not start workspace: ' + err.message);
-        }
-    }, true);
-
-    // Same for the send button
-    if (btn) {
-        btn.addEventListener('click', async (e) => {
-            if (currentRoomId) return;     // let normal handler run
-            if (!inp.value.trim()) return;
-            e.preventDefault();
-            e.stopPropagation();
-            const text = inp.value.trim();
-            inp.value = '';
-            try {
-                const room = await api('/rooms', 'POST', {
-                    workspace_type: 'personal_brainstorm',
-                    project_name: text.slice(0, 60) || 'Quick brainstorm',
-                });
-                currentRoomId = room.id;
-                await loadRooms();
-                await openRoom(room.id);
-                setTimeout(() => sendMessage(text), 100);
-            } catch (err) {
-                alert('Could not start workspace: ' + err.message);
-            }
-        }, true);
-    }
-})();
-
-window.forceInputVisibleAnywhere = _forceInputVisibleAnywhere;
+// REMOVED: INPUT-ALWAYS-VISIBLE
 console.log('[acd] input-home-room installed');
 
 
@@ -5500,10 +5309,47 @@ document.addEventListener("click", function (ev) {
   }
 }, true);
 
-// ACCD-CS-SOFT — open codespace; never acdNav default-home
+
+// ACCD-UI-SINGLE — one visibility + codespace open path (last wins)
 (function () {
+  function applyChrome() {
+    try {
+      var onMain = !!(document.getElementById("mainScreen") &&
+        document.getElementById("mainScreen").classList.contains("active"));
+      var inRoom = !!(onMain && typeof currentRoomId !== "undefined" && currentRoomId);
+      var codeOn = false;
+      try {
+        var panel = document.getElementById("codePanel");
+        codeOn = !!(panel && panel.style && panel.style.display && panel.style.display !== "none" &&
+          window.getComputedStyle(panel).display !== "none");
+      } catch (e) {}
+      document.body.classList.toggle("workspace-active", inRoom && !codeOn);
+      document.body.classList.toggle("ws-room-active", inRoom && !codeOn);
+      document.body.classList.toggle("home-active", !!(onMain && !currentRoomId && !codeOn));
+      document.body.classList.toggle("codespace-active", codeOn);
+      var ia = document.getElementById("inputArea");
+      if (ia) {
+        if (inRoom && !codeOn) {
+          ia.removeAttribute("hidden");
+          ia.style.setProperty("display", "flex", "important");
+          ia.style.setProperty("visibility", "visible", "important");
+          ia.style.setProperty("pointer-events", "auto", "important");
+        } else {
+          ia.style.setProperty("display", "none", "important");
+          ia.style.setProperty("pointer-events", "none", "important");
+        }
+      }
+    } catch (e) {
+      console.warn("[acd-ui-single]", e);
+    }
+  }
+
   function openCs(ev) {
-    if (ev) { try { ev.preventDefault(); } catch (e) {} }
+    if (ev) {
+      try { ev.preventDefault(); ev.stopPropagation(); } catch (e) {}
+    }
+    document.body.classList.add("codespace-active");
+    document.body.classList.remove("home-active");
     if (typeof window.openCodePanel === "function") {
       try { window.openCodePanel(); } catch (e) { console.warn("[cs]", e); }
     }
@@ -5513,19 +5359,41 @@ document.addEventListener("click", function (ev) {
       panel.style.zIndex = "9999";
       panel.style.pointerEvents = "auto";
     }
+    applyChrome();
     return false;
   }
   window.acdOpenCodespace = openCs;
+  window.acdApplyChrome = applyChrome;
+
+  // single click path for hub codespace
   document.addEventListener("click", function (ev) {
     if (ev.target.closest && ev.target.closest("#codePanel")) return;
     var b = ev.target.closest && ev.target.closest("#btnHomeCode, [data-hub=codespace]");
     if (!b) return;
     openCs(ev);
   }, false);
+
   var _nav = window.acdNav;
   window.acdNav = function (action, el) {
     if (action === "code" || action === "codespace") return openCs(null);
     return typeof _nav === "function" ? _nav(action, el) : false;
   };
-  console.log("[acd] CS-SOFT");
+
+  // wrap visibility once more as last layer — calls prior chain then normalize classes
+  if (typeof window.updateInputVisibility === "function" || typeof updateInputVisibility === "function") {
+    var _u = window.updateInputVisibility || updateInputVisibility;
+    var wrapped = function () {
+      try { _u.apply(this, arguments); } catch (e) {}
+      applyChrome();
+    };
+    window.updateInputVisibility = wrapped;
+    try { updateInputVisibility = wrapped; } catch (e) {}
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", function () { setTimeout(applyChrome, 0); });
+  } else {
+    setTimeout(applyChrome, 0);
+  }
+  console.log("[acd] UI-SINGLE installed");
 })();

@@ -5499,3 +5499,33 @@ document.addEventListener("click", function (ev) {
     /* allow codespace toolbar; do not stop */
   }
 }, true);
+
+// ACCD-CS-SOFT — open codespace; never acdNav default-home
+(function () {
+  function openCs(ev) {
+    if (ev) { try { ev.preventDefault(); } catch (e) {} }
+    if (typeof window.openCodePanel === "function") {
+      try { window.openCodePanel(); } catch (e) { console.warn("[cs]", e); }
+    }
+    var panel = document.getElementById("codePanel");
+    if (panel) {
+      panel.style.setProperty("display", "flex", "important");
+      panel.style.zIndex = "9999";
+      panel.style.pointerEvents = "auto";
+    }
+    return false;
+  }
+  window.acdOpenCodespace = openCs;
+  document.addEventListener("click", function (ev) {
+    if (ev.target.closest && ev.target.closest("#codePanel")) return;
+    var b = ev.target.closest && ev.target.closest("#btnHomeCode, [data-hub=codespace]");
+    if (!b) return;
+    openCs(ev);
+  }, false);
+  var _nav = window.acdNav;
+  window.acdNav = function (action, el) {
+    if (action === "code" || action === "codespace") return openCs(null);
+    return typeof _nav === "function" ? _nav(action, el) : false;
+  };
+  console.log("[acd] CS-SOFT");
+})();

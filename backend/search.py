@@ -49,11 +49,9 @@ def _search_grid(q: str, limit: int) -> List[Dict[str, Any]]:
         except Exception:
             grid = None
         if grid is None:
-            try:
-                from memory_grid import MemoryGrid
-                grid = MemoryGrid()  # ACCD-SEARCH-NO-EMPTY-GRID: prefer shared grid; empty local is fallback only
-            except Exception:
-                return []
+            # ACCD-SEARCH-REQUIRE-SHARED: do not invent an empty MemoryGrid
+            print("[search] shared memory grid unavailable")
+            return []
         raw = None
         if hasattr(grid, "retrieve"):
             try:

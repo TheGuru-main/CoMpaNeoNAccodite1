@@ -63,3 +63,23 @@ class RateLimiter:
 
 # Global rate limiter instance
 rate_limiter = RateLimiter(max_requests=60, window_seconds=60)
+
+def enforce_rate_limit(client_id: str, *, limiter: RateLimiter = None):
+    """Raise 429 if client exceeds the process-local limit. Multi-worker needs shared store later."""
+    lim = limiter or rate_limiter
+    if not lim.is_allowed(str(client_id or "anonymous")):
+        raise HTTPException(429, "rate limit exceeded; try again shortly")
+    return True
+
+
+def prune_rate_limiter(max_clients: int = 10000):
+    """Bound growth of the in-memory client map."""
+    if len(rate_limiter.requests) <= max_clients:
+        return
+    # drop oldest half by last timestamp
+    items = sorted(
+        ((k, max(v) if v else None) for k, v in rate_limiter.requests.items()),
+        key=lambda kv: kv[1] or datetime.min,
+    )
+    for k, _ in items[: len(items) // 2]:
+        rate_limiter.requests.pop(k, None)

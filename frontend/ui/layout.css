@@ -1619,3 +1619,33 @@ body.codespace-active #mainScreen > .input-area {
   visibility: hidden !important;
   pointer-events: none !important;
 }
+/* ACCD-UI-SEAT-FINAL */
+body.workspace-active .bottom-nav,
+body.ws-room-active .bottom-nav,
+body.workspace-active .bottom-nav.bottom-nav-fixed {
+  display: none !important;
+}
+body.home-active #inputArea {
+  display: none !important;
+  pointer-events: none !important;
+}
+body.workspace-active #inputArea,
+body.ws-room-active #inputArea {
+  display: flex !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+  position: fixed !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  z-index: 90 !important;
+  margin: 0 !important;
+  padding: 0.55rem 0.75rem calc(0.55rem + env(safe-area-inset-bottom, 0px)) !important;
+  box-sizing: border-box !important;
+  background: rgba(12, 12, 16, 0.98) !important;
+}
+body.workspace-active #chatBox,
+body.ws-room-active #chatBox {
+  padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px)) !important;
+}
+#codePanel { z-index: 9999 !important; pointer-events: auto !important; }

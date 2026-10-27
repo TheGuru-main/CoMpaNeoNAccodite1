@@ -84,7 +84,6 @@ try:
     print("[ACCD] contacts router mounted at /contacts/*")
 except Exception as _e:
     print(f"[ACCD] contacts router not mounted: {_e}")
-    print("[ACCD] contacts router mounted at /contacts/*")
 
 try:
     from org_rooms import router as _org_rooms_router
@@ -92,7 +91,6 @@ try:
     print("[ACCD] org rooms router mounted at /orgs/{id}/rooms")
 except Exception as _e:
     print(f"[ACCD] org rooms router not mounted: {_e}")
-    print("[ACCD] org rooms router mounted at /orgs/{id}/rooms")
 
 try:
     from uploads import router as _uploads_router
@@ -100,7 +98,6 @@ try:
     print("[ACCD] uploads router mounted at /uploads/*")
 except Exception as _e:
     print(f"[ACCD] uploads router not mounted: {_e}")
-    print("[ACCD] uploads router mounted at /uploads/*")
 
 try:
     from search import router as _search_router
@@ -168,24 +165,58 @@ memory_cache = MemoryCache()
 # Always bind WordUnderstanding to the shared process grid
 word_understanding = WordUnderstanding(memory)
 
-# Load model if exists
+# Load model if exists — paths independent of process CWD
+_BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+_MODEL_DATA_DIR = os.environ.get("ACCD_MODEL_DIR") or os.environ.get("MODEL_DATA_DIR") or _BACKEND_DIR
+# Also accept Colab /content artifacts and repo root
+_MODEL_SEARCH_DIRS = [
+    _MODEL_DATA_DIR,
+    _BACKEND_DIR,
+    os.path.join(_BACKEND_DIR, ".."),
+    "/content",
+    os.getcwd(),
+]
+
+def _find_model_asset(name: str) -> str:
+    for d in _MODEL_SEARCH_DIRS:
+        if not d:
+            continue
+        cand = os.path.join(d, name)
+        if os.path.isfile(cand):
+            return cand
+    return name  # fall back to relative name for error messages
+
 def load_model_if_exists():
     global model, tokenizer_vocab, reverse_vocab
-    if os.path.exists('tokenizer_vocab.json'):
-        with open('tokenizer_vocab.json', 'r') as f:
+    vocab_path = _find_model_asset("tokenizer_vocab.json")
+    weights_path = _find_model_asset("companion_model.pth")
+    if os.path.isfile(vocab_path):
+        with open(vocab_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-            tokenizer_vocab = data['vocab']
-            reverse_vocab = {int(k): v for k, v in data['reverse'].items()}
+            tokenizer_vocab = data.get("vocab") or data
+            rev = data.get("reverse") or {}
+            reverse_vocab = {int(k): v for k, v in rev.items()} if rev else {v: k for k, v in tokenizer_vocab.items()}
+        print(f"[ACCD] vocab loaded from {vocab_path} size={len(tokenizer_vocab)}")
     else:
         tokenizer_vocab = {"<pad>":0, "<unk>":1, "<start>":2, "<end>":3}
         reverse_vocab = {0:"<pad>",1:"<unk>",2:"<start>",3:"<end>"}
-    if os.path.exists('companion_model.pth') and TORCH_AVAILABLE:
-        model = MiniCompanionAI(len(tokenizer_vocab))
-        model.load_state_dict(torch.load('companion_model.pth', map_location=device))
-        model.to(device)
-        model.eval()
+        print("[ACCD] vocab missing; using specials only")
+    if os.path.isfile(weights_path) and TORCH_AVAILABLE:
+        try:
+            model = MiniCompanionAI(len(tokenizer_vocab))
+            model.load_state_dict(torch.load(weights_path, map_location=device))
+            model.to(device)
+            model.eval()
+            print(f"[ACCD] model loaded from {weights_path}")
+        except Exception as e:
+            model = None
+            print(f"[ACCD] model load failed: {type(e).__name__}: {e}")
     else:
         model = None
+        if not TORCH_AVAILABLE:
+            print("[ACCD] model not loaded: torch unavailable")
+        else:
+            print(f"[ACCD] model weights not found (searched {_MODEL_SEARCH_DIRS})")
 
 def reload_model_if_exists():
     """Reload the model from disk. Called by the weights relay."""
@@ -195,6 +226,29 @@ def reload_model_if_exists():
         return {"ok": True, "model": type(model).__name__ if model else None}
     except Exception as e:
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+def _rate_client_id(user=None, request=None) -> str:
+    try:
+        if user is not None and getattr(user, "id", None):
+            return f"user:{user.id}"
+    except Exception:
+        pass
+    try:
+        if request is not None and getattr(request, "client", None):
+            return f"ip:{request.client.host}"
+    except Exception:
+        pass
+    return "anonymous"
+
+def model_readiness() -> dict:
+    """Separate liveness from inference readiness."""
+    return {
+        "torch_available": bool(TORCH_AVAILABLE),
+        "model_loaded": model is not None,
+        "vocab_size": len(tokenizer_vocab) if tokenizer_vocab else 0,
+        "model_dir": _MODEL_DATA_DIR,
+        "ready": bool(TORCH_AVAILABLE and model is not None and tokenizer_vocab and len(tokenizer_vocab) > 4),
+    }
 
 
 load_model_if_exists()
@@ -1344,6 +1398,14 @@ async def generate_in_workspace(
 # General generation
 @app.post("/generate")
 async def generate(req: GenerateRequest, user: User = Depends(get_current_user)):
+    try:
+        from api_auth import enforce_rate_limit, prune_rate_limiter
+        enforce_rate_limit(_rate_client_id(user))
+        prune_rate_limiter()
+    except HTTPException:
+        raise
+    except Exception:
+        pass
     context = get_context_from_memory(req.prompt)
     prompt = build_prompt(
         query=req.prompt,
@@ -1402,6 +1464,13 @@ async def research(req: ResearchRequest, user: User = Depends(get_current_user))
 # Crawl
 @app.post("/crawl")
 async def crawl_web(req: CrawlRequest, user: User = Depends(get_current_user)):
+    try:
+        from api_auth import enforce_rate_limit
+        enforce_rate_limit(_rate_client_id(user))
+    except HTTPException:
+        raise
+    except Exception:
+        pass
     text = web_crawler.crawl(req.url)
     doc_id = memory.add_document(text, "en", source=req.url)
     
@@ -1416,6 +1485,13 @@ async def crawl_web(req: CrawlRequest, user: User = Depends(get_current_user)):
 # Train
 @app.post("/train")
 async def train(req: TrainRequest, user: User = Depends(get_current_user)):
+    try:
+        from api_auth import enforce_rate_limit
+        enforce_rate_limit(_rate_client_id(user))
+    except HTTPException:
+        raise
+    except Exception:
+        pass
     # ACCD-TRAIN: report torch availability, pass through params, keep model reload
     try:
         from training.train import train as do_train, TORCH_AVAILABLE as _TR
@@ -1594,6 +1670,13 @@ async def _accd_root_head():
 @app.head("/health")
 async def _accd_health_head():
     return None
+
+@app.get("/ready")
+async def _accd_ready():
+    r = model_readiness()
+    code = 200 if r.get("ready") else 503
+    from fastapi.responses import JSONResponse
+    return JSONResponse(r, status_code=code)
 
 @app.get("/health")
 async def _accd_health():
@@ -2083,7 +2166,14 @@ try:
     from agent.response_stream import ResponseStream
 
     @app.post("/generate/stream")
-    async def generate_stream(req: GenerateRequest):
+    async def generate_stream(req: GenerateRequest, user: User = Depends(get_current_user)):
+        try:
+            from api_auth import enforce_rate_limit
+            enforce_rate_limit(_rate_client_id(user))
+        except HTTPException:
+            raise
+        except Exception:
+            pass
         query = (req.prompt or "").strip()
         if not query:
             raise HTTPException(400, "Prompt cannot be empty.")

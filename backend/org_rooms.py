@@ -128,7 +128,7 @@ async def create_org_room(
         db.add(ws)
         db.flush()
 
-        # creator becomes a member
+        # creator membership is mandatory — atomic with room create
         try:
             from db.models_org import WorkspaceMember
             db.add(WorkspaceMember(
@@ -136,10 +136,15 @@ async def create_org_room(
                 user_id=user.id,
                 added_by=user.id,
             ))
+            db.commit()
         except Exception as e:
-            print(f"[org-rooms] membership insert skipped: {e}")
+            db.rollback()
+            print(f"[org-rooms] membership insert failed, rolled back: {e}")
+            raise HTTPException(
+                500,
+                "room could not be created: membership insert failed",
+            ) from e
 
-        db.commit()
         db.refresh(ws)
         return _serialize(db, ws, org)
     finally:

@@ -117,7 +117,23 @@ try:
 except Exception as _e:
     print(f"[ACCD] weights relay not mounted: {_e}")
 
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+_cors_origins = [
+    o.strip() for o in (os.getenv("ACCD_CORS_ORIGINS") or os.getenv("CORS_ORIGINS") or "").split(",")
+    if o.strip()
+]
+if not _cors_origins:
+    # development default: permissive; production should set ACCD_CORS_ORIGINS
+    _env = (os.getenv("ENV") or os.getenv("ACCD_ENV") or "development").lower()
+    if _env in ("production", "prod", "staging"):
+        _cors_origins = []  # must set explicitly
+    else:
+        _cors_origins = ["*"]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins or ["https://localhost"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With", "X-API-Key"],
+)
 
 device = (torch.device("cuda" if torch.cuda.is_available() else "cpu") if TORCH_AVAILABLE else "cpu")
 
@@ -1327,7 +1343,7 @@ async def generate_in_workspace(
 
 # General generation
 @app.post("/generate")
-async def generate(req: GenerateRequest):
+async def generate(req: GenerateRequest, user: User = Depends(get_current_user)):
     context = get_context_from_memory(req.prompt)
     prompt = build_prompt(
         query=req.prompt,
@@ -1344,7 +1360,7 @@ async def generate(req: GenerateRequest):
 
 # Prediction
 @app.post("/predict")
-async def predict(req: PredictRequest):
+async def predict(req: PredictRequest, user: User = Depends(get_current_user)):
     if model is None or tokenizer_vocab is None:
         raise HTTPException(400, "Model not trained")
     input_ids = torch.tensor([encode_text(req.text)], dtype=torch.long).to(device)
@@ -1360,7 +1376,7 @@ async def predict(req: PredictRequest):
 
 # Research
 @app.post("/research")
-async def research(req: ResearchRequest):
+async def research(req: ResearchRequest, user: User = Depends(get_current_user)):
     query = req.query.strip()
     cached = search_cache.get(query)
     if cached:
@@ -1385,7 +1401,7 @@ async def research(req: ResearchRequest):
 
 # Crawl
 @app.post("/crawl")
-async def crawl_web(req: CrawlRequest):
+async def crawl_web(req: CrawlRequest, user: User = Depends(get_current_user)):
     text = web_crawler.crawl(req.url)
     doc_id = memory.add_document(text, "en", source=req.url)
     
@@ -1399,16 +1415,35 @@ async def crawl_web(req: CrawlRequest):
 
 # Train
 @app.post("/train")
-async def train(req: TrainRequest):
+async def train(req: TrainRequest, user: User = Depends(get_current_user)):
     # ACCD-TRAIN: report torch availability, pass through params, keep model reload
     try:
         from training.train import train as do_train, TORCH_AVAILABLE as _TR
-    except Exception:
+    except SyntaxError as e:
+        return {
+            "ok": False,
+            "reason": f"training module syntax error: {e}",
+            "label": req.label,
+        }
+    except ImportError as e:
         try:
             from train import train as do_train, TORCH_AVAILABLE as _TR
-        except Exception:
-            from train import train as do_train
-            _TR = True
+        except SyntaxError as e2:
+            return {"ok": False, "reason": f"training module syntax error: {e2}", "label": req.label}
+        except ImportError as e2:
+            return {
+                "ok": False,
+                "reason": f"training import failed: {type(e2).__name__}: {e2}",
+                "label": req.label,
+            }
+        except Exception as e2:
+            return {"ok": False, "reason": f"training import failed: {type(e2).__name__}: {e2}", "label": req.label}
+    except Exception as e:
+        return {
+            "ok": False,
+            "reason": f"training import failed: {type(e).__name__}: {e}",
+            "label": req.label,
+        }
 
     if not _TR:
         return {
@@ -1440,9 +1475,11 @@ async def train(req: TrainRequest):
             "report": report if isinstance(report, dict) else str(report),
         }
     except Exception as e:
+        print(f"[train] error: {type(e).__name__}: {e}")
         return {
             "ok": False,
-            "reason": f"{type(e).__name__}: {e}",
+            "reason": "training failed",
+            "error_id": type(e).__name__,
             "label": req.label,
         }
 

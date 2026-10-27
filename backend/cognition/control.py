@@ -140,7 +140,7 @@ class CognitionControl:
                 domain=(intent or {}).get("domain") if isinstance(intent, dict) else None,
             )
             _policy = _policy_for(_decision.mode)
-            self._current_mode = _decision
+            # ACCD: do not mutate shared self._current_mode for concurrent safety
             effective_policy.update({
                 "code_mode": _policy.code_mode,
                 "verification_level": _policy.verification_level,
@@ -175,9 +175,9 @@ class CognitionControl:
             _head_map, _seg_to_idx = _plan_to_head_map(binding_plan)
         except Exception:
             _head_map, _seg_to_idx = [], {}
-        self._last_plan = binding_plan
-        self._last_head_map = _head_map
-        self._last_seg_to_idx = _seg_to_idx
+        # ACCD: keep plan results request-local via return value (not shared instance fields)
+        # self._last_* retained only as non-authoritative last-seen debug snapshots under lock would be ideal;
+        # omit concurrent writes here — consumers must use returned dict.
 
         # preference block (per user / workspace)
         pref_block = ""
@@ -212,6 +212,10 @@ class CognitionControl:
         })
 
         try:
+            bundle["binding_plan"] = binding_plan
+            bundle["head_map"] = _head_map
+            bundle["seg_to_idx"] = _seg_to_idx
+            bundle["policy"] = effective_policy
             bundle["mode"] = _decision.mode.value if _decision else None
             bundle["mode_confidence"] = _decision.confidence if _decision else None
             bundle["mode_reasons"] = list(_decision.reasons) if _decision else []

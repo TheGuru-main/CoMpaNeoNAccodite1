@@ -46,27 +46,36 @@ class ChangeRoleReq(BaseModel):
 # HELPERS
 # ============================================================================
 
-def _org_memberships_for_user(db, user_id):
-    return db.query(OrganizationMembership).filter(
+def _org_memberships_for_user(db, user_id, *, active_only: bool = True):
+    q = db.query(OrganizationMembership).filter(
         OrganizationMembership.user_id == user_id
-    ).all()
+    )
+    if active_only:
+        # Inactive/revoked memberships must not authorize admin actions.
+        q = q.filter(OrganizationMembership.credential_active.is_(True))
+    return q.all()
 
 
 def _pick_admin_membership(db, user, requested_org_id: Optional[str] = None):
     """
-    Return the caller's admin membership.
+    Return the caller's *active* admin membership.
     If requested_org_id is given, use it. Otherwise pick the first
     membership whose role grants admin access.
     """
-    rows = _org_memberships_for_user(db, user.id)
+    rows = _org_memberships_for_user(db, user.id, active_only=True)
     if requested_org_id:
         for m in rows:
             if str(m.organization_id) == str(requested_org_id):
                 if m.role in ADMIN_ROLES or m.role == ROLE_DEPT_HEAD:
+                    # DEPT_HEAD must have a department scope
+                    if m.role == ROLE_DEPT_HEAD and not getattr(m, "department", None):
+                        continue
                     return m
         return None
     for m in rows:
-        if m.role in ADMIN_ROLES or m.role == ROLE_DEPT_HEAD:
+        if m.role in ADMIN_ROLES:
+            return m
+        if m.role == ROLE_DEPT_HEAD and getattr(m, "department", None):
             return m
     return None
 

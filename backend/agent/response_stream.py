@@ -480,10 +480,14 @@ class ResponseStream:
             generated_ids = []
 
             # ---------------------------------------------------------------
-            # MODEL GENERATION
+            # MODEL GENERATION (KV-cache: prefill once, then decode step tokens)
+            # Each request owns its own cache; never reused across requests.
             # ---------------------------------------------------------------
 
             with torch.no_grad():
+                kv_cache = {}
+                # Prefill full prompt
+                logits = self.model(input_tensor, kv_cache=kv_cache)[0, -1, :]
 
                 for _ in range(max_len):
 
@@ -499,23 +503,16 @@ class ResponseStream:
                         )
                         return
 
-                    logits = self.model(
-                        input_tensor
-                    )[0, -1, :]
-
                     # Prevent invalid temperatures.
                     safe_temperature = max(
                         float(temperature),
                         0.05,
                     )
 
-                    logits = (
-                        logits
-                        / safe_temperature
-                    )
+                    step_logits = logits / safe_temperature
 
                     probs = F.softmax(
-                        logits,
+                        step_logits,
                         dim=-1,
                     )
 
@@ -528,23 +525,19 @@ class ResponseStream:
                         next_id
                     )
 
-                    input_tensor = torch.cat(
-                        [
-                            input_tensor,
-                            torch.tensor(
-                                [[next_id]],
-                                dtype=torch.long,
-                                device=self.device,
-                            ),
-                        ],
-                        dim=1,
-                    )
-
                     if next_id == self.vocab.get(
                         "<end>",
                         3,
                     ):
                         break
+
+                    # Decode only the new token with cache
+                    step = torch.tensor(
+                        [[next_id]],
+                        dtype=torch.long,
+                        device=self.device,
+                    )
+                    logits = self.model(step, kv_cache=kv_cache)[0, -1, :]
 
                     text = decode_token(
                         next_id,

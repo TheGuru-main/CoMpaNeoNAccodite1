@@ -8,7 +8,27 @@ from sqlalchemy.orm import Session
 from database import SessionLocal
 from db_models import User
 
-SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key")
+def _resolve_secret_key() -> str:
+    """Single source for JWT signing/validation. No weak production defaults."""
+    key = (os.getenv("SECRET_KEY") or os.getenv("ACCD_SECRET_KEY") or "").strip()
+    env = (os.getenv("ENV") or os.getenv("ACCD_ENV") or os.getenv("APP_ENV") or "development").strip().lower()
+    if key and key not in ("your-secret-key", "change-me", "secret", "changeme"):
+        return key
+    if env in ("production", "prod", "staging"):
+        raise RuntimeError(
+            "SECRET_KEY must be set to a strong value in production "
+            "(refusing insecure JWT fallback)"
+        )
+    # development only — unstable across restarts by design unless SECRET_KEY set
+    import warnings
+    warnings.warn(
+        "SECRET_KEY not set; using ephemeral development secret. "
+        "Set SECRET_KEY before any shared/staging/production deploy.",
+        stacklevel=2,
+    )
+    return "accd-dev-only-insecure-key"
+
+SECRET_KEY = _resolve_secret_key()
 ALGORITHM = "HS256"
 
 def get_db():
@@ -85,10 +105,8 @@ def get_current_user(authorization: str = Header(None), db: Session = Depends(ge
 
 
 def decode_access_token(token: str):
-    """Decode a JWT and return the payload, or None if invalid."""
+    """Decode a JWT and return the payload, or None if invalid. Same secret as create."""
     try:
-        import jwt
-        secret = os.environ.get("SECRET_KEY", "change-me")
-        return jwt.decode(token, secret, algorithms=["HS256"])
+        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     except Exception:
         return None

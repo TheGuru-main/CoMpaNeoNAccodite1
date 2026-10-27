@@ -51,7 +51,7 @@ def _search_grid(q: str, limit: int) -> List[Dict[str, Any]]:
         if grid is None:
             try:
                 from memory_grid import MemoryGrid
-                grid = MemoryGrid()
+                grid = MemoryGrid()  # ACCD-SEARCH-NO-EMPTY-GRID: prefer shared grid; empty local is fallback only
             except Exception:
                 return []
         raw = None

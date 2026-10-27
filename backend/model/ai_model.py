@@ -380,6 +380,26 @@ class MiniCompanionAI(nn.Module):
             h = h + self.lang_embedding(lang_ids)
         h = self.dropout_in(h)
 
+        # ACCD-CAUSAL-DEFAULT: decoder must not attend future tokens
+        if mask is None:
+            past_len = 0
+            if kv_cache is not None and len(kv_cache) > 0:
+                # use offset from first populated layer cache if present
+                for _lc in kv_cache.values():
+                    if isinstance(_lc, dict) and _lc.get("offset"):
+                        past_len = int(_lc.get("offset") or 0)
+                        break
+                    if isinstance(_lc, dict) and _lc.get("k") is not None:
+                        try:
+                            past_len = int(_lc["k"].size(2))
+                        except Exception:
+                            past_len = 0
+                        break
+            # When past_len > 0, x is usually the new tokens only (query_len = L)
+            # Prefill uses past_len=0, query_len=L, klen=L
+            mask = build_causal_mask(L, x.device, past_len=past_len if past_len > 0 else 0,
+                                     query_len=L)
+
         head_mask = None
         if segment_token_mask is None and partition is not None and batch_segments is not None:
             segment_token_mask = self.build_segment_token_mask(
@@ -411,10 +431,28 @@ class MiniCompanionAI(nn.Module):
 # HELPERS
 # ============================================================================
 
-def build_causal_mask(seq_len: int, device) -> torch.Tensor:
-    """[1, 1, L, L] lower-triangular bool."""
-    m = torch.tril(torch.ones((seq_len, seq_len), dtype=torch.bool, device=device))
-    return m.view(1, 1, seq_len, seq_len)
+def build_causal_mask(
+    seq_len: int,
+    device,
+    *,
+    past_len: int = 0,
+    query_len: int = None,
+) -> torch.Tensor:
+    """
+    Causal attention mask (True = allowed).
+
+    - Full prefill (past_len=0): [1,1,L,L] lower-triangular.
+    - Cached decode: query_len rows attend to past_len + query_len keys;
+      each query i may attend keys j where j <= past_len + i.
+    """
+    past_len = max(0, int(past_len))
+    qlen = int(query_len) if query_len is not None else int(seq_len)
+    klen = past_len + qlen
+    # positions of keys 0..klen-1; queries correspond to keys past_len..klen-1
+    q_pos = torch.arange(past_len, past_len + qlen, device=device).view(qlen, 1)
+    k_pos = torch.arange(0, klen, device=device).view(1, klen)
+    m = k_pos <= q_pos  # [qlen, klen]
+    return m.view(1, 1, qlen, klen)
 
 
 def build_gsp_prior(

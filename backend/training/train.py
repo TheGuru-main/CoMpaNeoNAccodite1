@@ -1233,7 +1233,7 @@ def ensure_seed_crawl(*, force: bool = False, grid=None):
     except Exception as e:
         print("[seed] load_grid skip:", e)
 
-docs = getattr(grid, "documents", None)
+    docs = getattr(grid, "documents", None)
     current = len(docs) if docs else 0
     if current >= SEED_THRESHOLD and not force:
         print(f"[seed] skip (grid already has {current} docs)")

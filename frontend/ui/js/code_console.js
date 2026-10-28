@@ -1116,6 +1116,8 @@ if (cmd === "cat" && arg) {
   };
 
   window.openCodePanel = showPanel;
+  window.acdGetActiveRepo = function () { return repo || null; };
+
   window.closeCodePanel = goHome;
   window.hideCodeScreen = goHome;
   window.acdSaveRepoUid = saveRepoUid;

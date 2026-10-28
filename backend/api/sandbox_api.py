@@ -26,6 +26,10 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from sandbox.runner import SandboxRunner
+from gsp_chain import (
+    letter_chain, uid_from_name, start_row_for_name, verify_uid_matches_name,
+    validate_cell, R_ROWS as GSP_R_ROWS, N_COLS as GSP_N_COLS,
+)
 
 router = APIRouter(prefix="/sandbox", tags=["sandbox"])
 
@@ -61,29 +65,27 @@ def _safe_rel(path: str) -> str:
     return "/".join(parts)
 
 
-def _uid_digit_sum(uid: str) -> int:
-    digits = [int(ch) for ch in (uid or "") if ch.isdigit()]
-    if digits:
-        return sum(digits)
-    return sum((ord(ch) % 10) for ch in (uid or "0") if ch.isalnum()) or 0
-
-
-def compute_start_row(repo_name: str, repo_uid: str) -> dict:
-    L = max(len(repo_name or ""), 1)
-    S = _uid_digit_sum(repo_uid)
-    start_row = ((L + S - 1) % R_ROWS) + 1
+def compute_start_row(repo_name: str, repo_uid: str = "") -> dict:
+    """start_row from training tokenizer letter-chain of the name."""
+    info = start_row_for_name(repo_name or "")
+    expected = uid_from_name(repo_name or "")
+    if repo_uid and not verify_uid_matches_name(repo_name or "", repo_uid):
+        raise HTTPException(400, "repo_uid does not match tokenizer letter-chain of repo name")
     return {
-        "L": L,
-        "S": S,
-        "start_row": start_row,
-        "root_key": f"r{start_row:02d}",
+        "L": info["L"],
+        "S": info["S"],
+        "start_row": info["start_row"],
+        "root_key": info["root_key"],
         "repo": repo_name,
+        "repo_uid": expected,
+        "chain": info["chain"],
         "grid_rows": R_ROWS,
+        "grid_cols": GSP_N_COLS,
     }
 
 
-def _new_repo_uid() -> str:
-    return secrets.token_hex(16)
+def _repo_uid_from_name(name: str) -> str:
+    return uid_from_name(name)
 
 
 def _write_meta(rdir: Path, meta: dict) -> None:
@@ -104,11 +106,16 @@ def _verify_repo_key(rdir: Path, repo: str, repo_uid: str) -> dict:
     meta = _read_meta(rdir)
     if not meta:
         raise HTTPException(403, "repo has no GSP key metadata")
-    stored = str(meta.get("repo_uid") or "")
-    if not repo_uid or not secrets.compare_digest(stored, str(repo_uid)):
-        raise HTTPException(403, "invalid repo key (name + uid pair required)")
     if meta.get("repo") and meta.get("repo") != repo:
         raise HTTPException(403, "repo name mismatch")
+    expected = uid_from_name(repo)
+    stored = str(meta.get("repo_uid") or expected)
+    if not repo_uid or not verify_uid_matches_name(repo, str(repo_uid)):
+        raise HTTPException(403, "invalid repo key (uid must be tokenizer letter-chain of name)")
+    if stored and not verify_uid_matches_name(repo, stored):
+        meta["repo_uid"] = expected
+        meta["chain"] = letter_chain(repo)
+        _write_meta(rdir, meta)
     return meta
 
 
@@ -249,13 +256,16 @@ async def list_repos(scope: str = "user"):
             if f.is_file() and f.name not in (".gsp.json", ".accd_push_log", ".accd_commit_log")
         )
         meta = _read_meta(d) or {}
+        uid = meta.get("repo_uid") or uid_from_name(d.name)
         out.append({
             "name": d.name,
             "scope": scope,
             "files": nfiles,
             "updated_at": d.stat().st_mtime,
-            "start_row": meta.get("start_row"),
-            "root_key": meta.get("root_key"),
+            "start_row": meta.get("start_row") or start_row_for_name(d.name)["start_row"],
+            "root_key": meta.get("root_key") or start_row_for_name(d.name)["root_key"],
+            "repo_uid": uid,
+            "chain": meta.get("chain") or letter_chain(d.name),
         })
     return {"repos": out}
 
@@ -269,7 +279,7 @@ async def create_repo(req: RepoCreate):
         raise HTTPException(409, "repo already exists")
     d.mkdir(parents=True, exist_ok=True)
 
-    repo_uid = _new_repo_uid()
+    repo_uid = _repo_uid_from_name(req.name)
     gsp = compute_start_row(req.name, repo_uid)
     meta = {
         **gsp,
@@ -287,7 +297,8 @@ async def create_repo(req: RepoCreate):
         "start_row": gsp["start_row"],
         "root_key": gsp["root_key"],
         "repo_uid": repo_uid,
-        "note": "Save repo_uid secret. Required with repo name for push/commit.",
+        "note": "repo_uid is tokenizer letter-chain of name (same as training). Required with name for push/commit.",
+        "chain": letter_chain(req.name),
     }
 
 
@@ -515,3 +526,142 @@ async def sandbox_exec(req: ExecRequest):
         "repo": req.repo,
         "scope": req.scope,
     }
+
+
+# --- Docs (sheet/xlsx/workspace) — uid from tokenizer letter-chain ---
+class DocCreate(BaseModel):
+    scope: str = Field("user", pattern="^(user|org|ai)$")
+    parent_repo: str
+    doc_name: str
+    kind: str = Field("sheet", pattern="^(sheet|xlsx|workspace)$")
+    n_rows: int = Field(100, ge=1, le=5000)
+    n_cols: int = Field(26, ge=1, le=512)
+
+class DocCellWrite(BaseModel):
+    scope: str = Field("user", pattern="^(user|org|ai)$")
+    parent_repo: str
+    doc_name: str
+    doc_uid: str = ""
+    row: int
+    col: int
+    value: str = ""
+    place: bool = False
+
+def _docs_dir(scope: str, repo: str) -> Path:
+    return _repo_dir(scope, repo) / "docs"
+
+def _doc_dir(scope: str, repo: str, doc_name: str) -> Path:
+    if not doc_name or not SAFE_NAME.match(doc_name):
+        raise HTTPException(400, "invalid doc name")
+    return _docs_dir(scope, repo) / doc_name
+
+def _doc_data_path(ddir: Path) -> Path:
+    return ddir / "data.json"
+
+@router.post("/docs")
+async def create_doc(req: DocCreate):
+    rdir = _repo_dir(req.scope, req.parent_repo)
+    if not rdir.exists():
+        raise HTTPException(404, "parent repo not found")
+    ddir = _doc_dir(req.scope, req.parent_repo, req.doc_name)
+    if ddir.exists():
+        raise HTTPException(409, "doc already exists")
+    ddir.mkdir(parents=True, exist_ok=True)
+    info = start_row_for_name(req.doc_name)
+    uid = uid_from_name(req.doc_name)
+    meta = {
+        "kind": req.kind,
+        "doc_name": req.doc_name,
+        "doc_uid": uid,
+        "chain": info["chain"],
+        "L": info["L"],
+        "S": info["S"],
+        "start_row": info["start_row"],
+        "root_key": info["root_key"],
+        "parent_repo": req.parent_repo,
+        "scope": req.scope,
+        "created_at": time.time(),
+        "grid": {"rows": "1..64", "cols": "0..53"} if req.kind in ("sheet", "workspace") else {
+            "n_rows": req.n_rows, "n_cols": req.n_cols, "configurable": True
+        },
+    }
+    _write_meta(ddir, meta)
+    if req.kind in ("sheet", "workspace"):
+        data = {"cells": {}, "row_min": 1, "row_max": 64, "col_min": 0, "col_max": 53}
+    else:
+        data = {"cells": {}, "n_rows": req.n_rows, "n_cols": req.n_cols, "configurable": True}
+    _doc_data_path(ddir).write_text(json.dumps(data), encoding="utf-8")
+    return {"ok": True, **meta}
+
+@router.get("/docs")
+async def list_docs(parent_repo: str, scope: str = "user"):
+    root = _docs_dir(scope, parent_repo)
+    if not root.exists():
+        return {"docs": [], "parent_repo": parent_repo}
+    out = []
+    for d in sorted(root.iterdir()):
+        if not d.is_dir():
+            continue
+        meta = _read_meta(d) or {}
+        name = meta.get("doc_name") or d.name
+        out.append({
+            "doc_name": name,
+            "doc_uid": meta.get("doc_uid") or uid_from_name(name),
+            "kind": meta.get("kind") or "sheet",
+            "start_row": meta.get("start_row"),
+            "chain": meta.get("chain") or letter_chain(name),
+            "parent_repo": parent_repo,
+        })
+    return {"docs": out, "parent_repo": parent_repo}
+
+@router.get("/docs/{doc_name}")
+async def get_doc(doc_name: str, parent_repo: str, scope: str = "user"):
+    ddir = _doc_dir(scope, parent_repo, doc_name)
+    if not ddir.exists():
+        raise HTTPException(404, "doc not found")
+    meta = _read_meta(ddir) or {}
+    data = {}
+    dp = _doc_data_path(ddir)
+    if dp.is_file():
+        try:
+            data = json.loads(dp.read_text(encoding="utf-8"))
+        except Exception:
+            data = {}
+    return {"meta": meta, "data": data}
+
+@router.post("/docs/cell")
+async def write_doc_cell(req: DocCellWrite):
+    ddir = _doc_dir(req.scope, req.parent_repo, req.doc_name)
+    if not ddir.exists():
+        raise HTTPException(404, "doc not found")
+    meta = _read_meta(ddir) or {}
+    expected = uid_from_name(req.doc_name)
+    if req.doc_uid and not verify_uid_matches_name(req.doc_name, req.doc_uid):
+        raise HTTPException(403, "doc_uid does not match tokenizer letter-chain of doc_name")
+    kind = meta.get("kind") or "sheet"
+    try:
+        if kind in ("sheet", "workspace"):
+            row, col = validate_cell(req.row, req.col)
+        else:
+            row, col = int(req.row), int(req.col)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    dp = _doc_data_path(ddir)
+    data = json.loads(dp.read_text(encoding="utf-8")) if dp.is_file() else {"cells": {}}
+    cells = data.setdefault("cells", {})
+    key = f"{row}:{col}"
+    entry = {"value": req.value, "row": row, "col": col}
+    if req.place or kind == "workspace":
+        entry["placed"] = True
+        entry["placement"] = {
+            "row": row, "col": col,
+            "doc_start_row": meta.get("start_row"),
+            "doc_uid": expected, "doc_name": req.doc_name,
+        }
+    cells[key] = entry
+    dp.write_text(json.dumps(data), encoding="utf-8")
+    return {"ok": True, "key": key, "entry": entry, "doc_uid": expected}
+
+@router.get("/gsp/chain")
+async def gsp_chain_preview(name: str, lang: str = "en"):
+    return start_row_for_name(name, lang=lang or "en")

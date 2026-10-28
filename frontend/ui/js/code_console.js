@@ -253,14 +253,22 @@
   }
 
   function renderNode(container, nodeMap, depth) {
+    // Capture active repo at paint time so clicks cannot open another repo's buffer
+    var repoAtPaint = repo;
     Object.keys(nodeMap).sort().forEach(function (key) {
       var meta = nodeMap[key].__meta;
       var row = document.createElement("div");
       row.style.cssText = "padding:3px 0 3px " + (depth * 10) + "px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
+      row.setAttribute("data-repo", repoAtPaint || "");
+      row.setAttribute("data-path", meta.path || "");
       if (meta.type === "dir") {
         row.textContent = "📁 " + meta.name;
         row.onclick = function (ev) {
           ev.stopPropagation();
+          if (repo !== repoAtPaint) {
+            writeLog("tree stale — switched repo; refresh Explorer\n");
+            return;
+          }
           var kid = row.nextSibling;
           if (kid && kid.dataset && kid.dataset.folder === meta.path) {
             kid.style.display = kid.style.display === "none" ? "block" : "none";
@@ -269,16 +277,21 @@
         container.appendChild(row);
         var wrap = document.createElement("div");
         wrap.dataset.folder = meta.path;
+        wrap.setAttribute("data-repo", repoAtPaint || "");
         container.appendChild(wrap);
         renderNode(wrap, meta.children, depth + 1);
       } else {
         row.textContent = "📄 " + meta.name;
-        if (meta.path === currentFile) {
+        if (meta.path === currentFile && repo === repoAtPaint) {
           row.style.color = "#22d3ee";
           row.style.fontWeight = "600";
         }
         row.onclick = function (ev) {
           ev.stopPropagation();
+          if (repo !== repoAtPaint) {
+            writeLog("ignored file from repo '" + repoAtPaint + "' (active is '" + repo + "')\n");
+            return;
+          }
           openFile(meta.path, { silent: true });
         };
         container.appendChild(row);
@@ -328,6 +341,55 @@
     cwd = normalizeRel(rel || "");
   }
 
+
+  /** Hard-isolate active repo: clear editor, cwd, file; never keep foreign buffer. */
+  async function switchRepo(name) {
+    name = String(name || "").trim();
+    if (!name) return;
+    if (repo === name && currentFile) {
+      await loadTree();
+      return;
+    }
+    // optional autosave only if same-repo path already set
+    if (monacoEditor && repo && currentFile) {
+      try {
+        await api("/sandbox/fs/write", "POST", {
+          scope: scope, repo: repo, path: currentFile,
+          content: monacoEditor.getValue()
+        });
+      } catch (e) {}
+    }
+    repo = name;
+    cwd = "";
+    currentFile = "";
+    var sel = $("codeRepoSelect");
+    if (sel) sel.value = repo;
+    if (monacoEditor) {
+      try { monacoEditor.setValue(""); } catch (e) {}
+    }
+    var tab = $("codeTabLabel") || $("codeActivePath") || $("codeFileTab");
+    if (tab) tab.textContent = repo + " · (no file)";
+    writeLog("repo: " + repo + " (isolated tree)\n");
+    await loadTree();
+    await openFirstInActiveRepo();
+  }
+
+  async function openFirstInActiveRepo() {
+    if (!repo) return;
+    // Prefer common entrypoints only inside THIS repo; never another repo name.
+    var candidates = [
+      "README.md", "main.py", "backend/main.py", "app.py",
+      "index.html", "public/index.html", "src/main.py", "src/index.js"
+    ];
+    for (var i = 0; i < candidates.length; i++) {
+      try {
+        await openFile(candidates[i], { silent: true });
+        return;
+      } catch (e) {}
+    }
+    // else leave empty editor — do not open a path from a previous repo
+  }
+
   async function loadTree() {
     var box = $("codeFileTree");
     if (!box) return;
@@ -357,15 +419,7 @@
           escapeHtml(r.name) + "</span>" +
           (r.start_row != null ? " <span style='opacity:0.45;font-size:10px'>r" + r.start_row + "</span>" : "");
         row.onclick = async function () {
-          if (repo === r.name) return;
-          repo = r.name;
-          cwd = "";
-          currentFile = "";
-          var sel = $("codeRepoSelect");
-          if (sel) sel.value = repo;
-          await loadTree();
-          try { await openFile("backend/main.py", { silent: true }); }
-          catch (e) { try { await openFile("main.py", { silent: true }); } catch (e2) {} }
+          await switchRepo(r.name);
         };
         repoWrap.appendChild(row);
       });
@@ -395,6 +449,7 @@
       }
       await walk("");
       var treeRoot = document.createElement("div");
+      treeRoot.setAttribute("data-active-repo", repo || "");
       box.appendChild(treeRoot);
       renderNode(treeRoot, buildTree(all), 0);
     } catch (err) {}
@@ -424,6 +479,11 @@
   async function openFile(path, opts) {
     opts = opts || {};
     if (!repo || !path) return;
+    path = normalizeRel(String(path));
+    // Never treat another repo folder name as a path under this repo
+    if (!path) return;
+    // Bind this open to the active repo only
+    var boundRepo = repo;
     try {
       if (monacoEditor && currentFile && currentFile !== path) {
         try {
@@ -438,6 +498,10 @@
         "&repo=" + encodeURIComponent(repo) +
         "&path=" + encodeURIComponent(path)
       );
+      if (repo !== boundRepo) {
+        writeLog("open aborted: repo switched during read\n");
+        return;
+      }
       currentFile = path;
       lastRunPath = path;
       if (monacoEditor) {
@@ -494,8 +558,7 @@
       if (typeof window.acdOnRepoCreated === "function") window.acdOnRepoCreated(created);
       await refreshRepos();
       await loadTree();
-      try { await openFile("backend/main.py", { silent: true }); }
-      catch (e) { try { await openFile("main.py", { silent: true }); } catch (e2) {} }
+      await openFirstInActiveRepo();
     } catch (e) {
       writeLog("repo: " + errText(e) + "\n");
     }
@@ -943,8 +1006,7 @@ if (cmd === "cat" && arg) {
       await refreshRepos();
       await loadTree();
       if (repo) {
-        try { await openFile("backend/main.py", { silent: true }); }
-        catch (e) { try { await openFile("main.py", { silent: true }); } catch (e2) {} }
+        await openFirstInActiveRepo();
       }
     } catch (e) {
       writeLog("boot: " + errText(e) + "\n");
@@ -991,11 +1053,8 @@ if (cmd === "cat" && arg) {
     var sel = $("codeRepoSelect");
     if (sel) {
       sel.onchange = async function () {
-        repo = sel.value || null;
-        cwd = "";
-        currentFile = "";
-        await loadTree();
-        try { await openFile("backend/main.py", { silent: true }); } catch (e) {}
+        if (sel.value) await switchRepo(sel.value);
+        else { repo = null; cwd = ""; currentFile = ""; await loadTree(); }
       };
     }
 

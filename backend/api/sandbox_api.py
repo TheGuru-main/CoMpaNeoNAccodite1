@@ -27,6 +27,7 @@ from pydantic import BaseModel, Field
 
 from sandbox.runner import SandboxRunner
 from gsp_chain import (
+    validate_resource_name,
     letter_chain, uid_from_name, start_row_for_name, verify_uid_matches_name,
     validate_cell, R_ROWS as GSP_R_ROWS, N_COLS as GSP_N_COLS,
 )
@@ -48,8 +49,10 @@ def _scope_root(scope: str) -> Path:
 
 
 def _repo_dir(scope: str, repo: str) -> Path:
-    if not repo or not SAFE_NAME.match(repo):
-        raise HTTPException(400, "invalid repo name (use letters, numbers, . _ -)")
+    try:
+        repo = validate_resource_name(repo, what="repo name")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     return _scope_root(scope) / repo
 
 
@@ -272,8 +275,10 @@ async def list_repos(scope: str = "user"):
 
 @router.post("/repos")
 async def create_repo(req: RepoCreate):
-    if not SAFE_NAME.match(req.name):
-        raise HTTPException(400, "invalid repo name")
+    try:
+        req.name = validate_resource_name(req.name, what="repo name")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     d = _repo_dir(req.scope, req.name)
     if d.exists():
         raise HTTPException(409, "repo already exists")
@@ -551,8 +556,10 @@ def _docs_dir(scope: str, repo: str) -> Path:
     return _repo_dir(scope, repo) / "docs"
 
 def _doc_dir(scope: str, repo: str, doc_name: str) -> Path:
-    if not doc_name or not SAFE_NAME.match(doc_name):
-        raise HTTPException(400, "invalid doc name")
+    try:
+        doc_name = validate_resource_name(doc_name, what="doc name")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     return _docs_dir(scope, repo) / doc_name
 
 def _doc_data_path(ddir: Path) -> Path:

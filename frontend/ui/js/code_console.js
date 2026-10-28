@@ -545,9 +545,13 @@
   }
 
   async function createRepo() {
-    var name = prompt("Repo name:", "app");
+    var name = prompt("Repo name (start with a letter):", "app");
     if (!name || !name.trim()) return;
     name = name.trim().replace(/\s+/g, "-");
+    if (!/^[A-Za-z][A-Za-z0-9_-]{0,62}$/.test(name)) {
+      writeLog("repo: name must start with a letter; only letters, digits, _ or -\n");
+      return;
+    }
     try {
       var created = await api("/sandbox/repos", "POST", { name: name, scope: scope });
       repo = name;

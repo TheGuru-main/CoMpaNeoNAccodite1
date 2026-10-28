@@ -114,3 +114,20 @@ def validate_cell(row: int, col: int) -> Tuple[int, int]:
     if col < COL_MIN or col > COL_MAX:
         raise ValueError(f"col must be {COL_MIN}..{COL_MAX}")
     return row, col
+
+
+import re as _re
+_NAME_OK = _re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,62}$")
+_LEADING_FORBIDDEN = set("._-+&@#$/)(+@?;*'\"\\<>|`\~%^=[]{}!,:")
+
+def validate_resource_name(name: str, *, what: str = "name") -> str:
+    name = (name or "").strip()
+    if not name:
+        raise ValueError(f"{what} is required")
+    if name[0] in _LEADING_FORBIDDEN or not name[0].isalpha():
+        raise ValueError(f"{what} must start with a letter (A-Z), not a digit or symbol")
+    if not _NAME_OK.match(name):
+        raise ValueError(
+            f"{what} may only contain letters, digits, _ or - after the first letter"
+        )
+    return name

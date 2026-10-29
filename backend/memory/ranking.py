@@ -125,6 +125,7 @@ WEIGHTS = {
     "word_pair": 40,
     "next_word_prediction": 35,
     "phrase_continuity": 75,
+    "matrix_maths": 25,
 }
 
 
@@ -1260,6 +1261,35 @@ def score_candidate(
                 "cloud_encounter"
             ] * 0.5,
         )
+
+
+    # MATRIX MATHS — ranking signal only (never answer text)
+    scores.setdefault("matrix_maths", 0.0)
+    try:
+        try:
+            from matrix_maths import word_matrix_score, relationship_similarity
+        except Exception:
+            from memory.matrix_maths import word_matrix_score, relationship_similarity
+        boost = 0.0
+        try:
+            wms = word_matrix_score(query, candidate_text)
+            if isinstance(wms, (int, float)):
+                boost += float(wms)
+            elif isinstance(wms, dict):
+                boost += float(wms.get("score") or wms.get("total") or 0.0)
+        except Exception:
+            pass
+        try:
+            rs = relationship_similarity(query, candidate_text)
+            if isinstance(rs, (int, float)):
+                boost += float(rs) * 20.0
+            elif isinstance(rs, dict):
+                boost += float(rs.get("score") or rs.get("similarity") or 0.0) * 20.0
+        except Exception:
+            pass
+        scores["matrix_maths"] = max(0.0, min(25.0, boost))
+    except Exception:
+        pass
 
     # ========================================================================
     # TOTAL

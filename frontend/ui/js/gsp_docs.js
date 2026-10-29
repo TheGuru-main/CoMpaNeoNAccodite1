@@ -1,55 +1,73 @@
 /**
- * GSP docs: Excel (configurable), Sheet (row 1..64, col 0..53), Workspace placement.
- * doc_uid / repo_uid = letter-chain of name (A=0, digits exact, _-. → 26+; no strip leading 0).
+ * Accodite DocsShell — SheetS | DBase | CollabSheet | Presentations
+ * Does NOT open/close team sidebar rooms (currentRoomId untouched).
+ * parent_type: room (in team workspace) | repo (codespace) | org (home general)
  */
 (function () {
-  // Chain source of truth = backend tokenizer (multilingual + digit markers).
-  // Do not invent a parallel a-z map in the browser.
-  var _chainCache = {};
-  async function fetchChain(name, lang) {
-    name = String(name || "");
-    lang = lang || "en";
-    var key = lang + ":" + name;
-    if (_chainCache[key]) return _chainCache[key];
-    var data = await api(
-      "/sandbox/gsp/chain?name=" + encodeURIComponent(name) + "&lang=" + encodeURIComponent(lang)
-    );
-    _chainCache[key] = data;
-    return data;
-  }
-  function uidFromNameSync(name) {
-    // cache only; prefer fetchChain
-    var hit = _chainCache["en:" + name];
-    return hit ? hit.uid_str || hit.uid_compact : "";
-  }
-  window.acdFetchGspChain = fetchChain;
-  window.acdUidFromName = function (name) {
-    return uidFromNameSync(name);
-  };
-  window.acdLetterChain = function (name) {
-    var hit = _chainCache["en:" + name];
-    return hit && hit.chain ? hit.chain : [];
-  };
-  window.acdStartRowForName = function (name) {
-    var hit = _chainCache["en:" + name];
-    return hit ? hit.start_row : null;
+  "use strict";
+
+  var KIND_UI = {
+    sheets: { label: "SheetS", icon: "fa-table-cells", api: "sheet", gridlines: true },
+    dbase: { label: "DBase", icon: "fa-database", api: "xlsx", gridlines: true, configurable: true },
+    collabsheet: { label: "CollabSheet", icon: "fa-people-arrows", api: "workspace", gridlines: true, place: true },
+    presentations: { label: "Presentations", icon: "fa-display", api: "presentations", canvas: true },
   };
 
+  // 70 linear gradients for Presentation book faces
+  var GRADIENTS = (function () {
+    var stops = [
+      ["#0f172a", "#1e3a5f"], ["#1a0533", "#4c1d95"], ["#0c4a6e", "#06b6d4"],
+      ["#14532d", "#22c55e"], ["#7c2d12", "#f97316"], ["#4a044e", "#e879f9"],
+      ["#1e1b4b", "#6366f1"], ["#450a0a", "#ef4444"], ["#083344", "#14b8a6"],
+      ["#422006", "#eab308"], ["#0f766e", "#99f6e4"], ["#3b0764", "#c084fc"],
+      ["#111827", "#374151"], ["#1e3a8a", "#93c5fd"], ["#064e3b", "#6ee7b7"],
+      ["#701a75", "#f0abfc"], ["#7f1d1d", "#fca5a5"], ["#713f12", "#fde68a"],
+      ["#164e63", "#67e8f9"], ["#312e81", "#a5b4fc"], ["#134e4a", "#5eead4"],
+      ["#4c0519", "#fb7185"], ["#1c1917", "#a8a29e"], ["#172554", "#60a5fa"],
+      ["#365314", "#a3e635"], ["#581c87", "#d8b4fe"], ["#9a3412", "#fdba74"],
+      ["#0e7490", "#a5f3fc"], ["#1e293b", "#64748b"], ["#831843", "#f9a8d4"],
+      ["#3f6212", "#bef264"], ["#1e3a8a", "#1d4ed8"], ["#0f172a", "#f43f5e"],
+      ["#022c22", "#10b981"], ["#2e1065", "#7c3aed"], ["#431407", "#c2410c"],
+      ["#082f49", "#0ea5e9"], ["#1a2e05", "#65a30d"], ["#4c1d95", "#ddd6fe"],
+      ["#881337", "#ffe4e6"], ["#0c4a6e", "#e0f2fe"], ["#365314", "#ecfccb"],
+      ["#500724", "#fce7f3"], ["#1e1b4b", "#e0e7ff"], ["#713f12", "#fffbeb"],
+      ["#134e4a", "#ccfbf1"], ["#7c2d12", "#ffedd5"], ["#312e81", "#eef2ff"],
+      ["#14532d", "#dcfce7"], ["#9f1239", "#fff1f2"], ["#155e75", "#cffafe"],
+      ["#3b0764", "#f5f3ff"], ["#78350f", "#fef3c7"], ["#0f766e", "#f0fdfa"],
+      ["#1e3a5f", "#dbeafe"], ["#4a044e", "#faf5ff"], ["#7f1d1d", "#fef2f2"],
+      ["#052e16", "#f0fdf4"], ["#1e293b", "#f8fafc"], ["#0c4a6e", "#f0f9ff"],
+      ["#422006", "#fefce8"], ["#2e1065", "#faf5ff"], ["#881337", "#fdf2f8"],
+      ["#164e63", "#ecfeff"], ["#365314", "#f7fee7"], ["#4c0519", "#fff1f2"],
+      ["#083344", "#f0fdfa"], ["#1a0533", "#faf5ff"], ["#450a0a", "#fef2f2"],
+      ["#0f172a", "#22d3ee"], ["#0f172a", "#a3e635"],
+    ];
+    return stops.map(function (s, i) {
+      return {
+        id: "g" + String(i).padStart(2, "0"),
+        css: "linear-gradient(135deg, " + s[0] + " 0%, " + s[1] + " 100%)",
+      };
+    });
+  })();
+
   var state = {
-    kind: "sheet",
+    kind: "sheets",
+    parentType: "repo",
+    parentId: "",
     parentRepo: "",
     docName: "",
     docUid: "",
     data: null,
     meta: null,
-    // excel config
-    nRows: 100,
-    nCols: 26,
+    nRows: 64,
+    nCols: 54,
+    // DBase GSP defaults (configurable)
+    gsp: { L: 0, S: 0, c: 0, K: 5, D: 8, C: 26, R: 64 },
+    slideIndex: 0,
   };
 
   function token() {
     try {
-      return localStorage.getItem("coMpaNeoN_token") || "";
+      return localStorage.getItem("coMpaNeoN_token") || localStorage.getItem("token") || "";
     } catch (e) {
       return "";
     }
@@ -76,43 +94,62 @@
     return data;
   }
 
-  function activeRepo() {
+  function apiKind(k) {
+    var u = KIND_UI[k] || KIND_UI.sheets;
+    return u.api;
+  }
+
+  /** Scope: in team room → room; else codespace repo; else org/home */
+  function resolveParent() {
+    var roomId = window.currentRoomId || (typeof currentRoomId !== "undefined" ? currentRoomId : null);
+    if (roomId && document.body.classList.contains("workspace-active") &&
+        !document.body.classList.contains("codespace-active") &&
+        !document.body.classList.contains("home-active")) {
+      return { parentType: "room", parentId: String(roomId), parentRepo: "" };
+    }
+    var repo = "";
     try {
-      if (window.acdGetActiveRepo) return window.acdGetActiveRepo();
+      if (window.acdTermApi && window.acdTermApi.getRepo) repo = window.acdTermApi.getRepo() || "";
     } catch (e) {}
-    var sel = document.getElementById("codeRepoSelect");
-    if (sel && sel.value) return sel.value;
-    return state.parentRepo || "";
+    if (!repo) {
+      try {
+        repo = sessionStorage.getItem("acd_active_repo") || "";
+      } catch (e) {}
+    }
+    if (repo) return { parentType: "repo", parentId: repo, parentRepo: repo };
+    return { parentType: "repo", parentId: "HomeDocs", parentRepo: "HomeDocs" };
   }
 
   function ensurePanel() {
-    var p = document.getElementById("gspDocPanel");
+    var p = document.getElementById("gspDocsPanel");
     if (p) return p;
     p = document.createElement("div");
-    p.id = "gspDocPanel";
+    p.id = "gspDocsPanel";
     p.style.cssText =
-      "display:none;position:fixed;inset:0;z-index:10050;background:#0b1220;color:#e2e8f0;flex-direction:column;";
+      "display:none;position:fixed;inset:0;z-index:12000;background:#070b14;color:#e2e8f0;" +
+      "flex-direction:column;font-family:system-ui,sans-serif;";
     p.innerHTML =
-      '<div class="gsp-shell-header" style="display:flex;gap:8px;align-items:center;padding:10px 12px;border-bottom:1px solid #1e293b;flex-wrap:wrap;background:#0f172a">' +
+      '<div style="display:flex;gap:6px;align-items:center;padding:8px 10px;border-bottom:1px solid #1e293b;flex-wrap:wrap;background:#0f172a">' +
       '<button type="button" id="gspDocBack" class="btn">← Back</button>' +
       '<strong id="gspDocTitle">Docs</strong>' +
-      '<select id="gspParentType" style="padding:6px;border-radius:8px;background:#0b1220;color:#e2e8f0;border:1px solid #334155">' +
-      '<option value="repo">Parent: repo</option><option value="room">Parent: room</option></select>' +
-      '<input id="gspParentId" placeholder="repo name or room id" style="max-width:160px;padding:6px;border-radius:8px;border:1px solid #334155;background:#0b1220;color:#e2e8f0" />' +
-      '<span id="gspDocMeta" style="opacity:0.7;font-size:12px;flex:1"></span>' +
-      '<input id="gspDocNameInput" placeholder="DocName" style="max-width:140px;padding:6px;border-radius:8px;border:1px solid #334155;background:#0b1220;color:#e2e8f0" />' +
+      '<span id="gspKindSwitch" style="display:flex;gap:4px;flex-wrap:wrap"></span>' +
+      '<span id="gspDocMeta" style="opacity:0.7;font-size:11px;flex:1;min-width:120px"></span>' +
+      '<input id="gspDocNameInput" placeholder="DocName" maxlength="64" ' +
+      'style="max-width:130px;padding:6px;border-radius:8px;border:1px solid #334155;background:#0b1220;color:#e2e8f0" />' +
       '<button type="button" id="gspDocCreate" class="btn">Create</button>' +
       '<button type="button" id="gspDocRefresh" class="btn">Refresh</button>' +
       "</div>" +
+      '<div id="gspConfigBar" style="display:none;padding:6px 10px;border-bottom:1px solid #1e293b;font-size:12px;gap:8px;flex-wrap:wrap;align-items:center;background:#0b1220"></div>' +
       '<div style="display:flex;flex:1;min-height:0">' +
-      '<aside id="gspDocList" style="width:220px;overflow:auto;border-right:1px solid #1e293b;padding:8px;font-size:13px;background:#0b1220"></aside>' +
+      '<aside id="gspDocList" style="width:200px;overflow:auto;border-right:1px solid #1e293b;padding:8px;font-size:13px;background:#0b1220"></aside>' +
       '<main id="gspDocGridWrap" style="flex:1;overflow:auto;padding:8px;background:#070b14"></main>' +
       "</div>" +
-      '<div id="gspShellStatus" style="padding:6px 12px;font-size:11px;opacity:0.65;border-top:1px solid #1e293b">Sheet 54×64 · rows 1–64 · cols 0–53 · names start with a letter · Neon+B2 when configured</div>';
+      '<div id="gspShellStatus" style="padding:6px 12px;font-size:11px;opacity:0.65;border-top:1px solid #1e293b"></div>';
     document.body.appendChild(p);
+
     document.getElementById("gspDocBack").onclick = function () {
       p.style.display = "none";
-      document.body.classList.remove("gsp-doc-open");
+      // never clear currentRoomId
     };
     document.getElementById("gspDocCreate").onclick = function () {
       createDoc();
@@ -120,273 +157,488 @@
     document.getElementById("gspDocRefresh").onclick = function () {
       refreshList();
     };
-    var pt = document.getElementById("gspParentType");
-    var pid = document.getElementById("gspParentId");
-    if (pt) {
-      pt.value = state.parentType || "repo";
-      pt.onchange = function () {
-        state.parentType = pt.value;
+
+    var sw = document.getElementById("gspKindSwitch");
+    Object.keys(KIND_UI).forEach(function (k) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "btn";
+      b.dataset.kind = k;
+      b.innerHTML = '<i class="fa-solid ' + KIND_UI[k].icon + '"></i> ' + KIND_UI[k].label;
+      b.onclick = function () {
+        openKind(k);
       };
-    }
-    if (pid) {
-      pid.value = state.parentId || state.parentRepo || "";
-      pid.onchange = function () {
-        state.parentId = pid.value.trim();
-        if (state.parentType === "repo") state.parentRepo = state.parentId;
-      };
-    }
+      sw.appendChild(b);
+    });
     return p;
   }
 
+  function setStatus(msg) {
+    var el = document.getElementById("gspShellStatus");
+    if (el) el.textContent = msg || "";
+  }
+
   function openKind(kind) {
-    state.kind = kind || "sheet";
-    state.parentRepo = activeRepo();
-    state.parentType = state.parentType || "repo";
-    state.parentId = state.parentId || state.parentRepo;
-    var p = ensurePanel();
-    p.style.display = "flex";
-    document.body.classList.add("gsp-doc-open");
-    document.getElementById("gspDocTitle").textContent =
-      kind === "xlsx" ? "Excel" : kind === "workspace" ? "Workspace grid" : "Spreadsheet";
-    document.getElementById("gspDocMeta").textContent = state.parentRepo
-      ? "parent repo: " + state.parentRepo
-      : "open a codespace repo first (parent)";
+    kind = kind || "sheets";
+    if (kind === "sheet" || kind === "excel" || kind === "xlsx" || kind === "workspace" || kind === "pptx") {
+      kind = {
+        sheet: "sheets",
+        excel: "dbase",
+        xlsx: "dbase",
+        workspace: "collabsheet",
+        pptx: "presentations",
+      }[kind] || kind;
+    }
+    if (!KIND_UI[kind]) kind = "sheets";
+    state.kind = kind;
+    var par = resolveParent();
+    state.parentType = par.parentType;
+    state.parentId = par.parentId;
+    state.parentRepo = par.parentRepo || par.parentId;
+
+    if (kind === "sheets" || kind === "collabsheet") {
+      state.nRows = 64;
+      state.nCols = 54;
+    } else if (kind === "dbase") {
+      state.nRows = state.gsp.R || 64;
+      state.nCols = state.gsp.C || 26;
+    }
+
+    var panel = ensurePanel();
+    panel.style.display = "flex";
+    document.getElementById("gspDocTitle").textContent = KIND_UI[kind].label;
+    document.getElementById("gspDocMeta").textContent =
+      state.parentType + ":" + (state.parentId || "").slice(0, 24);
+
+    var cfg = document.getElementById("gspConfigBar");
+    if (kind === "dbase") {
+      cfg.style.display = "flex";
+      cfg.innerHTML =
+        "DBase grid C×R " +
+        '<input id="gspCfgC" type="number" min="2" max="200" value="' +
+        state.gsp.C +
+        '" style="width:56px;margin:0 4px" />×' +
+        '<input id="gspCfgR" type="number" min="2" max="500" value="' +
+        state.gsp.R +
+        '" style="width:56px;margin:0 4px" />' +
+        " K<input id=\"gspCfgK\" type=\"number\" min=\"1\" value=\"" +
+        state.gsp.K +
+        '" style="width:48px;margin:0 4px" />' +
+        " D<input id=\"gspCfgD\" type=\"number\" min=\"1\" value=\"" +
+        state.gsp.D +
+        '" style="width:48px;margin:0 4px" />' +
+        " c<input id=\"gspCfgc\" type=\"number\" min=\"0\" value=\"" +
+        state.gsp.c +
+        '" style="width:48px;margin:0 4px" />' +
+        '<button type="button" class="btn" id="gspCfgApply">Apply</button>';
+      document.getElementById("gspCfgApply").onclick = function () {
+        state.gsp.C = +document.getElementById("gspCfgC").value || 26;
+        state.gsp.R = +document.getElementById("gspCfgR").value || 64;
+        state.gsp.K = +document.getElementById("gspCfgK").value || 5;
+        state.gsp.D = +document.getElementById("gspCfgD").value || 8;
+        state.gsp.c = +document.getElementById("gspCfgc").value || 0;
+        state.nCols = state.gsp.C;
+        state.nRows = state.gsp.R;
+        setStatus("DBase config C=" + state.gsp.C + " R=" + state.gsp.R + " K=" + state.gsp.K + " D=" + state.gsp.D);
+        if (state.data) renderStage();
+      };
+    } else {
+      cfg.style.display = "none";
+      cfg.innerHTML = "";
+    }
+
+    setStatus(
+      KIND_UI[kind].label +
+        (KIND_UI[kind].canvas
+          ? " · blank canvas · 70 gradients"
+          : " · " + state.nCols + "×" + state.nRows) +
+        " · parent " +
+        state.parentType
+    );
     refreshList();
   }
 
-  function saneName(name, what) {
-    name = String(name || "").trim();
-    if (!/^[A-Za-z][A-Za-z0-9_-]{0,62}$/.test(name)) {
-      alert((what || "Name") + " must start with a letter; only letters, digits, _ or - after that (no leading ._-+@#/?)");
-      return null;
-    }
-    return name;
-  }
   async function createDoc() {
-    var name = saneName(document.getElementById("gspDocNameInput").value, "Doc name");
-    if (!name) return;
-    var parentId = (document.getElementById("gspParentId") && document.getElementById("gspParentId").value.trim()) || state.parentId || state.parentRepo;
-    var parentType = (document.getElementById("gspParentType") && document.getElementById("gspParentType").value) || state.parentType || "repo";
-    state.parentType = parentType;
-    state.parentId = parentId;
-    if (parentType === "repo") state.parentRepo = parentId;
-    if (!parentId) {
-      alert(parentType === "room" ? "Enter room id as parent" : "Open a codespace repo or enter parent repo name");
+    var name = (document.getElementById("gspDocNameInput").value || "").trim();
+    if (!/^[A-Za-z][A-Za-z0-9_-]{0,62}$/.test(name)) {
+      alert("Doc name must start with a letter (A–Z); no leading symbols");
       return;
     }
-    var body = {
-      scope: "user",
-      parent_type: state.parentType || "repo",
-      parent_repo: state.parentRepo,
-      parent_id: state.parentId || state.parentRepo,
-      doc_name: name,
-      kind: state.kind === "xlsx" ? "xlsx" : state.kind === "workspace" ? "workspace" : "sheet",
-      n_rows: state.nRows,
-      n_cols: state.nCols,
-    };
+    var par = resolveParent();
+    state.parentType = par.parentType;
+    state.parentId = par.parentId;
+    state.parentRepo = par.parentRepo || par.parentId;
     try {
-      try { await fetchChain(name); } catch (e) {}
+      var body = {
+        scope: "user",
+        parent_type: state.parentType === "room" ? "room" : "repo",
+        parent_repo: state.parentRepo || state.parentId,
+        parent_id: state.parentId,
+        doc_name: name,
+        kind: apiKind(state.kind),
+        n_rows: state.nRows,
+        n_cols: state.nCols,
+      };
       var res = await api("/sandbox/docs", "POST", body);
-      state.docName = res.doc_name;
-      state.docUid = res.doc_uid;
+      state.docName = name;
+      state.docUid = res.doc_uid || "";
+      state.meta = res;
+      if (state.kind === "presentations") {
+        state.data = {
+          slides: [{ id: "s0", title: name, body: "", gradient: "g00", blocks: [] }],
+        };
+      } else {
+        state.data = { cells: {}, n_rows: state.nRows, n_cols: state.nCols, gsp: state.gsp };
+      }
+      setStatus("created " + name + " uid=" + (state.docUid || "").slice(0, 16));
       await refreshList();
-      await openDoc(res.doc_name);
+      renderStage();
     } catch (e) {
-      alert(String(e.message || e));
+      alert("Create failed: " + e.message);
     }
   }
 
   async function refreshList() {
-    var box = document.getElementById("gspDocList");
-    if (!box) return;
-    box.innerHTML = "";
-    if (!state.parentRepo) {
-      box.textContent = "No parent repo";
-      return;
-    }
+    var list = document.getElementById("gspDocList");
+    if (!list) return;
+    list.innerHTML = "<div style='opacity:0.6'>Loading…</div>";
     try {
-      var data = await api(
-        "/sandbox/docs?parent_repo=" + encodeURIComponent(state.parentId || state.parentRepo) +
-        "&parent_type=" + encodeURIComponent(state.parentType || "repo") +
-        "&parent_id=" + encodeURIComponent(state.parentId || state.parentRepo) +
-        "&scope=user"
-      );
-      (data.docs || []).forEach(function (d) {
-        if (state.kind === "xlsx" && d.kind !== "xlsx") return;
-        if (state.kind === "sheet" && d.kind !== "sheet") return;
-        if (state.kind === "workspace" && d.kind !== "workspace") return;
-        var row = document.createElement("div");
-        row.style.cssText = "padding:6px 4px;cursor:pointer;border-radius:6px";
-        row.textContent = d.doc_name + " · r" + (d.start_row || "?");
+      var q =
+        "/sandbox/docs?parent_repo=" +
+        encodeURIComponent(state.parentRepo || state.parentId || "") +
+        "&parent_type=" +
+        encodeURIComponent(state.parentType === "room" ? "room" : "repo") +
+        "&parent_id=" +
+        encodeURIComponent(state.parentId || "") +
+        "&scope=user";
+      var data = await api(q);
+      var docs = data.docs || data.documents || data || [];
+      if (!Array.isArray(docs)) docs = [];
+      var want = apiKind(state.kind);
+      list.innerHTML = "";
+      var title = document.createElement("div");
+      title.style.cssText = "font-size:11px;opacity:0.6;margin-bottom:6px";
+      title.textContent = "DOCS · " + KIND_UI[state.kind].label;
+      list.appendChild(title);
+      docs.forEach(function (d) {
+        var k = d.kind || d.doc_kind || "";
+        if (k && k !== want && !(want === "presentations" && k === "pptx")) {
+          /* show all for collabsheet host */
+          if (state.kind !== "collabsheet") return;
+        }
+        var row = document.createElement("button");
+        row.type = "button";
+        row.className = "btn";
+        row.style.cssText = "display:block;width:100%;text-align:left;margin:2px 0;font-size:12px";
+        row.textContent = (d.doc_name || d.name || "?") + (k ? " · " + k : "");
         row.onclick = function () {
-          openDoc(d.doc_name);
+          openDoc(d.doc_name || d.name, d);
         };
-        box.appendChild(row);
+        list.appendChild(row);
       });
+      if (!list.querySelectorAll("button").length) {
+        list.innerHTML += "<div style='opacity:0.5;font-size:12px'>No docs yet — Create</div>";
+      }
     } catch (e) {
-      box.textContent = String(e.message || e);
+      list.innerHTML = "<div style='color:#f87171;font-size:12px'>" + e.message + "</div>";
     }
   }
 
-  async function openDoc(docName) {
-    state.docName = docName;
+  async function openDoc(name, meta) {
+    state.docName = name;
+    state.meta = meta || {};
+    state.docUid = (meta && (meta.doc_uid || meta.uid)) || "";
     try {
       var data = await api(
-        "/sandbox/docs/" +
-          encodeURIComponent(docName) +
-          "?parent_repo=" +
-          encodeURIComponent(state.parentRepo) +
+        "/sandbox/docs/get?parent_repo=" +
+          encodeURIComponent(state.parentRepo || state.parentId) +
+          "&parent_type=" +
+          encodeURIComponent(state.parentType === "room" ? "room" : "repo") +
+          "&parent_id=" +
+          encodeURIComponent(state.parentId) +
+          "&doc_name=" +
+          encodeURIComponent(name) +
           "&scope=user"
       );
-      state.meta = data.meta || {};
-      state.data = data.data || { cells: {} };
-      state.docUid = state.meta.doc_uid || uidFromName(docName);
-      document.getElementById("gspDocMeta").textContent =
-        state.parentRepo +
-        " / " +
-        docName +
-        " · uid " +
-        state.docUid +
-        " · start_row " +
-        (state.meta.start_row || startRowForName(docName));
-      renderGrid();
+      state.data = (data && data.data) || data || { cells: {} };
+      if (state.kind === "presentations" && !state.data.slides) {
+        state.data.slides = [{ id: "s0", title: name, body: "", gradient: "g00", blocks: [] }];
+      }
+      renderStage();
     } catch (e) {
-      alert(String(e.message || e));
+      // local-only render if API missing get
+      state.data = state.data || { cells: {}, slides: [{ id: "s0", title: name, body: "", gradient: "g00", blocks: [] }] };
+      renderStage();
+      setStatus("open offline/partial: " + e.message);
     }
   }
 
-  function cellKey(r, c) {
-    return r + ":" + c;
+  function gspFragments() {
+    var C = state.gsp.C || state.nCols || 26;
+    var R = state.gsp.R || state.nRows || 64;
+    var K = state.gsp.K || 5;
+    var D = state.gsp.D || 8;
+    var c0 = state.gsp.c || 0;
+    var L = state.gsp.L || (state.docName || "").length || 1;
+    var S = state.gsp.S || 1;
+    var start = ((L + S - 1) % R) + 1;
+    var fr = [];
+    for (var k = 0; k < K; k++) {
+      fr.push({
+        k: k,
+        row: ((start - 1 + k * D) % R) + 1,
+        col: (c0 + k) % C,
+      });
+    }
+    return { start_row: start, fragments: fr };
   }
 
-  function renderGrid() {
+  function renderStage() {
     var wrap = document.getElementById("gspDocGridWrap");
     if (!wrap) return;
-    wrap.innerHTML = "";
-    var cells = (state.data && state.data.cells) || {};
-    var isExcel = state.kind === "xlsx" || (state.meta && state.meta.kind === "xlsx");
-    var r0, r1, c0, c1;
-    if (isExcel) {
-      r0 = 0;
-      c0 = 0;
-      r1 = Math.min((state.data && state.data.n_rows) || state.nRows, 40) - 1;
-      c1 = Math.min((state.data && state.data.n_cols) || state.nCols, 20) - 1;
-      if (state.meta && state.meta.kind === "xlsx") {
-        var cfg = document.createElement("div");
-        cfg.style.marginBottom = "8px";
-        cfg.innerHTML =
-          'Rows <input id="gspExcelRows" type="number" min="1" max="5000" value="' +
-          ((state.data && state.data.n_rows) || state.nRows) +
-          '" style="width:64px" /> Cols <input id="gspExcelCols" type="number" min="1" max="512" value="' +
-          ((state.data && state.data.n_cols) || state.nCols) +
-          '" style="width:64px" /> <span style="opacity:0.6;font-size:12px">config stored on create; view capped for UI</span>';
-        wrap.appendChild(cfg);
-      }
-    } else {
-      r0 = 1;
-      r1 = 64;
-      c0 = 0;
-      c1 = 53;
+    if (state.kind === "presentations") {
+      renderPresentation(wrap);
+      return;
     }
-    var table = document.createElement("table");
-    table.style.cssText = "border-collapse:collapse;font-size:11px;user-select:none";
-    var head = document.createElement("tr");
-    head.appendChild(document.createElement("th"));
-    for (var c = c0; c <= c1; c++) {
-      var th = document.createElement("th");
-      th.textContent = c;
-      th.style.cssText = "padding:2px 4px;opacity:0.5;position:sticky;top:0;background:#0b1220";
-      head.appendChild(th);
-    }
-    table.appendChild(head);
-    var maxR = isExcel ? r1 : Math.min(r1, 24); // UI window; full range still editable via prompt for far cells
-    for (var r = r0; r <= maxR; r++) {
-      var tr = document.createElement("tr");
-      var rh = document.createElement("th");
-      rh.textContent = r;
-      rh.style.cssText = "padding:2px 6px;opacity:0.5";
-      tr.appendChild(rh);
-      for (var col = c0; col <= c1; col++) {
-        (function (row, col) {
-          var td = document.createElement("td");
-          var key = cellKey(row, col);
-          var entry = cells[key];
-          td.textContent = entry && entry.value != null ? String(entry.value).slice(0, 12) : "";
-          td.title = "r" + row + " c" + col + (entry && entry.placement ? " placed" : "");
-          td.style.cssText =
-            "border:1px solid #1e293b;min-width:28px;height:22px;text-align:center;cursor:pointer;" +
-            (entry && entry.placed ? "background:#134e4a;" : "");
-          td.onclick = function () {
-            onCellTap(row, col, entry);
-          };
-          tr.appendChild(td);
-        })(r, col);
-      }
-      table.appendChild(tr);
-    }
-    wrap.appendChild(table);
-    if (!isExcel && maxR < 64) {
-      var note = document.createElement("div");
-      note.style.cssText = "margin-top:8px;opacity:0.6;font-size:12px";
-      note.textContent = "Showing rows 1.." + maxR + " of 1..64, cols 0..53 — tap any visible cell to edit/place.";
-      wrap.appendChild(note);
-    }
+    renderGrid(wrap);
   }
 
-  async function onCellTap(row, col, entry) {
-    var placeMode = state.kind === "workspace" || (state.meta && state.meta.kind === "workspace");
-    var cur = entry && entry.value != null ? String(entry.value) : "";
-    var msg =
-      "Cell row=" +
-      row +
-      " col=" +
-      col +
-      "\nstart_row=" +
-      (state.meta && state.meta.start_row) +
-      " doc_uid=" +
-      state.docUid +
-      (entry && entry.placement ? "\n(placed)" : "") +
-      "\n\nValue:";
-    var val = prompt(msg, cur);
-    if (val == null) return;
+  function renderGrid(wrap) {
+    var rows = state.nRows || 64;
+    var cols = state.nCols || 54;
+    var cells = (state.data && state.data.cells) || {};
+    var fr = state.kind === "dbase" ? gspFragments() : null;
+    var placeSet = {};
+    if (fr) {
+      fr.fragments.forEach(function (f) {
+        placeSet[f.row + ":" + f.col] = f.k;
+      });
+    }
+
+    var html =
+      '<div style="margin-bottom:8px;font-size:12px;opacity:0.8">' +
+      (state.docName || "(new)") +
+      (fr ? " · start_row=" + fr.start_row + " · K=" + fr.fragments.length : "") +
+      "</div>";
+    html +=
+      '<div style="overflow:auto;max-height:calc(100vh - 160px)">' +
+      '<table style="border-collapse:collapse;font-size:11px">';
+    html += "<tr><th></th>";
+    for (var c = 0; c < Math.min(cols, 54); c++) {
+      html +=
+        '<th style="padding:2px 4px;border:1px solid #1e293b;color:#64748b">' + c + "</th>";
+    }
+    html += "</tr>";
+    for (var r = 1; r <= Math.min(rows, 64); r++) {
+      html +=
+        '<tr><th style="padding:2px 4px;border:1px solid #1e293b;color:#64748b">' + r + "</th>";
+      for (var c2 = 0; c2 < Math.min(cols, 54); c2++) {
+        var key = r + ":" + c2;
+        var val = (cells[key] && (cells[key].value || cells[key])) || "";
+        if (typeof val === "object") val = val.value || "";
+        var bg = placeSet[key] != null ? "background:#14532d33;" : "";
+        html +=
+          '<td data-r="' +
+          r +
+          '" data-c="' +
+          c2 +
+          '" style="min-width:28px;height:22px;border:1px solid #1e293b;padding:2px;' +
+          bg +
+          'cursor:pointer" title="' +
+          key +
+          '">' +
+          escapeHtml(String(val).slice(0, 12)) +
+          "</td>";
+      }
+      html += "</tr>";
+    }
+    html += "</table></div>";
+    wrap.innerHTML = html;
+    wrap.querySelectorAll("td[data-r]").forEach(function (td) {
+      td.onclick = function () {
+        var r = +td.getAttribute("data-r");
+        var c = +td.getAttribute("data-c");
+        var cur = cells[r + ":" + c];
+        var prev = (cur && (cur.value || cur)) || "";
+        var v = prompt("Cell " + r + ":" + c, typeof prev === "string" ? prev : "");
+        if (v == null) return;
+        writeCell(r, c, v, state.kind === "collabsheet");
+      };
+    });
+  }
+
+  async function writeCell(row, col, value, place) {
+    if (!state.docName) {
+      alert("Create or open a doc first");
+      return;
+    }
+    state.data = state.data || { cells: {} };
+    state.data.cells = state.data.cells || {};
+    state.data.cells[row + ":" + col] = { value: value, row: row, col: col, placed: !!place };
+    renderStage();
     try {
-      var res = await api("/sandbox/docs/cell", "POST", {
+      await api("/sandbox/docs/cell", "POST", {
         scope: "user",
-        parent_type: state.parentType || "repo",
+        parent_type: state.parentType === "room" ? "room" : "repo",
         parent_repo: state.parentRepo || state.parentId,
-        parent_id: state.parentId || state.parentRepo,
+        parent_id: state.parentId,
         doc_name: state.docName,
         doc_uid: state.docUid,
         row: row,
         col: col,
-        value: val,
-        place: placeMode,
+        value: value,
+        place: !!place,
       });
-      if (!state.data) state.data = { cells: {} };
-      if (!state.data.cells) state.data.cells = {};
-      state.data.cells[cellKey(row, col)] = res.entry;
-      renderGrid();
+      setStatus("saved " + row + ":" + col);
     } catch (e) {
-      alert(String(e.message || e));
+      setStatus("local only: " + e.message);
     }
   }
 
-  window.acdOpenExcel = function () {
-    openKind("xlsx");
+  function renderPresentation(wrap) {
+    var slides = (state.data && state.data.slides) || [
+      { id: "s0", title: state.docName || "Slide", body: "", gradient: "g00", blocks: [] },
+    ];
+    if (state.slideIndex >= slides.length) state.slideIndex = 0;
+    var s = slides[state.slideIndex];
+    var g = GRADIENTS.find(function (x) {
+      return x.id === s.gradient;
+    }) || GRADIENTS[0];
+
+    var html =
+      '<div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;align-items:center">' +
+      '<button type="button" class="btn" id="gspSlidePrev">←</button>' +
+      "<span>Face " +
+      (state.slideIndex + 1) +
+      "/" +
+      slides.length +
+      "</span>" +
+      '<button type="button" class="btn" id="gspSlideNext">→</button>' +
+      '<button type="button" class="btn" id="gspSlideAdd">+ Face</button>' +
+      '<label style="font-size:12px">Gradient ' +
+      '<select id="gspGradSel"></select></label>' +
+      "</div>";
+    html +=
+      '<div id="gspFace" style="min-height:320px;border-radius:12px;padding:28px;background:' +
+      g.css +
+      ';color:#f8fafc;box-shadow:0 8px 30px #0006">' +
+      '<div contenteditable="true" id="gspFaceTitle" style="font-size:1.6rem;font-weight:700;outline:none;margin-bottom:12px">' +
+      escapeHtml(s.title || "") +
+      "</div>" +
+      '<div contenteditable="true" id="gspFaceBody" style="font-size:1rem;line-height:1.5;outline:none;min-height:120px">' +
+      escapeHtml(s.body || "Tap to write…") +
+      "</div></div>";
+    html +=
+      '<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap" id="gspGradStrip"></div>';
+    wrap.innerHTML = html;
+
+    var sel = document.getElementById("gspGradSel");
+    GRADIENTS.forEach(function (gg) {
+      var o = document.createElement("option");
+      o.value = gg.id;
+      o.textContent = gg.id;
+      if (gg.id === s.gradient) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.onchange = function () {
+      s.gradient = sel.value;
+      persistSlides(slides);
+      renderPresentation(wrap);
+    };
+
+    var strip = document.getElementById("gspGradStrip");
+    GRADIENTS.slice(0, 24).forEach(function (gg) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.title = gg.id;
+      b.style.cssText =
+        "width:28px;height:28px;border-radius:6px;border:2px solid " +
+        (gg.id === s.gradient ? "#22d3ee" : "#334155") +
+        ";background:" +
+        gg.css +
+        ";cursor:pointer";
+      b.onclick = function () {
+        s.gradient = gg.id;
+        persistSlides(slides);
+        renderPresentation(wrap);
+      };
+      strip.appendChild(b);
+    });
+
+    document.getElementById("gspSlidePrev").onclick = function () {
+      state.slideIndex = (state.slideIndex - 1 + slides.length) % slides.length;
+      renderPresentation(wrap);
+    };
+    document.getElementById("gspSlideNext").onclick = function () {
+      state.slideIndex = (state.slideIndex + 1) % slides.length;
+      renderPresentation(wrap);
+    };
+    document.getElementById("gspSlideAdd").onclick = function () {
+      slides.push({
+        id: "s" + slides.length,
+        title: "Face " + (slides.length + 1),
+        body: "",
+        gradient: "g00",
+        blocks: [],
+      });
+      state.slideIndex = slides.length - 1;
+      persistSlides(slides);
+      renderPresentation(wrap);
+    };
+    document.getElementById("gspFaceTitle").onblur = function () {
+      s.title = this.innerText;
+      persistSlides(slides);
+    };
+    document.getElementById("gspFaceBody").onblur = function () {
+      s.body = this.innerText;
+      persistSlides(slides);
+    };
+  }
+
+  function persistSlides(slides) {
+    state.data = state.data || {};
+    state.data.slides = slides;
+    setStatus("Presentation faces=" + slides.length + " · gradient=" + (slides[state.slideIndex] || {}).gradient);
+    // API snapshot optional
+  }
+
+  function escapeHtml(s) {
+    return String(s || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  // Public API — names locked
+  window.acdOpenSheetS = function () {
+    openKind("sheets");
   };
-  window.acdOpenSheet = function () {
-    openKind("sheet");
+  window.acdOpenDBase = function () {
+    openKind("dbase");
   };
-  window.acdOpenWorkspaceGrid = function () {
-    openKind("workspace");
+  window.acdOpenCollabSheet = function () {
+    openKind("collabsheet");
   };
-  window.acdGspDocs = { openKind: openKind, uidFromName: uidFromName, letterChain: letterChain };
+  window.acdOpenPresentations = function () {
+    openKind("presentations");
+  };
+  // aliases
+  window.acdOpenSheet = window.acdOpenSheetS;
+  window.acdOpenExcel = window.acdOpenDBase;
+  window.acdOpenWorkspaceGrid = window.acdOpenCollabSheet;
+  window.acdGspDocs = {
+    openKind: openKind,
+    kinds: KIND_UI,
+    gradients: GRADIENTS,
+  };
 
   function injectButtons() {
     var specs = [
-      { id: "btnGspExcel", label: "Excel", fn: "acdOpenExcel" },
-      { id: "btnGspSheet", label: "Sheet", fn: "acdOpenSheet" },
-      { id: "btnGspWorkspace", label: "Workspace", fn: "acdOpenWorkspaceGrid" },
+      { id: "btnSheetS", label: "SheetS", icon: "fa-table-cells", fn: "acdOpenSheetS" },
+      { id: "btnDBase", label: "DBase", icon: "fa-database", fn: "acdOpenDBase" },
+      { id: "btnCollabSheet", label: "CollabSheet", icon: "fa-people-arrows", fn: "acdOpenCollabSheet" },
+      { id: "btnPresentations", label: "Presentations", icon: "fa-display", fn: "acdOpenPresentations" },
     ];
     function addTo(parent, prefix) {
       if (!parent) return;
@@ -397,28 +649,23 @@
         b.type = "button";
         b.id = id;
         b.className = "btn";
-        b.textContent = s.label;
+        b.innerHTML = '<i class="fa-solid ' + s.icon + '"></i> ' + s.label;
         b.style.margin = "0 4px";
         b.onclick = function (ev) {
           ev.preventDefault();
+          ev.stopPropagation();
           if (window[s.fn]) window[s.fn]();
         };
         parent.appendChild(b);
       });
     }
-    // Home hub actions
     addTo(document.getElementById("homeActions") || document.getElementById("homeHub"), "home");
-    // Workspace / main top bar
-    addTo(document.querySelector("#mainScreen .top-nav") || document.querySelector(".top-nav"), "ws");
-    // Codespace toolbar
-    addTo(document.getElementById("codeToolbar") || document.querySelector("#codePanel .code-toolbar"), "cs");
+    addTo(document.querySelector("#mainScreen .top-nav") || document.getElementById("mainNav"), "ws");
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", injectButtons);
-  } else {
-    injectButtons();
-  }
-  setTimeout(injectButtons, 800);
-  console.log("[acd] gsp_docs ready");
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", injectButtons);
+  else injectButtons();
+  setTimeout(injectButtons, 600);
+  setTimeout(injectButtons, 1500);
+  console.log("[acd] DocsShell SheetS|DBase|CollabSheet|Presentations");
 })();

@@ -125,11 +125,16 @@ def bootstrap(*, root: Optional[str] = None) -> Dict[str, Any]:
 
     # optional: grid + partition + data filter for pstm promotion
     try:
-        from memory_grid import MemoryGrid
-        grid = MemoryGrid()
+        from memory.shared_grid import bootstrap_shared_grid
+        grid = bootstrap_shared_grid(create_if_missing=True)
         _STATE["grid"] = grid
     except Exception as e:
-        _STATE["grid_error"] = f"{type(e).__name__}: {e}"
+        try:
+            from shared_grid import bootstrap_shared_grid
+            grid = bootstrap_shared_grid(create_if_missing=True)
+            _STATE["grid"] = grid
+        except Exception as e2:
+            _STATE["grid_error"] = f"{type(e).__name__}: {e} | {type(e2).__name__}: {e2}"
 
     try:
         from memory_partition import create_memory_partition
@@ -779,13 +784,22 @@ def run_job(
 
 def get_shared_grid():
     """
-    Return the single process-wide MemoryGrid.
-    Creates it once and reuses it everywhere.
+    Return the process-wide shared MemoryGrid.
+    Does not silently create a new empty grid for callers.
+    Use memory.shared_grid.get_shared_grid for strict load-or-fail.
     """
     state = get_state()
     grid = state.get("grid")
     if grid is not None:
         return grid
+    try:
+        from memory.shared_grid import get_shared_grid as _strict
+        grid = _strict(require_docs=False, allow_empty=True)
+        state["grid"] = grid
+        return grid
+    except Exception as e:
+        print("[integration] get_shared_grid:", type(e).__name__, e)
+        return None
     try:
         from memory.memory_grid import MemoryGrid
     except ImportError:

@@ -44,10 +44,8 @@ except ImportError:
 # ============================================================================
 
 try:
-    from integration import get_shared_grid
-    memory = get_shared_grid()
-    if memory is None:
-        memory = MemoryGrid()
+    from memory.shared_grid import get_shared_grid
+    memory = get_shared_grid(require_docs=True)
 except Exception:
     memory = MemoryGrid()
 

@@ -51,7 +51,12 @@ from prompts_manager import build_prompt
 # If another application layer already owns a MemoryGrid instance, it can
 # continue using that instance independently. This module keeps a local
 # instance so summary generation can also register conversation/AI material.
-memory = MemoryGrid()
+try:
+    from memory.shared_grid import get_shared_grid
+    memory = get_shared_grid(require_docs=False, allow_empty=True)
+except Exception:
+    memory = None
+
 
 word_understanding = WordUnderstanding(
     memory

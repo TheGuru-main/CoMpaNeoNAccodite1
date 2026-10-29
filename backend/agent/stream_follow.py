@@ -96,7 +96,7 @@ class StreamFollowBridge:
 
         if grid is None and MemoryGrid is not None:
             try:
-                grid = MemoryGrid()
+                raise RuntimeError('stream_follow requires shared MemoryGrid')
             except Exception:
                 grid = None
         self.grid = grid

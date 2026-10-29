@@ -1161,7 +1161,7 @@ def seed_crawl(
         "by_domain": {}, "errors": [],
     }
 
-    # resolve grid
+    # resolve grid — SHARED only (never invent empty MemoryGrid)
     if grid is None:
         try:
             from integration import get_state
@@ -1170,11 +1170,17 @@ def seed_crawl(
             grid = None
     if grid is None:
         try:
-            from memory_grid import MemoryGrid  # type: ignore
-            grid = MemoryGrid()
-        except Exception:
-            stats["errors"].append("no grid available")
+            from memory.shared_grid import get_shared_grid, bootstrap_shared_grid
+            try:
+                grid = get_shared_grid(require_docs=False, allow_empty=True)
+            except Exception:
+                grid = bootstrap_shared_grid(create_if_missing=True)
+        except Exception as e:
+            stats["errors"].append(f"no shared grid: {type(e).__name__}: {e}")
             return stats
+    if grid is None:
+        stats["errors"].append("no shared grid available")
+        return stats
 
     plan = DOMAIN_PLAN
     if domain_filter:

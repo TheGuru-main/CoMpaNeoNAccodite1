@@ -628,6 +628,20 @@ def train(
     device=None,
     resume_checkpoint: Optional[str] = "companion_training_resume.pth",
 ):
+
+    # ACCD-TRAIN-REQUIRE-SHARED
+    if memory_grid is None:
+        try:
+            from memory.shared_grid import get_shared_grid
+            memory_grid = get_shared_grid(require_docs=True)
+        except Exception as e:
+            raise RuntimeError(
+                "train requires shared MemoryGrid with documents — seed first"
+            ) from e
+    else:
+        docs = getattr(memory_grid, "documents", None) or {}
+        if len(docs) == 0:
+            raise RuntimeError("train refused: shared grid has 0 documents")
     if not TORCH_AVAILABLE:
         raise RuntimeError(
             "torch is required for training. Install it on the runtime "
@@ -1388,3 +1402,16 @@ def persist_training_artifacts_to_b2(grid=None, vocab=None, model_path=None):
     except Exception as e:
         print("[b2] vocab", e)
     return out
+
+def _accd_persist_after_train(grid, vocab=None):
+    try:
+        from memory.shared_grid import persist_shared_grid
+        print("[train] persist", persist_shared_grid(grid))
+    except Exception as e:
+        print("[train] persist", e)
+    try:
+        from docs_store import persist_vocab_snapshot
+        if vocab is not None:
+            print("[train] vocab b2", persist_vocab_snapshot(vocab if isinstance(vocab, dict) else {"v": vocab}))
+    except Exception as e:
+        print("[train] vocab b2", e)

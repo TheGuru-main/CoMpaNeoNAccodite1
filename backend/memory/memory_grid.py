@@ -1674,23 +1674,42 @@ _SHARED_GRID = None
 
 def get_process_grid():
     """
-    Process-local singleton. Prefer integration.get_shared_grid()
-    when the app is running; this is the fallback owner inside
-    the memory package itself.
+    Process-local singleton bound to the SHARED grid only.
+    Prefer integration / shared_grid load. Does NOT allocate a new
+    empty MemoryGrid on every miss (that caused silent empty brains).
     """
     global _SHARED_GRID
     if _SHARED_GRID is not None:
         return _SHARED_GRID
     try:
-        from integration import get_shared_grid
-        g = get_shared_grid()
+        from integration import get_state
+        g = get_state().get("grid")
         if g is not None:
             _SHARED_GRID = g
             return _SHARED_GRID
     except Exception:
         pass
-    _SHARED_GRID = MemoryGrid()
-    return _SHARED_GRID
+    try:
+        from memory.shared_grid import get_shared_grid as _strict
+        g = _strict(require_docs=False, allow_empty=True)
+        _SHARED_GRID = g
+        return _SHARED_GRID
+    except Exception as e:
+        print("[memory_grid] get_process_grid shared miss:", type(e).__name__, e)
+    # Last resort for import-time only: load disk without creating
+    try:
+        path = _DEFAULT_GRID_PATH
+        if os.path.isfile(path):
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            _SHARED_GRID = _grid_from_dict(data)
+            return _SHARED_GRID
+    except Exception as e:
+        print("[memory_grid] disk load miss:", type(e).__name__, e)
+    raise RuntimeError(
+        "Shared MemoryGrid unavailable. Refusing to create a new empty grid. "
+        "Bootstrap via integration.bootstrap or seed + save_grid."
+    )
 
 
 def set_process_grid(grid) -> None:

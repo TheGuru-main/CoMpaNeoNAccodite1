@@ -144,12 +144,19 @@ tokenizer_vocab: Optional[Dict[str, int]] = None
 reverse_vocab: Optional[Dict[int, str]] = None
 
 try:
-    from integration import get_shared_grid
-    memory = get_shared_grid()
+    from memory.shared_grid import bootstrap_shared_grid, get_shared_grid as strict_grid
+    memory = bootstrap_shared_grid(create_if_missing=True)
+except Exception as _sg_err:
+    print("[main] shared grid bootstrap:", type(_sg_err).__name__, _sg_err)
+    try:
+        from integration import get_shared_grid
+        memory = get_shared_grid()
+    except Exception:
+        memory = None
     if memory is None:
-        memory = MemoryGrid()
-except Exception:
-    memory = MemoryGrid()
+        raise RuntimeError(
+            "Shared MemoryGrid required at startup — check ACCD_GRID_PATH / B2 / seed"
+        ) from _sg_err
 try:
     from memory.memory_grid import set_process_grid
     set_process_grid(memory)
@@ -285,6 +292,7 @@ def decode_ids(ids: List[int]) -> str:
     return ' '.join([reverse_vocab.get(i, '<unk>') for i in ids if i not in {0,2,3}])
 
 def get_context_from_memory(query: str) -> str:
+    # ACCD-SHARED-GRID: never invent empty grid for retrieval
     """
     Central retrieval before generate / stream:
     shared MemoryGrid → GridCrawler root → context text.

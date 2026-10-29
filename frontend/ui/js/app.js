@@ -5611,3 +5611,86 @@ document.addEventListener("click", function (ev) {
   setTimeout(wrapOpenRoom, 1200);
   console.log("[acd] WS-OPEN-V3 installed");
 })();
+
+
+// ACCD-WS-OPEN-V4 — single open gate; home cannot clear room mid-open
+(function () {
+  var gate = { opening: false, id: null };
+
+  function seat(id) {
+    if (id) {
+      try { currentRoomId = id; window.currentRoomId = id; } catch (e) {}
+    }
+    document.body.classList.add("workspace-active", "ws-room-active");
+    document.body.classList.remove("home-active", "codespace-active");
+    var main = document.getElementById("mainScreen");
+    if (main) {
+      main.classList.add("active", "workspace-on");
+      main.style.setProperty("display", "flex", "important");
+    }
+    var hub = document.getElementById("homeHub");
+    if (hub) hub.style.setProperty("display", "none", "important");
+    var ia = document.getElementById("inputArea");
+    if (ia) {
+      ia.removeAttribute("hidden");
+      ia.style.setProperty("display", "flex", "important");
+    }
+    try { if (typeof closeSidebar === "function") closeSidebar(); } catch (e) {}
+  }
+
+  var _sh = window.showHomeState;
+  if (typeof _sh === "function") {
+    window.showHomeState = function () {
+      if (gate.opening) {
+        console.log("[ws-v4] block showHomeState during open");
+        return;
+      }
+      var rid = window.currentRoomId || (typeof currentRoomId !== "undefined" ? currentRoomId : null);
+      if (rid) {
+        console.log("[ws-v4] block showHomeState; room active", rid);
+        return;
+      }
+      return _sh.apply(this, arguments);
+    };
+    try { showHomeState = window.showHomeState; } catch (e) {}
+  }
+
+  function installOpen() {
+    var prev = window.openRoom;
+    if (typeof prev !== "function" || prev._acdV4) return;
+    var wrapped = async function (id) {
+      id = id || arguments[0];
+      if (!id) return;
+      gate.opening = true;
+      gate.id = id;
+      seat(id);
+      try { localStorage.setItem("acd_last_room", String(id)); } catch (e) {}
+      try {
+        return await prev.apply(this, arguments);
+      } finally {
+        seat(id);
+        gate.opening = false;
+        gate.id = null;
+      }
+    };
+    wrapped._acdV4 = true;
+    window.openRoom = wrapped;
+    try { openRoom = wrapped; } catch (e) {}
+  }
+
+  document.addEventListener("click", function (ev) {
+    var el = ev.target && ev.target.closest && ev.target.closest("[data-room]");
+    if (!el) return;
+    var rid = el.getAttribute("data-room");
+    if (!rid) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (window.openRoom) window.openRoom(rid);
+  }, true);
+
+  installOpen();
+  setTimeout(installOpen, 200);
+  setTimeout(installOpen, 1000);
+  setTimeout(installOpen, 2500);
+  console.log("[acd] WS-OPEN-V4");
+})();

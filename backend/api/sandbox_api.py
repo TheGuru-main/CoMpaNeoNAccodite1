@@ -41,7 +41,14 @@ from gsp_chain import (
 
 router = APIRouter(prefix="/sandbox", tags=["sandbox"])
 
-ROOT = Path(os.environ.get("ACCD_SANDBOX_ROOT", "/tmp/accd-sandbox")).resolve()
+# Prefer persistent path; /tmp is last resort (Render ephemeral)
+ROOT = Path(
+    os.environ.get("ACCD_SANDBOX_ROOT")
+    or os.environ.get("ACCD_DATA_DIR")
+    or (Path(__file__).resolve().parents[1] / "data" / "accd-sandbox")
+).resolve()
+ROOT.mkdir(parents=True, exist_ok=True)
+
 SAFE_NAME = re.compile(r"^[a-zA-Z0-9._\-]+$")
 R_ROWS = 64
 
@@ -54,6 +61,49 @@ def _scope_root(scope: str) -> Path:
     p.mkdir(parents=True, exist_ok=True)
     return p
 
+
+
+def _manifest_path(scope: str) -> Path:
+    return _scope_root(scope) / ".accd_repos_manifest.json"
+
+
+def _load_manifest(scope: str) -> list:
+    p = _manifest_path(scope)
+    if not p.is_file():
+        return []
+    try:
+        import json as _json
+        data = _json.loads(p.read_text(encoding="utf-8"))
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def _save_manifest(scope: str, entries: list) -> None:
+    import json as _json
+    p = _manifest_path(scope)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(_json.dumps(entries, indent=2), encoding="utf-8")
+
+
+def _manifest_upsert(scope: str, name: str, meta: dict) -> None:
+    entries = [e for e in _load_manifest(scope) if e.get("name") != name]
+    entries.append({
+        "name": name,
+        "scope": scope,
+        "repo_uid": meta.get("repo_uid"),
+        "start_row": meta.get("start_row"),
+        "root_key": meta.get("root_key"),
+        "chain": meta.get("chain"),
+        "updated_at": meta.get("created_at") or meta.get("updated_at") or time.time(),
+    })
+    entries.sort(key=lambda e: e.get("name") or "")
+    _save_manifest(scope, entries)
+
+
+def _manifest_remove(scope: str, name: str) -> None:
+    entries = [e for e in _load_manifest(scope) if e.get("name") != name]
+    _save_manifest(scope, entries)
 
 def _repo_dir(scope: str, repo: str) -> Path:
     try:
@@ -254,6 +304,29 @@ class RepoCreate(BaseModel):
     scope: str = Field("user", pattern="^(user|org|ai)$")
 
 
+@router.get("/health")
+async def sandbox_health():
+    """Console heartbeat + persist diagnostics."""
+    try:
+        ROOT.mkdir(parents=True, exist_ok=True)
+        probe = ROOT / ".accd_health"
+        probe.write_text(str(time.time()), encoding="utf-8")
+        writable = True
+    except Exception as e:
+        writable = False
+        probe_err = str(e)
+    else:
+        probe_err = None
+    return {
+        "ok": True,
+        "root": str(ROOT),
+        "writable": writable,
+        "probe_error": probe_err,
+        "ts": time.time(),
+        "ephemeral_hint": str(ROOT).startswith("/tmp"),
+    }
+
+
 @router.get("/repos")
 async def list_repos(scope: str = "user"):
     root = _scope_root(scope)
@@ -276,8 +349,27 @@ async def list_repos(scope: str = "user"):
             "root_key": meta.get("root_key") or start_row_for_name(d.name)["root_key"],
             "repo_uid": uid,
             "chain": meta.get("chain") or letter_chain(d.name),
+            "on_disk": True,
         })
-    return {"repos": out}
+    # Manifest entries not currently on disk (e.g. after volume miss)
+    seen = {r["name"] for r in out}
+    for e in _load_manifest(scope):
+        n = e.get("name")
+        if not n or n in seen:
+            continue
+        out.append({
+            "name": n,
+            "scope": scope,
+            "files": 0,
+            "updated_at": e.get("updated_at"),
+            "start_row": e.get("start_row"),
+            "root_key": e.get("root_key"),
+            "repo_uid": e.get("repo_uid"),
+            "chain": e.get("chain"),
+            "on_disk": False,
+            "note": "listed in manifest only — restore volume or re-clone",
+        })
+    return {"repos": out, "root": str(_scope_root(scope))}
 
 
 @router.post("/repos")
@@ -301,6 +393,10 @@ async def create_repo(req: RepoCreate):
     }
     _write_meta(d, meta)
     _scaffold_conventional(d, req.name)
+    try:
+        _manifest_upsert(req.scope, req.name, meta)
+    except Exception as e:
+        print("[sandbox] manifest upsert:", e)
 
     return {
         "ok": True,

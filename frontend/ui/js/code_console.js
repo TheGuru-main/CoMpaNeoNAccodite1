@@ -555,8 +555,9 @@
     try {
       var created = await api("/sandbox/repos", "POST", { name: name, scope: scope });
       repo = name;
-      if (created.repo_uid) {
-        saveRepoUid(name, created.repo_uid);
+      var chainUid = (window.acdUidFromName && window.acdUidFromName(name)) || created.repo_uid;
+      if (chainUid) {
+        saveRepoUid(name, chainUid);
         writeLog("repo_uid (save): " + created.repo_uid + " · start_row=" + created.start_row + "\n");
       }
       if (typeof window.acdOnRepoCreated === "function") window.acdOnRepoCreated(created);
@@ -945,6 +946,149 @@ if (cmd === "cat" && arg) {
       } catch (e) { writeLog(errText(e) + "\n"); }
       return;
     }
+    
+    // ACCD-ACD-COMMANDS — internal build/inspect (git stays for GitHub remote only)
+    if (cmd === "acd") {
+      var sub = (parts[1] || "help").toLowerCase();
+      var rest = parts.slice(2).join(" ").trim();
+      if (sub === "help" || sub === "-h") {
+        writeLog(
+          "acd commands (internal):\n" +
+          "  acd repo <name>     switch active repo by name\n" +
+          "  acd pwd | acd ls | acd cd <path>\n" +
+          "  acd rootcheck       .gsp.json, uid, start_row, cwd\n" +
+          "  acd heartbeat       sandbox /health\n" +
+          "  acd grep <pat> [path]\n" +
+          "  acd eof <path>      append next line (use: acd eof path | text…)\n" +
+          "  acd status          repo · cwd · scope\n" +
+          "git clone|pull|push  real GitHub remotes only\n"
+        );
+        return;
+      }
+      if (sub === "status") {
+        writeLog("repo=" + (repo || "(none)") + " cwd=" + (cwd || "/") + " scope=" + scope + "\n");
+        return;
+      }
+      if (sub === "repo") {
+        if (!rest) { writeLog("usage: acd repo <name>\n"); return; }
+        var rname = rest.split(/\s+/)[0];
+        try {
+          var lr = await api("/sandbox/repos?scope=" + encodeURIComponent(scope));
+          var names = (lr.repos || []).map(function (x) { return x.name; });
+          if (names.indexOf(rname) < 0) {
+            writeLog("acd repo: not found '" + rname + "' — create in Explorer or: names=" + names.join(", ") + "\n");
+            return;
+          }
+          await switchRepo(rname);
+          writeLog("acd: active repo " + rname + "\n");
+        } catch (e) { writeLog("acd repo: " + errText(e) + "\n"); }
+        return;
+      }
+      if (sub === "pwd") {
+        writeLog((repo ? ("/" + repo + (cwd ? "/" + cwd : "")) : "/") + "\n");
+        return;
+      }
+      if (sub === "ls") {
+        if (!requireRepo()) return;
+        try {
+          var data = await api(
+            "/sandbox/fs/list?scope=" + encodeURIComponent(scope) +
+            "&repo=" + encodeURIComponent(repo) +
+            "&path=" + encodeURIComponent(cwd || "")
+          );
+          var names = (data.entries || []).filter(function (e) {
+            return e.name !== ".git";
+          }).map(function (e) {
+            return e.type === "dir" ? e.name + "/" : e.name;
+          });
+          writeLog((names.join("  ") || "(empty)") + "\n");
+        } catch (e) { writeLog(errText(e) + "\n"); }
+        return;
+      }
+      if (sub === "cd") {
+        if (!requireRepo()) return;
+        var target = rest || "/";
+        if (target === "/" || target === "~") { setCwd(""); writeLog("/" + repo + "\n"); return; }
+        var np = resolvePath(target);
+        try {
+          var ld = await api(
+            "/sandbox/fs/list?scope=" + encodeURIComponent(scope) +
+            "&repo=" + encodeURIComponent(repo) +
+            "&path=" + encodeURIComponent(np)
+          );
+          if (!ld || ld.error) { writeLog("acd cd: path not found " + np + "\n"); return; }
+          setCwd(np);
+          writeLog("/" + repo + (cwd ? "/" + cwd : "") + "\n");
+        } catch (e) { writeLog("acd cd: " + errText(e) + "\n"); }
+        return;
+      }
+      if (sub === "rootcheck") {
+        if (!requireRepo()) return;
+        try {
+          var g = await api("/sandbox/repos/" + encodeURIComponent(repo) + "/gsp?scope=" + encodeURIComponent(scope));
+          writeLog(
+            "rootcheck OK\n" +
+            "  repo=" + repo + "\n" +
+            "  start_row=" + (g.start_row || "?") + "\n" +
+            "  repo_uid=" + (g.repo_uid || getRepoUid(repo) || "?") + "\n" +
+            "  cwd=" + (cwd || "/") + "\n"
+          );
+        } catch (e) {
+          writeLog("rootcheck FAIL: " + errText(e) + "\n");
+        }
+        return;
+      }
+      if (sub === "heartbeat" || sub === "health") {
+        try {
+          var h = await api("/sandbox/health");
+          writeLog(
+            "heartbeat ok=" + h.ok + " writable=" + h.writable +
+            " root=" + h.root + (h.ephemeral_hint ? " ⚠ ephemeral /tmp" : "") + "\n"
+          );
+        } catch (e) { writeLog("heartbeat FAIL: " + errText(e) + "\n"); }
+        return;
+      }
+      if (sub === "eof") {
+        if (!requireRepo()) return;
+        var epath = rest.split(/\s+/)[0];
+        var etext = rest.slice(epath.length).trim();
+        if (!epath) { writeLog("usage: acd eof <path> <text>\n"); return; }
+        if (!etext) { writeLog("acd eof: provide text after path\n"); return; }
+        try {
+          var erel = resolvePath(epath);
+          var prev = "";
+          try {
+            var rd = await api("/sandbox/fs/read?scope=" + encodeURIComponent(scope) +
+              "&repo=" + encodeURIComponent(repo) + "&path=" + encodeURIComponent(erel));
+            prev = rd.content || "";
+          } catch (e) {}
+          if (prev && !prev.endsWith("\n")) prev += "\n";
+          await api("/sandbox/fs/write", "POST", {
+            scope: scope, repo: repo, path: erel, content: prev + etext + "\n"
+          });
+          writeLog("acd eof: appended → " + erel + "\n");
+        } catch (e) { writeLog("acd eof: " + errText(e) + "\n"); }
+        return;
+      }
+      if (sub === "grep") {
+        if (!requireRepo()) return;
+        var gpat = parts[2] || "";
+        var gpath = parts[3] || cwd || "";
+        if (!gpat) { writeLog("usage: acd grep <pattern> [path]\n"); return; }
+        try {
+          var greq = await api("/sandbox/exec", "POST", {
+            scope: scope, repo: repo,
+            command: "grep -Rn --exclude-dir=.git " + JSON.stringify(gpat) + " " + (gpath || "."),
+            network: false
+          });
+          writeLog((greq.stdout || greq.output || "(no matches)") + "\n");
+        } catch (e) { writeLog("acd grep: " + errText(e) + " — try net shell if grep missing\n"); }
+        return;
+      }
+      writeLog("acd: unknown '" + sub + "' — acd help\n");
+      return;
+    }
+
     if (typeof window.acdNetworkTermCommand === "function") {
       var _netHandled = await window.acdNetworkTermCommand(cmd, parts, {
         repo: repo, scope: scope, api: api, writeLog: writeLog, errText: errText,
@@ -1121,6 +1265,11 @@ if (cmd === "cat" && arg) {
 
   window.openCodePanel = showPanel;
   window.acdGetActiveRepo = function () { return repo || null; };
+  window.acdGetRepoUid = function (name) {
+    name = name || repo;
+    if (window.acdUidFromName) return window.acdUidFromName(name || "");
+    return getRepoUid(name) || "";
+  };
 
   window.closeCodePanel = goHome;
   window.hideCodeScreen = goHome;

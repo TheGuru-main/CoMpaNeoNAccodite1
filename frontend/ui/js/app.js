@@ -5500,3 +5500,114 @@ document.addEventListener("click", function (ev) {
   setTimeout(inject, 800);
   console.log("[acd] WS-OPEN-FIX");
 })();
+
+
+// ACCD-WS-OPEN-V3 — first sidebar tap must open room, never flash home
+(function () {
+  var opening = false;
+  var openingId = null;
+
+  function seat(id) {
+    try {
+      if (id) {
+        try { currentRoomId = id; } catch (e) {}
+        try { window.currentRoomId = id; } catch (e) {}
+      }
+      document.body.classList.add("workspace-active", "ws-room-active");
+      document.body.classList.remove("home-active", "codespace-active");
+      var main = document.getElementById("mainScreen");
+      if (main) {
+        main.classList.add("active", "workspace-on");
+        main.style.setProperty("display", "flex", "important");
+      }
+      var hub = document.getElementById("homeHub");
+      if (hub) hub.style.display = "none";
+      var welcome = document.querySelector(".home-welcome");
+      if (welcome && welcome.parentElement) {
+        // leave; openRoom will clear chatBox
+      }
+      var ia = document.getElementById("inputArea");
+      if (ia) {
+        ia.removeAttribute("hidden");
+        ia.style.setProperty("display", "flex", "important");
+        ia.style.setProperty("visibility", "visible", "important");
+      }
+      try { if (typeof closeSidebar === "function") closeSidebar(); } catch (e) {}
+      try { if (typeof updateInputVisibility === "function") updateInputVisibility(); } catch (e) {}
+      try { if (typeof window.acdApplyChrome === "function") window.acdApplyChrome(); } catch (e) {}
+    } catch (e) {
+      console.warn("[ws-open-v3] seat", e);
+    }
+  }
+
+  // Block showHomeState while a room open is in flight
+  if (typeof window.showHomeState === "function" || typeof showHomeState === "function") {
+    var _sh = window.showHomeState || showHomeState;
+    var guarded = function () {
+      if (opening || (window.currentRoomId || (typeof currentRoomId !== "undefined" && currentRoomId))) {
+        console.log("[ws-open-v3] skip showHomeState (room open)");
+        return;
+      }
+      return _sh.apply(this, arguments);
+    };
+    window.showHomeState = guarded;
+    try { showHomeState = guarded; } catch (e) {}
+  }
+
+  function wrapOpenRoom() {
+    var prev = window.openRoom;
+    if (typeof prev !== "function") return;
+    if (prev._acdV3) return;
+    var wrapped = async function (id) {
+      id = id || arguments[0];
+      if (!id) {
+        console.warn("[ws-open-v3] openRoom without id");
+        return;
+      }
+      opening = true;
+      openingId = id;
+      seat(id);
+      try {
+        localStorage.setItem("acd_last_room", String(id));
+      } catch (e) {}
+      try {
+        var r = await prev.apply(this, arguments);
+        seat(id);
+        return r;
+      } finally {
+        opening = false;
+        openingId = null;
+        seat(id);
+        setTimeout(function () {
+          var box = document.getElementById("chatBox");
+          if (box) box.scrollTop = box.scrollHeight + 200;
+        }, 100);
+      }
+    };
+    wrapped._acdV3 = true;
+    window.openRoom = wrapped;
+    try { openRoom = wrapped; } catch (e) {}
+  }
+
+  // Capture-phase: sidebar room click always routes to openRoom
+  document.addEventListener(
+    "click",
+    function (ev) {
+      var el = ev.target && ev.target.closest && ev.target.closest("[data-room], .side-item[data-room]");
+      if (!el) return;
+      var rid = el.getAttribute("data-room") || el.dataset.room;
+      if (!rid) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (typeof window.openRoom === "function") {
+        window.openRoom(rid);
+      }
+    },
+    true
+  );
+
+  wrapOpenRoom();
+  setTimeout(wrapOpenRoom, 300);
+  setTimeout(wrapOpenRoom, 1200);
+  console.log("[acd] WS-OPEN-V3 installed");
+})();

@@ -5397,3 +5397,106 @@ document.addEventListener("click", function (ev) {
   }
   console.log("[acd] UI-SINGLE installed");
 })();
+
+
+// ACCD-WS-OPEN-FIX
+(function () {
+  function seatRoomChrome() {
+    try {
+      document.body.classList.add("workspace-active", "ws-room-active");
+      document.body.classList.remove("home-active", "codespace-active");
+      var main = document.getElementById("mainScreen");
+      if (main) { main.classList.add("active", "workspace-on"); main.style.display = ""; }
+      var ia = document.getElementById("inputArea");
+      if (ia) { ia.removeAttribute("hidden"); ia.style.setProperty("display", "flex", "important"); }
+      if (typeof updateInputVisibility === "function") updateInputVisibility();
+      if (typeof window.acdApplyChrome === "function") window.acdApplyChrome();
+    } catch (e) {}
+  }
+  function scrollChatToEnd() {
+    var box = document.getElementById("chatBox");
+    if (!box) return;
+    requestAnimationFrame(function () {
+      box.scrollTop = box.scrollHeight + 200;
+      var last = box.lastElementChild;
+      if (last && last.scrollIntoView) {
+        try { last.scrollIntoView({ block: "end" }); } catch (e) {}
+      }
+    });
+  }
+  function wrapOpen() {
+    var fn = window.openRoom || (typeof openRoom !== "undefined" ? openRoom : null);
+    if (!fn || fn._acdWsFix) return;
+    var wrapped = async function (id) {
+      if (!id) return;
+      try { if (typeof closeSidebar === "function") closeSidebar(); } catch (e) {}
+      seatRoomChrome();
+      var r = await fn.apply(this, arguments);
+      seatRoomChrome();
+      setTimeout(scrollChatToEnd, 40);
+      setTimeout(scrollChatToEnd, 250);
+      return r;
+    };
+    wrapped._acdWsFix = true;
+    window.openRoom = wrapped;
+    try { openRoom = wrapped; } catch (e) {}
+  }
+  wrapOpen();
+  setTimeout(wrapOpen, 500);
+  setTimeout(wrapOpen, 1500);
+
+  // home tools + room codespace + workspace head docs
+  function inject() {
+    var nav = document.querySelector("#mainScreen .top-nav") || document.getElementById("mainNav");
+    if (nav && !document.getElementById("btnRoomCodespace")) {
+      var b = document.createElement("button");
+      b.type = "button"; b.id = "btnRoomCodespace"; b.className = "btn"; b.textContent = "Codespace";
+      b.onclick = function (ev) {
+        ev.preventDefault();
+        if (window.acdOpenCodespace) window.acdOpenCodespace(ev);
+        else if (window.openCodePanel) window.openCodePanel();
+      };
+      nav.appendChild(b);
+      ["Excel","Sheet","Workspace"].forEach(function (label) {
+        if (document.getElementById("btnWs"+label)) return;
+        var x = document.createElement("button");
+        x.type = "button"; x.id = "btnWs"+label; x.className = "btn"; x.textContent = label;
+        x.onclick = function (ev) {
+          ev.preventDefault();
+          if (label==="Excel" && window.acdOpenExcel) window.acdOpenExcel();
+          if (label==="Sheet" && window.acdOpenSheet) window.acdOpenSheet();
+          if (label==="Workspace" && window.acdOpenWorkspaceGrid) window.acdOpenWorkspaceGrid();
+        };
+        nav.appendChild(x);
+      });
+    }
+    var hub = document.getElementById("homeActions") || document.getElementById("homeHub");
+    if (hub && !document.getElementById("homeToolsMenu")) {
+      var wrap = document.createElement("div");
+      wrap.id = "homeToolsMenu";
+      wrap.innerHTML = '<button type="button" class="btn" id="btnHomeTools">Tools ▾</button><div id="homeToolsDrop" style="display:none;background:#0f172a;border:1px solid #334155;border-radius:8px;padding:6px;position:absolute;z-index:80"><button type="button" class="btn" data-t="pdf">PDF</button><button type="button" class="btn" data-t="zip">ZIP</button><button type="button" class="btn" data-t="excel">Excel</button><button type="button" class="btn" data-t="sheet">Sheet</button></div>';
+      wrap.style.cssText = "position:relative;display:inline-block;margin:4px;";
+      hub.appendChild(wrap);
+      var drop = wrap.querySelector("#homeToolsDrop");
+      wrap.querySelector("#btnHomeTools").onclick = function () {
+        drop.style.display = drop.style.display === "none" ? "block" : "none";
+      };
+      drop.querySelectorAll("[data-t]").forEach(function (btn) {
+        btn.onclick = function () {
+          drop.style.display = "none";
+          var k = btn.getAttribute("data-t");
+          if (k === "pdf" || k === "zip") {
+            if (window.acdOpenCodespace) window.acdOpenCodespace();
+            alert(k.toUpperCase() + ": ask @AI (doc.pdf.create / archive.zip.create) or use codespace");
+          }
+          if (k === "excel" && window.acdOpenExcel) window.acdOpenExcel();
+          if (k === "sheet" && window.acdOpenSheet) window.acdOpenSheet();
+        };
+      });
+    }
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", inject);
+  else inject();
+  setTimeout(inject, 800);
+  console.log("[acd] WS-OPEN-FIX");
+})();

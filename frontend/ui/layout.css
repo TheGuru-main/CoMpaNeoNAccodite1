@@ -1674,3 +1674,9 @@ body.ws-room-active:not(.codespace-active) #chatBox {
   z-index: 9999 !important;
   pointer-events: auto !important;
 }
+
+/* ACCD-CHAT-SCROLL-PAD */
+body.workspace-active #chatBox, body.ws-room-active #chatBox {
+  padding-bottom: calc(160px + env(safe-area-inset-bottom, 0px)) !important;
+  scroll-padding-bottom: 160px !important;
+}

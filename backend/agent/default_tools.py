@@ -752,4 +752,53 @@ def build_registry(
             from datamuse import fetch_datamuse  # fallback
         return fetch_datamuse(query, op=op, max_results=max_results)
 
+
+    @reg.tool(name="fs.eof_append", category="fs", description="Append text at EOF to a workspace file.", mutating=True)
+    def fs_eof_append(path: str, content: str, encoding: str = "utf-8", newline: bool = True):
+        sp = ctx["guard"].resolve(path)
+        sp.parent.mkdir(parents=True, exist_ok=True)
+        text = content or ""
+        if newline and text and not text.endswith("\n"):
+            text += "\n"
+        with open(sp, "a", encoding=encoding) as f:
+            f.write(text)
+        return {"path": str(sp.relative_to(ctx["guard"].root)), "appended": len(text), "size": sp.stat().st_size}
+
+    @reg.tool(name="debug.traceback_format", category="debug", description="Format a traceback for console display.", mutating=False)
+    def debug_traceback_format(message: str = "", exc_type: str = "Error"):
+        import traceback as tb
+        return {"traceback": f"{exc_type}: {message}\n" + "".join(tb.format_stack()[-6:-1])}
+
+    @reg.tool(name="project.trace", category="project", description="Append project trace event (name, uid, room_type).", mutating=True)
+    def project_trace(project_name: str, project_uid: str = "", room_type: str = "", note: str = ""):
+        import json, time
+        log = ctx["guard"].root / ".accd_project_trace.jsonl"
+        evt = {"ts": time.time(), "project_name": project_name, "project_uid": project_uid, "room_type": room_type, "note": note}
+        with open(log, "a", encoding="utf-8") as f:
+            f.write(json.dumps(evt) + "\n")
+        return {"ok": True, "event": evt}
+
+    @reg.tool(name="project.pin", category="project", description="Pin project/repo by name+uid for team reach.", mutating=True)
+    def project_pin(project_name: str, project_uid: str = "", room_type: str = "repo"):
+        import json
+        pins = ctx["guard"].root / ".accd_pins.json"
+        data = []
+        if pins.is_file():
+            try: data = json.loads(pins.read_text(encoding="utf-8"))
+            except Exception: data = []
+        if not isinstance(data, list): data = []
+        entry = {"name": project_name, "uid": project_uid, "room_type": room_type}
+        data = [e for e in data if not (e.get("name")==project_name and e.get("room_type")==room_type)]
+        data.insert(0, entry)
+        pins.write_text(json.dumps(data[:50], indent=2), encoding="utf-8")
+        return {"ok": True, "pins": data[:20]}
+
+    @reg.tool(name="docs.team_open", category="doc", description="Open doc by name under parent repo|room (uid optional check).", mutating=False)
+    def docs_team_open(doc_name: str, doc_uid: str = "", parent_type: str = "repo", parent_id: str = ""):
+        try:
+            from docs_store import get_document
+            return get_document(parent_type, parent_id, doc_name)
+        except Exception as e:
+            return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
     return reg

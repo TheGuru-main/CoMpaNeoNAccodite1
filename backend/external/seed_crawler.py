@@ -694,6 +694,33 @@ def _fetch_video_knowledge(
             or ""
         ).strip()
         media_url = str(document.get("url") or "").strip()
+        # Subtitles / captions — critical for vocab construction (not description alone)
+        subtitles = (
+            document.get("subtitles")
+            or document.get("subtitle")
+            or document.get("captions")
+            or document.get("caption")
+            or document.get("transcript")
+            or document.get("transcription")
+            or metadata.get("subtitles")
+            or metadata.get("subtitle")
+            or metadata.get("captions")
+            or metadata.get("transcript")
+            or provider.get("subtitles")
+            or provider.get("transcript")
+            or ""
+        )
+        if isinstance(subtitles, list):
+            subtitles = "\n".join(str(x) for x in subtitles if x)
+        elif isinstance(subtitles, dict):
+            subtitles = str(
+                subtitles.get("text")
+                or subtitles.get("content")
+                or subtitles.get("vtt")
+                or subtitles.get("srt")
+                or ""
+            )
+        subtitles = str(subtitles or "").strip()
 
         parts = [f"Domain: {domain}", f"Search topic: {query}"]
 
@@ -701,11 +728,16 @@ def _fetch_video_knowledge(
             parts.append(f"Video title: {title}")
         if description:
             parts.append(f"Video description: {description[:4000]}")
+        if subtitles:
+            parts.append(f"Video subtitles/transcript: {subtitles[:12000]}")
+        else:
+            parts.append("Video subtitles/transcript: (none provided by source)")
         if media_url:
             parts.append(f"Source URL: {media_url}")
         parts.append(f"Declared license: {raw_license}")
 
-        if title or description:
+        # Prefer subtitle-backed text for grid; still keep description
+        if title or description or subtitles:
             output.append("[Licensed video metadata]\n" + "\n".join(parts))
 
     return output

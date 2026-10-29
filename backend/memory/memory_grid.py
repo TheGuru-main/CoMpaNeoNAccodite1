@@ -1752,9 +1752,18 @@ def save_grid(grid: "MemoryGrid" = None, path: str = None) -> str:
     path = path or _DEFAULT_GRID_PATH
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     tmp = path + ".tmp"
+    payload = _grid_to_dict(grid)
     with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(_grid_to_dict(grid), f, ensure_ascii=False)
+        json.dump(payload, f, ensure_ascii=False)
     os.replace(tmp, path)
+    # Durable copy on Backblaze B2 when configured
+    try:
+        from storage.b2 import b2_enabled, b2_put_json
+        if b2_enabled():
+            key = b2_put_json("training/memory_grid/latest.json", payload)
+            print(f"[memory_grid] B2 snapshot {key}")
+    except Exception as e:
+        print("[memory_grid] B2 snapshot skip:", type(e).__name__, e)
     return path
 
 

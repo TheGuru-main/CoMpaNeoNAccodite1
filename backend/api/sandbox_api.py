@@ -536,7 +536,9 @@ async def sandbox_exec(req: ExecRequest):
 # --- Docs (sheet/xlsx/workspace) — uid from tokenizer letter-chain ---
 class DocCreate(BaseModel):
     scope: str = Field("user", pattern="^(user|org|ai)$")
-    parent_repo: str
+    parent_type: str = Field("repo", pattern="^(repo|room)$")
+    parent_repo: str = ""  # when parent_type=repo
+    parent_id: str = ""    # when parent_type=room (or override)
     doc_name: str
     kind: str = Field("sheet", pattern="^(sheet|xlsx|workspace)$")
     n_rows: int = Field(100, ge=1, le=5000)
@@ -567,6 +569,22 @@ def _doc_data_path(ddir: Path) -> Path:
 
 @router.post("/docs")
 async def create_doc(req: DocCreate):
+    # Prefer Neon+B2 when available
+    try:
+        from docs_store import create_document as _ds_create
+        parent_type = getattr(req, "parent_type", None) or "repo"
+        parent_id = getattr(req, "parent_repo", None) or getattr(req, "parent_id", None)
+        return _ds_create(
+            parent_type=parent_type,
+            parent_id=parent_id,
+            doc_name=req.doc_name,
+            kind=req.kind,
+            scope=req.scope,
+            n_rows=req.n_rows,
+            n_cols=req.n_cols,
+        )
+    except Exception as _ds_err:
+        print("[docs] docs_store create fallback disk:", type(_ds_err).__name__, _ds_err)
     rdir = _repo_dir(req.scope, req.parent_repo)
     if not rdir.exists():
         raise HTTPException(404, "parent repo not found")

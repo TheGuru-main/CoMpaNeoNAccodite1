@@ -1367,3 +1367,24 @@ if __name__ == "__main__":
         )
 
     train(memory_grid=grid)
+
+# ACCD-B2-TRAIN-PERSIST
+def persist_training_artifacts_to_b2(grid=None, vocab=None, model_path=None):
+    """Best-effort: push grid snapshot + vocab JSON to B2 for durable training corpus."""
+    try:
+        from docs_store import persist_grid_snapshot, persist_vocab_snapshot
+    except Exception as e:
+        print("[b2] docs_store import", e)
+        return {}
+    out = {}
+    try:
+        if grid is not None:
+            out["grid_key"] = persist_grid_snapshot(grid, kind="memory_grid")
+    except Exception as e:
+        print("[b2] grid", e)
+    try:
+        if vocab is not None:
+            out["vocab_key"] = persist_vocab_snapshot(vocab if isinstance(vocab, dict) else {"vocab": vocab})
+    except Exception as e:
+        print("[b2] vocab", e)
+    return out

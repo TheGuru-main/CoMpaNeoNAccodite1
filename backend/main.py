@@ -377,6 +377,16 @@ def get_context_from_memory(query: str) -> str:
         return ""
 
 def generate_from_prompt(prompt: str, max_len: int, temperature: float) -> str:
+    try:
+        from prompts.prompts_manager import accd_apply_tool_routing_prompt
+        prompt = accd_apply_tool_routing_prompt(prompt)
+    except Exception:
+        try:
+            from agent.tool_dispatch_prompt import append_tool_branches
+            prompt = append_tool_branches(prompt)
+        except Exception:
+            pass
+
     if not TORCH_AVAILABLE:
         # FALLBACK-MSG: clear placeholder so the UI doesn't look like
         # the AI is echoing the user's input back

@@ -93,19 +93,22 @@
     p.style.cssText =
       "display:none;position:fixed;inset:0;z-index:10050;background:#0b1220;color:#e2e8f0;flex-direction:column;";
     p.innerHTML =
-      '<div style="display:flex;gap:8px;align-items:center;padding:10px 12px;border-bottom:1px solid #1e293b;flex-wrap:wrap">' +
+      '<div class="gsp-shell-header" style="display:flex;gap:8px;align-items:center;padding:10px 12px;border-bottom:1px solid #1e293b;flex-wrap:wrap;background:#0f172a">' +
       '<button type="button" id="gspDocBack" class="btn">← Back</button>' +
       '<strong id="gspDocTitle">Docs</strong>' +
-      '<span id="gspDocMeta" style="opacity:0.7;font-size:12px"></span>' +
-      '<span style="flex:1"></span>' +
-      '<input id="gspDocNameInput" placeholder="doc name" style="max-width:140px;padding:6px;border-radius:8px;border:1px solid #334155;background:#0f172a;color:#e2e8f0" />' +
+      '<select id="gspParentType" style="padding:6px;border-radius:8px;background:#0b1220;color:#e2e8f0;border:1px solid #334155">' +
+      '<option value="repo">Parent: repo</option><option value="room">Parent: room</option></select>' +
+      '<input id="gspParentId" placeholder="repo name or room id" style="max-width:160px;padding:6px;border-radius:8px;border:1px solid #334155;background:#0b1220;color:#e2e8f0" />' +
+      '<span id="gspDocMeta" style="opacity:0.7;font-size:12px;flex:1"></span>' +
+      '<input id="gspDocNameInput" placeholder="DocName" style="max-width:140px;padding:6px;border-radius:8px;border:1px solid #334155;background:#0b1220;color:#e2e8f0" />' +
       '<button type="button" id="gspDocCreate" class="btn">Create</button>' +
-      '<button type="button" id="gspDocRefresh" class="btn">List</button>' +
+      '<button type="button" id="gspDocRefresh" class="btn">Refresh</button>' +
       "</div>" +
       '<div style="display:flex;flex:1;min-height:0">' +
-      '<div id="gspDocList" style="width:200px;overflow:auto;border-right:1px solid #1e293b;padding:8px;font-size:13px"></div>' +
-      '<div id="gspDocGridWrap" style="flex:1;overflow:auto;padding:8px"></div>' +
-      "</div>";
+      '<aside id="gspDocList" style="width:220px;overflow:auto;border-right:1px solid #1e293b;padding:8px;font-size:13px;background:#0b1220"></aside>' +
+      '<main id="gspDocGridWrap" style="flex:1;overflow:auto;padding:8px;background:#070b14"></main>' +
+      "</div>" +
+      '<div id="gspShellStatus" style="padding:6px 12px;font-size:11px;opacity:0.65;border-top:1px solid #1e293b">Sheet 54×64 · rows 1–64 · cols 0–53 · names start with a letter · Neon+B2 when configured</div>';
     document.body.appendChild(p);
     document.getElementById("gspDocBack").onclick = function () {
       p.style.display = "none";
@@ -117,12 +120,29 @@
     document.getElementById("gspDocRefresh").onclick = function () {
       refreshList();
     };
+    var pt = document.getElementById("gspParentType");
+    var pid = document.getElementById("gspParentId");
+    if (pt) {
+      pt.value = state.parentType || "repo";
+      pt.onchange = function () {
+        state.parentType = pt.value;
+      };
+    }
+    if (pid) {
+      pid.value = state.parentId || state.parentRepo || "";
+      pid.onchange = function () {
+        state.parentId = pid.value.trim();
+        if (state.parentType === "repo") state.parentRepo = state.parentId;
+      };
+    }
     return p;
   }
 
   function openKind(kind) {
     state.kind = kind || "sheet";
     state.parentRepo = activeRepo();
+    state.parentType = state.parentType || "repo";
+    state.parentId = state.parentId || state.parentRepo;
     var p = ensurePanel();
     p.style.display = "flex";
     document.body.classList.add("gsp-doc-open");
@@ -134,19 +154,31 @@
     refreshList();
   }
 
-  async function createDoc() {
-    var name = (document.getElementById("gspDocNameInput").value || "").trim();
-    if (!name) {
-      alert("Enter doc name");
-      return;
+  function saneName(name, what) {
+    name = String(name || "").trim();
+    if (!/^[A-Za-z][A-Za-z0-9_-]{0,62}$/.test(name)) {
+      alert((what || "Name") + " must start with a letter; only letters, digits, _ or - after that (no leading ._-+@#/?)");
+      return null;
     }
-    if (!state.parentRepo) {
-      alert("Select/open a codespace repo first — docs are children of a repo");
+    return name;
+  }
+  async function createDoc() {
+    var name = saneName(document.getElementById("gspDocNameInput").value, "Doc name");
+    if (!name) return;
+    var parentId = (document.getElementById("gspParentId") && document.getElementById("gspParentId").value.trim()) || state.parentId || state.parentRepo;
+    var parentType = (document.getElementById("gspParentType") && document.getElementById("gspParentType").value) || state.parentType || "repo";
+    state.parentType = parentType;
+    state.parentId = parentId;
+    if (parentType === "repo") state.parentRepo = parentId;
+    if (!parentId) {
+      alert(parentType === "room" ? "Enter room id as parent" : "Open a codespace repo or enter parent repo name");
       return;
     }
     var body = {
       scope: "user",
+      parent_type: state.parentType || "repo",
       parent_repo: state.parentRepo,
+      parent_id: state.parentId || state.parentRepo,
       doc_name: name,
       kind: state.kind === "xlsx" ? "xlsx" : state.kind === "workspace" ? "workspace" : "sheet",
       n_rows: state.nRows,
@@ -174,7 +206,10 @@
     }
     try {
       var data = await api(
-        "/sandbox/docs?parent_repo=" + encodeURIComponent(state.parentRepo) + "&scope=user"
+        "/sandbox/docs?parent_repo=" + encodeURIComponent(state.parentId || state.parentRepo) +
+        "&parent_type=" + encodeURIComponent(state.parentType || "repo") +
+        "&parent_id=" + encodeURIComponent(state.parentId || state.parentRepo) +
+        "&scope=user"
       );
       (data.docs || []).forEach(function (d) {
         if (state.kind === "xlsx" && d.kind !== "xlsx") return;
@@ -317,7 +352,9 @@
     try {
       var res = await api("/sandbox/docs/cell", "POST", {
         scope: "user",
-        parent_repo: state.parentRepo,
+        parent_type: state.parentType || "repo",
+        parent_repo: state.parentRepo || state.parentId,
+        parent_id: state.parentId || state.parentRepo,
         doc_name: state.docName,
         doc_uid: state.docUid,
         row: row,

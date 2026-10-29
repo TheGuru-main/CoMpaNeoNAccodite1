@@ -1502,3 +1502,15 @@ def build_prompt(*args, **kwargs) -> str:
 def build_prompt_from_bundle(bundle) -> str:
     """Module-level wrapper around PromptManager.build_prompt_from_bundle."""
     return _pm().build_prompt_from_bundle(bundle)
+
+# ACCD-TOOL-IF-BRANCHES
+def accd_apply_tool_routing_prompt(text: str) -> str:
+    try:
+        from agent.tool_dispatch_prompt import append_tool_branches
+        return append_tool_branches(text)
+    except Exception:
+        try:
+            from tool_dispatch_prompt import append_tool_branches
+            return append_tool_branches(text)
+        except Exception:
+            return text

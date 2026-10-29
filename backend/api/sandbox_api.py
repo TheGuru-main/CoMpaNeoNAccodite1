@@ -22,10 +22,17 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request, Depends
 from pydantic import BaseModel, Field
 
 from sandbox.runner import SandboxRunner
+try:
+    from access_control import require_parent_access, AccessDenied
+except Exception:
+    require_parent_access = None
+    class AccessDenied(Exception):
+        pass
+
 from gsp_chain import (
     validate_resource_name,
     letter_chain, uid_from_name, start_row_for_name, verify_uid_matches_name,
@@ -546,7 +553,9 @@ class DocCreate(BaseModel):
 
 class DocCellWrite(BaseModel):
     scope: str = Field("user", pattern="^(user|org|ai)$")
-    parent_repo: str
+    parent_type: str = Field("repo", pattern="^(repo|room)$")
+    parent_repo: str = ""
+    parent_id: str = ""
     doc_name: str
     doc_uid: str = ""
     row: int
@@ -567,13 +576,49 @@ def _doc_dir(scope: str, repo: str, doc_name: str) -> Path:
 def _doc_data_path(ddir: Path) -> Path:
     return ddir / "data.json"
 
+
+def _docs_parent(req_or_repo, parent_type=None, parent_id=None, parent_repo=None):
+    pt = (parent_type or getattr(req_or_repo, "parent_type", None) or "repo")
+    if hasattr(pt, "strip"):
+        pt = str(pt).strip().lower()
+    pid = parent_id or getattr(req_or_repo, "parent_id", None) or parent_repo or getattr(req_or_repo, "parent_repo", None) or ""
+    return pt, str(pid)
+
+
+def _enforce_docs_access(user, parent_type, parent_id):
+    if require_parent_access is None or user is None:
+        return
+    try:
+        require_parent_access(user, parent_type, parent_id)
+    except AccessDenied as e:
+        raise HTTPException(403, str(e))
+    except Exception as e:
+        # fail closed for rooms
+        if (parent_type or "").lower() == "room":
+            raise HTTPException(403, f"room access check failed: {e}")
+
 @router.post("/docs")
-async def create_doc(req: DocCreate):
+async def create_doc(req: DocCreate, request: Request = None):
+    # ACCD-DOCS-REBAC
+    parent_type = getattr(req, "parent_type", None) or "repo"
+    parent_id = getattr(req, "parent_id", None) or getattr(req, "parent_repo", None) or ""
+    user = getattr(request, "state", None) and getattr(request.state, "user", None)
+    if user is None and request is not None:
+        try:
+            from auth.auth import decode_access_token
+            auth = request.headers.get("Authorization") or ""
+            if auth.lower().startswith("bearer "):
+                payload = decode_access_token(auth.split(" ", 1)[1])
+                class _U: pass
+                user = _U()
+                user.id = payload.get("sub") or payload.get("user_id")
+        except Exception:
+            user = None
+    _enforce_docs_access(user, parent_type, parent_id)
     # Prefer Neon+B2 when available
     try:
         from docs_store import create_document as _ds_create
-        parent_type = getattr(req, "parent_type", None) or "repo"
-        parent_id = getattr(req, "parent_repo", None) or getattr(req, "parent_id", None)
+        parent_id = parent_id or getattr(req, "parent_repo", None)
         return _ds_create(
             parent_type=parent_type,
             parent_id=parent_id,
@@ -619,7 +664,23 @@ async def create_doc(req: DocCreate):
     return {"ok": True, **meta}
 
 @router.get("/docs")
-async def list_docs(parent_repo: str, scope: str = "user"):
+async def list_docs(parent_repo: str, scope: str = "user", parent_type: str = "repo", parent_id: str = "", request: Request = None):
+    # ACCD-DOCS-REBAC
+    pt = parent_type or "repo"
+    pid = parent_id or parent_repo
+    user = None
+    if request is not None:
+        try:
+            from auth.auth import decode_access_token
+            auth = request.headers.get("Authorization") or ""
+            if auth.lower().startswith("bearer "):
+                payload = decode_access_token(auth.split(" ", 1)[1])
+                class _U: pass
+                user = _U()
+                user.id = payload.get("sub") or payload.get("user_id")
+        except Exception:
+            pass
+    _enforce_docs_access(user, pt, pid)
     root = _docs_dir(scope, parent_repo)
     if not root.exists():
         return {"docs": [], "parent_repo": parent_repo}
@@ -655,7 +716,23 @@ async def get_doc(doc_name: str, parent_repo: str, scope: str = "user"):
     return {"meta": meta, "data": data}
 
 @router.post("/docs/cell")
-async def write_doc_cell(req: DocCellWrite):
+async def write_doc_cell(req: DocCellWrite, request: Request = None):
+    # ACCD-DOCS-REBAC
+    pt = getattr(req, "parent_type", None) or "repo"
+    pid = getattr(req, "parent_id", None) or getattr(req, "parent_repo", None) or ""
+    user = None
+    if request is not None:
+        try:
+            from auth.auth import decode_access_token
+            auth = request.headers.get("Authorization") or ""
+            if auth.lower().startswith("bearer "):
+                payload = decode_access_token(auth.split(" ", 1)[1])
+                class _U: pass
+                user = _U()
+                user.id = payload.get("sub") or payload.get("user_id")
+        except Exception:
+            pass
+    _enforce_docs_access(user, pt, pid)
     ddir = _doc_dir(req.scope, req.parent_repo, req.doc_name)
     if not ddir.exists():
         raise HTTPException(404, "doc not found")

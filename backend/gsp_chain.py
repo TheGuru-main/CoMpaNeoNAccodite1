@@ -131,3 +131,70 @@ def validate_resource_name(name: str, *, what: str = "name") -> str:
             f"{what} may only contain letters, digits, _ or - after the first letter"
         )
     return name
+
+
+def place_fragments(
+    *,
+    L: int,
+    S: int,
+    c: int,
+    K: int,
+    D: int,
+    C: int,
+    R: int,
+    mode: str = "standard",
+) -> Dict[str, Any]:
+    """
+    GSP fragment placement.
+
+    mode:
+      standard    — production: row(k)=((start-1+k*D)%R)+1; col=(c+k)%C
+      progressive — both axes cumulative from previous cell
+      jump        — offsets 0,2,4,6,8 (then +2) from start on both axes
+    """
+    R = max(2, int(R))
+    C = max(2, int(C))
+    K = max(1, int(K))
+    D = max(1, int(D))
+    L = max(0, int(L))
+    S = max(0, int(S))
+    c0 = int(c) % C
+    start_row = ((L + S - 1) % R) + 1
+    mode = (mode or "standard").strip().lower()
+    if mode in ("1", "std", "production"):
+        mode = "standard"
+    elif mode in ("2", "prog"):
+        mode = "progressive"
+    elif mode in ("3", "cumjump", "cumulative_jump"):
+        mode = "jump"
+
+    fr: List[Dict[str, int]] = []
+    if mode == "standard":
+        for k in range(K):
+            fr.append({
+                "k": k,
+                "row": ((start_row - 1 + k * D) % R) + 1,
+                "col": (c0 + k) % C,
+            })
+    elif mode == "progressive":
+        row, col = start_row, c0
+        for k in range(K):
+            fr.append({"k": k, "row": int(row), "col": int(col)})
+            row = ((row - 1 + D) % R) + 1
+            col = (col + 1) % C
+    else:
+        for k in range(K):
+            jk = (2 * k)  # 0,2,4,6,8,...
+            fr.append({
+                "k": k,
+                "row": ((start_row - 1 + jk * D) % R) + 1,
+                "col": (c0 + jk) % C,
+            })
+
+    return {
+        "mode": mode,
+        "start_row": start_row,
+        "L": L, "S": S, "c": c0, "K": K, "D": D, "C": C, "R": R,
+        "fragments": fr,
+    }
+

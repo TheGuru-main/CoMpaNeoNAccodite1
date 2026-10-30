@@ -61,7 +61,7 @@
     nRows: 64,
     nCols: 54,
     // DBase GSP defaults (configurable)
-    gsp: { L: 0, S: 0, c: 0, K: 5, D: 8, C: 26, R: 64 },
+    gsp: { L: 0, S: 0, c: 0, K: 5, D: 8, C: 26, R: 64, mode: "standard" },
     slideIndex: 0,
   };
 
@@ -230,15 +230,18 @@
         " c<input id=\"gspCfgc\" type=\"number\" min=\"0\" value=\"" +
         state.gsp.c +
         '" style="width:48px;margin:0 4px" />' +
-        '<button type="button" class="btn" id="gspCfgApply">Apply</button>';
+        ' mode<select id="gspCfgMode"><option value="standard">standard</option><option value="progressive">progressive</option><option value="jump">jump</option></select><button type="button" class="btn" id="gspCfgApply">Apply</button>';
       document.getElementById("gspCfgApply").onclick = function () {
         state.gsp.C = +document.getElementById("gspCfgC").value || 26;
         state.gsp.R = +document.getElementById("gspCfgR").value || 64;
         state.gsp.K = +document.getElementById("gspCfgK").value || 5;
         state.gsp.D = +document.getElementById("gspCfgD").value || 8;
         state.gsp.c = +document.getElementById("gspCfgc").value || 0;
+        var md = document.getElementById("gspCfgMode");
+        if (md) state.gsp.mode = md.value;
         state.nCols = state.gsp.C;
         state.nRows = state.gsp.R;
+        if (typeof refreshPlacePreview === "function") refreshPlacePreview();
         setStatus("DBase config C=" + state.gsp.C + " R=" + state.gsp.R + " K=" + state.gsp.K + " D=" + state.gsp.D);
         if (state.data) renderStage();
       };
@@ -385,7 +388,29 @@
     }
   }
 
+
+  async function refreshPlacePreview() {
+    try {
+      var q = "/sandbox/gsp/place?L=" + encodeURIComponent(state.gsp.L || 1)
+        + "&S=" + encodeURIComponent(state.gsp.S || 0)
+        + "&c=" + encodeURIComponent(state.gsp.c || 0)
+        + "&K=" + encodeURIComponent(state.gsp.K || 5)
+        + "&D=" + encodeURIComponent(state.gsp.D || 8)
+        + "&C=" + encodeURIComponent(state.gsp.C || state.nCols || 26)
+        + "&R=" + encodeURIComponent(state.gsp.R || state.nRows || 64)
+        + "&mode=" + encodeURIComponent(state.gsp.mode || "standard");
+      if (state.docName) q += "&name=" + encodeURIComponent(state.docName);
+      var data = await api(q);
+      state._place = data;
+      if (state.kind === "dbase") renderStage();
+      setStatus("place mode=" + data.mode + " start_row=" + data.start_row);
+    } catch (e) { setStatus("place: " + e.message); }
+  }
+
   function gspFragments() {
+    if (state._place && state._place.fragments) {
+      return { start_row: state._place.start_row, fragments: state._place.fragments };
+    }
     var C = state.gsp.C || state.nCols || 26;
     var R = state.gsp.R || state.nRows || 64;
     var K = state.gsp.K || 5;
@@ -553,7 +578,17 @@
     }
   }
 
+  function ensureTransCss() {
+    if (document.getElementById("acdPresAnim")) return;
+    var st = document.createElement("style");
+    st.id = "acdPresAnim";
+    st.textContent = "@keyframes acdFade{from{opacity:0}to{opacity:1}}@keyframes acdZoom{from{transform:scale(.92);opacity:.5}to{transform:none;opacity:1}}@keyframes acdSlideL{from{transform:translateX(20px);opacity:.5}to{transform:none;opacity:1}}@keyframes acdSlideR{from{transform:translateX(-20px);opacity:.5}to{transform:none;opacity:1}}@keyframes acdPush{from{transform:translateY(12px);opacity:.5}to{transform:none;opacity:1}}";
+    document.head.appendChild(st);
+  }
+
   function renderPresentation(wrap) {
+    ensureTransCss();
+
     var slides = (state.data && state.data.slides) || [
       { id: "s0", title: state.docName || "Slide", body: "", gradient: "g00", blocks: [] },
     ];
@@ -573,13 +608,13 @@
       "</span>" +
       '<button type="button" class="btn" id="gspSlideNext">→</button>' +
       '<button type="button" class="btn" id="gspSlideAdd">+ Face</button>' +
-      '<label style="font-size:12px">Gradient ' +
-      '<select id="gspGradSel"></select></label>' +
-      "</div>";
+      '<label style="font-size:12px">Gradient <select id="gspGradSel"></select></label>' +
+      '<label style="font-size:12px">Transition <select id="gspTransition">' +
+      '<option value="fade">fade</option><option value="slide-left">slide-left</option>' +
+      '<option value="slide-right">slide-right</option><option value="zoom">zoom</option>' +
+      '<option value="push">push</option></select></label></div>';
     html +=
-      '<div id="gspFace" style="min-height:320px;border-radius:12px;padding:28px;background:' +
-      g.css +
-      ';color:#f8fafc;box-shadow:0 8px 30px #0006">' +
+      ((function(){ var tr = s.transition || "fade"; var anim = tr==="zoom"?"acdZoom":tr==="slide-left"?"acdSlideL":tr==="slide-right"?"acdSlideR":tr==="push"?"acdPush":"acdFade"; return '<div id="gspFace" style="min-height:320px;border-radius:12px;padding:28px;background:' + g.css + ';color:#f8fafc;box-shadow:0 8px 30px #0006;animation:' + anim + ' .35s ease">'; })()) +
       '<div contenteditable="true" id="gspFaceTitle" style="font-size:1.6rem;font-weight:700;outline:none;margin-bottom:12px">' +
       escapeHtml(s.title || "") +
       "</div>" +
@@ -603,6 +638,15 @@
       persistSlides(slides);
       renderPresentation(wrap);
     };
+    var trSel = document.getElementById("gspTransition");
+    if (trSel) {
+      trSel.value = s.transition || "fade";
+      trSel.onchange = function () {
+        s.transition = trSel.value;
+        persistSlides(slides);
+        renderPresentation(wrap);
+      };
+    }
 
     var strip = document.getElementById("gspGradStrip");
     GRADIENTS.slice(0, 24).forEach(function (gg) {

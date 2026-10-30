@@ -35,7 +35,7 @@ except Exception:
 
 from gsp_chain import (
     validate_resource_name,
-    letter_chain, uid_from_name, start_row_for_name, verify_uid_matches_name,
+    letter_chain, uid_from_name, start_row_for_name, verify_uid_matches_name, place_fragments,
     validate_cell, R_ROWS as GSP_R_ROWS, N_COLS as GSP_N_COLS,
 )
 

@@ -959,6 +959,7 @@ if (cmd === "cat" && arg) {
           "  acd rootcheck       .gsp.json, uid, start_row, cwd\n" +
           "  acd heartbeat       sandbox /health\n" +
           "  acd grep <pat> [path]\n" +
+          "  acd sed <old> <new> <path>\n" +
           "  acd eof <path>      append next line (use: acd eof path | text…)\n" +
           "  acd status          repo · cwd · scope\n" +
           "git clone|pull|push  real GitHub remotes only\n"
@@ -1068,6 +1069,40 @@ if (cmd === "cat" && arg) {
           });
           writeLog("acd eof: appended → " + erel + "\n");
         } catch (e) { writeLog("acd eof: " + errText(e) + "\n"); }
+        return;
+      }
+      if (sub === "sed") {
+        if (!requireRepo()) return;
+        var path = "";
+        var oldS = "";
+        var newS = "";
+        if (parts.length >= 5 && parts[2].indexOf("s/") !== 0) {
+          oldS = parts[2]; newS = parts[3]; path = parts.slice(4).join(" ");
+        } else {
+          var sarg = parts.slice(2).join(" ");
+          var m = sarg.match(/^s\/([^/]+)\/([^/]*)\/\s*(\S+)/);
+          if (m) { oldS = m[1]; newS = m[2]; path = m[3]; }
+        }
+        if (!path || oldS === "") {
+          writeLog("usage: acd sed <old> <new> <path>  OR  acd sed s/old/new/ <path>\n");
+          return;
+        }
+        try {
+          var rel = resolvePath(path);
+          var rd = await api("/sandbox/fs/read?scope=" + encodeURIComponent(scope) +
+            "&repo=" + encodeURIComponent(repo) + "&path=" + encodeURIComponent(rel));
+          var content = String(rd.content || "");
+          if (content.indexOf(oldS) < 0) {
+            writeLog("acd sed: pattern not found in " + rel + "\n");
+            return;
+          }
+          var hits = content.split(oldS).length - 1;
+          var next = content.split(oldS).join(newS);
+          await api("/sandbox/fs/write", "POST", {
+            scope: scope, repo: repo, path: rel, content: next
+          });
+          writeLog("acd sed: replaced in " + rel + " (" + hits + " hits)\n");
+        } catch (e) { writeLog("acd sed: " + errText(e) + "\n"); }
         return;
       }
       if (sub === "grep") {

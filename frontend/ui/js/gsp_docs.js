@@ -1,51 +1,42 @@
 /**
- * Accodite DocsShell — SheetS | DBase | CollabSheet | Presentations
- * Does NOT open/close team sidebar rooms (currentRoomId untouched).
- * parent_type: room (in team workspace) | repo (codespace) | org (home general)
+ * Accodite Docs — real app screens (not a console).
+ * SheetS | DBase | CollabSheet | Presentations
+ * Home buttons stay on home; room buttons only when workspace-active.
+ * Never touches codespace / openRoom.
  */
 (function () {
   "use strict";
 
-  var KIND_UI = {
-    sheets: { label: "SheetS", icon: "fa-table-cells", api: "sheet", gridlines: true },
-    dbase: { label: "DBase", icon: "fa-database", api: "xlsx", gridlines: true, configurable: true },
-    collabsheet: { label: "CollabSheet", icon: "fa-people-arrows", api: "workspace", gridlines: true, place: true },
-    presentations: { label: "Presentations", icon: "fa-display", api: "presentations", canvas: true },
+  var KINDS = {
+    sheets: { label: "SheetS", icon: "fa-table-cells", api: "sheet", blurb: "54×64 GSP sheet with gridlines" },
+    dbase: { label: "DBase", icon: "fa-database", api: "xlsx", blurb: "Record table · configurable grid · analysis" },
+    collabsheet: { label: "CollabSheet", icon: "fa-people-arrows", api: "workspace", blurb: "Team collab surface · host for SheetS & DBase" },
+    presentations: { label: "Presentations", icon: "fa-display", api: "pptx", blurb: "Slide faces · gradients · no sheet gridlines" },
   };
 
-  // 70 linear gradients for Presentation book faces
   var GRADIENTS = (function () {
-    var stops = [
-      ["#0f172a", "#1e3a5f"], ["#1a0533", "#4c1d95"], ["#0c4a6e", "#06b6d4"],
-      ["#14532d", "#22c55e"], ["#7c2d12", "#f97316"], ["#4a044e", "#e879f9"],
-      ["#1e1b4b", "#6366f1"], ["#450a0a", "#ef4444"], ["#083344", "#14b8a6"],
-      ["#422006", "#eab308"], ["#0f766e", "#99f6e4"], ["#3b0764", "#c084fc"],
-      ["#111827", "#374151"], ["#1e3a8a", "#93c5fd"], ["#064e3b", "#6ee7b7"],
-      ["#701a75", "#f0abfc"], ["#7f1d1d", "#fca5a5"], ["#713f12", "#fde68a"],
-      ["#164e63", "#67e8f9"], ["#312e81", "#a5b4fc"], ["#134e4a", "#5eead4"],
-      ["#4c0519", "#fb7185"], ["#1c1917", "#a8a29e"], ["#172554", "#60a5fa"],
-      ["#365314", "#a3e635"], ["#581c87", "#d8b4fe"], ["#9a3412", "#fdba74"],
-      ["#0e7490", "#a5f3fc"], ["#1e293b", "#64748b"], ["#831843", "#f9a8d4"],
-      ["#3f6212", "#bef264"], ["#1e3a8a", "#1d4ed8"], ["#0f172a", "#f43f5e"],
-      ["#022c22", "#10b981"], ["#2e1065", "#7c3aed"], ["#431407", "#c2410c"],
-      ["#082f49", "#0ea5e9"], ["#1a2e05", "#65a30d"], ["#4c1d95", "#ddd6fe"],
-      ["#881337", "#ffe4e6"], ["#0c4a6e", "#e0f2fe"], ["#365314", "#ecfccb"],
-      ["#500724", "#fce7f3"], ["#1e1b4b", "#e0e7ff"], ["#713f12", "#fffbeb"],
-      ["#134e4a", "#ccfbf1"], ["#7c2d12", "#ffedd5"], ["#312e81", "#eef2ff"],
-      ["#14532d", "#dcfce7"], ["#9f1239", "#fff1f2"], ["#155e75", "#cffafe"],
-      ["#3b0764", "#f5f3ff"], ["#78350f", "#fef3c7"], ["#0f766e", "#f0fdfa"],
-      ["#1e3a5f", "#dbeafe"], ["#4a044e", "#faf5ff"], ["#7f1d1d", "#fef2f2"],
-      ["#052e16", "#f0fdf4"], ["#1e293b", "#f8fafc"], ["#0c4a6e", "#f0f9ff"],
-      ["#422006", "#fefce8"], ["#2e1065", "#faf5ff"], ["#881337", "#fdf2f8"],
-      ["#164e63", "#ecfeff"], ["#365314", "#f7fee7"], ["#4c0519", "#fff1f2"],
-      ["#083344", "#f0fdfa"], ["#1a0533", "#faf5ff"], ["#450a0a", "#fef2f2"],
-      ["#0f172a", "#22d3ee"], ["#0f172a", "#a3e635"],
+    var pairs = [
+      ["#0f172a", "#1e3a5f"], ["#1a0533", "#4c1d95"], ["#0c4a6e", "#06b6d4"], ["#14532d", "#22c55e"],
+      ["#7c2d12", "#f97316"], ["#4a044e", "#e879f9"], ["#1e1b4b", "#6366f1"], ["#450a0a", "#ef4444"],
+      ["#083344", "#14b8a6"], ["#422006", "#eab308"], ["#0f766e", "#99f6e4"], ["#3b0764", "#c084fc"],
+      ["#111827", "#374151"], ["#1e3a8a", "#93c5fd"], ["#064e3b", "#6ee7b7"], ["#701a75", "#f0abfc"],
+      ["#7f1d1d", "#fca5a5"], ["#713f12", "#fde68a"], ["#164e63", "#67e8f9"], ["#312e81", "#a5b4fc"],
+      ["#134e4a", "#5eead4"], ["#4c0519", "#fb7185"], ["#1c1917", "#a8a29e"], ["#172554", "#60a5fa"],
+      ["#365314", "#a3e635"], ["#581c87", "#d8b4fe"], ["#9a3412", "#fdba74"], ["#0e7490", "#a5f3fc"],
+      ["#1e293b", "#64748b"], ["#831843", "#f9a8d4"], ["#3f6212", "#bef264"], ["#1e3a8a", "#1d4ed8"],
+      ["#0f172a", "#f43f5e"], ["#022c22", "#10b981"], ["#2e1065", "#7c3aed"], ["#431407", "#c2410c"],
+      ["#082f49", "#0ea5e9"], ["#1a2e05", "#65a30d"], ["#4c1d95", "#ddd6fe"], ["#881337", "#ffe4e6"],
+      ["#0c4a6e", "#e0f2fe"], ["#365314", "#ecfccb"], ["#500724", "#fce7f3"], ["#1e1b4b", "#e0e7ff"],
+      ["#713f12", "#fffbeb"], ["#134e4a", "#ccfbf1"], ["#7c2d12", "#ffedd5"], ["#312e81", "#eef2ff"],
+      ["#14532d", "#dcfce7"], ["#9f1239", "#fff1f2"], ["#155e75", "#cffafe"], ["#3b0764", "#f5f3ff"],
+      ["#78350f", "#fef3c7"], ["#0f766e", "#f0fdfa"], ["#1e3a5f", "#dbeafe"], ["#4a044e", "#faf5ff"],
+      ["#7f1d1d", "#fef2f2"], ["#052e16", "#f0fdf4"], ["#1e293b", "#f8fafc"], ["#0c4a6e", "#f0f9ff"],
+      ["#422006", "#fefce8"], ["#2e1065", "#faf5ff"], ["#881337", "#fdf2f8"], ["#164e63", "#ecfeff"],
+      ["#365314", "#f7fee7"], ["#4c0519", "#fff1f2"], ["#083344", "#f0fdfa"], ["#1a0533", "#faf5ff"],
+      ["#450a0a", "#fef2f2"], ["#0f172a", "#22d3ee"],
     ];
-    return stops.map(function (s, i) {
-      return {
-        id: "g" + String(i).padStart(2, "0"),
-        css: "linear-gradient(135deg, " + s[0] + " 0%, " + s[1] + " 100%)",
-      };
+    return pairs.map(function (p, i) {
+      return { id: "g" + String(i).padStart(2, "0"), css: "linear-gradient(135deg," + p[0] + "," + p[1] + ")" };
     });
   })();
 
@@ -57,12 +48,11 @@
     docName: "",
     docUid: "",
     data: null,
-    meta: null,
     nRows: 64,
     nCols: 54,
-    // DBase GSP defaults (configurable)
-    gsp: { L: 0, S: 0, c: 0, K: 5, D: 8, C: 26, R: 64, mode: "standard" },
+    gsp: { C: 26, R: 64, mode: "standard" },
     slideIndex: 0,
+    selected: null,
   };
 
   function token() {
@@ -95,107 +85,127 @@
   }
 
   function apiKind(k) {
-    var u = KIND_UI[k] || KIND_UI.sheets;
-    return u.api;
+    return (KINDS[k] || KINDS.sheets).api;
   }
 
-  /** Scope: in team room → room; else codespace repo; else org/home */
   function resolveParent() {
     var roomId = window.currentRoomId || (typeof currentRoomId !== "undefined" ? currentRoomId : null);
-    if (roomId && document.body.classList.contains("workspace-active") &&
-        !document.body.classList.contains("codespace-active") &&
-        !document.body.classList.contains("home-active")) {
-      return { parentType: "room", parentId: String(roomId), parentRepo: "" };
-    }
+    var inRoom =
+      !!roomId &&
+      document.body.classList.contains("workspace-active") &&
+      !document.body.classList.contains("home-active") &&
+      !document.body.classList.contains("codespace-active");
+    if (inRoom) return { parentType: "room", parentId: String(roomId), parentRepo: "" };
     var repo = "";
     try {
       if (window.acdTermApi && window.acdTermApi.getRepo) repo = window.acdTermApi.getRepo() || "";
     } catch (e) {}
-    if (!repo) {
-      try {
-        repo = sessionStorage.getItem("acd_active_repo") || "";
-      } catch (e) {}
-    }
     if (repo) return { parentType: "repo", parentId: repo, parentRepo: repo };
     return { parentType: "repo", parentId: "HomeDocs", parentRepo: "HomeDocs" };
   }
 
+  function ensureCss() {
+    if (document.getElementById("acdDocsCss")) return;
+    var s = document.createElement("style");
+    s.id = "acdDocsCss";
+    s.textContent =
+      "#gspDocsPanel{font-family:Inter,system-ui,sans-serif!important}" +
+      "#gspDocsPanel *{box-sizing:border-box}" +
+      ".acd-docs-top{display:flex;align-items:center;gap:8px;padding:10px 12px;background:#0f172a;border-bottom:1px solid #1e293b;flex-wrap:wrap}" +
+      ".acd-docs-top .acd-brand{font-weight:700;font-size:15px;color:#f8fafc}" +
+      ".acd-docs-top .acd-sub{font-size:12px;color:#94a3b8}" +
+      ".acd-docs-btn{border:1px solid #334155;background:#1e293b;color:#e2e8f0;border-radius:10px;padding:8px 12px;font-size:13px;cursor:pointer}" +
+      ".acd-docs-btn:hover{border-color:#22d3ee;color:#fff}" +
+      ".acd-docs-btn.primary{background:#0e7490;border-color:#06b6d4}" +
+      ".acd-docs-btn.active{border-color:#22d3ee;box-shadow:0 0 0 1px #22d3ee}" +
+      ".acd-docs-body{display:flex;flex:1;min-height:0;background:#020617}" +
+      ".acd-docs-side{width:220px;background:#0b1220;border-right:1px solid #1e293b;padding:12px;overflow:auto}" +
+      ".acd-docs-main{flex:1;overflow:auto;padding:16px;background:#020617}" +
+      ".acd-docs-card{background:#0f172a;border:1px solid #1e293b;border-radius:16px;padding:16px;margin-bottom:12px}" +
+      ".acd-docs-card h3{margin:0 0 6px;color:#f8fafc;font-size:16px}" +
+      ".acd-docs-card p{margin:0;color:#94a3b8;font-size:13px}" +
+      ".acd-sheet-wrap{overflow:auto;border-radius:12px;border:1px solid #1e293b;background:#0b1220}" +
+      ".acd-sheet-table{border-collapse:collapse;width:max-content;font-size:12px;font-family:system-ui,sans-serif}" +
+      ".acd-sheet-table th{background:#1e293b;color:#94a3b8;padding:6px 8px;border:1px solid #334155;position:sticky;top:0}" +
+      ".acd-sheet-table td{min-width:72px;height:28px;border:1px solid #1e293b;padding:4px 6px;color:#e2e8f0;cursor:pointer;background:#0b1220}" +
+      ".acd-sheet-table td:hover{background:#1e293b}" +
+      ".acd-sheet-table td.on{outline:2px solid #22d3ee}" +
+      ".acd-sheet-table td.frag{background:#14532d44}" +
+      ".acd-formula{display:flex;gap:8px;align-items:center;margin:10px 0}" +
+      ".acd-formula input{flex:1;padding:10px 12px;border-radius:10px;border:1px solid #334155;background:#0b1220;color:#f8fafc;font-size:14px}" +
+      ".acd-face{min-height:360px;border-radius:18px;padding:32px;color:#fff;box-shadow:0 20px 50px #0008}" +
+      ".acd-face [contenteditable]{outline:none}" +
+      ".acd-face-title{font-size:28px;font-weight:800;margin-bottom:12px}" +
+      ".acd-face-body{font-size:16px;line-height:1.55;min-height:140px;opacity:.95}" +
+      ".acd-empty{text-align:center;padding:48px 20px;color:#94a3b8}" +
+      ".acd-empty h2{color:#e2e8f0;margin:0 0 8px}" +
+      ".acd-doc-item{display:block;width:100%;text-align:left;margin:0 0 6px;padding:10px 12px;border-radius:12px;border:1px solid #1e293b;background:#111827;color:#e2e8f0;cursor:pointer}" +
+      ".acd-doc-item:hover{border-color:#22d3ee}" +
+      ".acd-home-docs,.acd-room-docs{display:flex;gap:6px;flex-wrap:wrap;align-items:center}" +
+      "body.home-active .acd-room-docs{display:none!important}" +
+      "body.workspace-active .acd-home-docs{display:none!important}" +
+      "body.codespace-active #gspDocsPanel{display:none!important}";
+    document.head.appendChild(s);
+  }
+
   function ensurePanel() {
+    ensureCss();
     var p = document.getElementById("gspDocsPanel");
     if (p) return p;
     p = document.createElement("div");
     p.id = "gspDocsPanel";
     p.style.cssText =
-      "display:none;position:fixed;inset:0;z-index:12000;background:#070b14;color:#e2e8f0;" +
-      "flex-direction:column;font-family:system-ui,sans-serif;";
+      "display:none;position:fixed;inset:0;z-index:11000;background:#020617;color:#e2e8f0;flex-direction:column";
     p.innerHTML =
-      '<div style="display:flex;gap:6px;align-items:center;padding:8px 10px;border-bottom:1px solid #1e293b;flex-wrap:wrap;background:#0f172a">' +
-      '<button type="button" id="gspDocBack" class="btn">← Back</button>' +
-      '<strong id="gspDocTitle">Docs</strong>' +
-      '<span id="gspKindSwitch" style="display:flex;gap:4px;flex-wrap:wrap"></span>' +
-      '<span id="gspDocMeta" style="opacity:0.7;font-size:11px;flex:1;min-width:120px"></span>' +
-      '<input id="gspDocNameInput" placeholder="DocName" maxlength="64" ' +
-      'style="max-width:130px;padding:6px;border-radius:8px;border:1px solid #334155;background:#0b1220;color:#e2e8f0" />' +
-      '<button type="button" id="gspDocCreate" class="btn">Create</button>' +
-      '<button type="button" id="gspDocRefresh" class="btn">Refresh</button>' +
+      '<div class="acd-docs-top">' +
+      '<button type="button" class="acd-docs-btn" id="gspDocBack">← Back</button>' +
+      '<span class="acd-brand" id="gspDocTitle">Docs</span>' +
+      '<span class="acd-sub" id="gspDocScope"></span>' +
+      '<span style="flex:1"></span>' +
+      '<input id="gspDocNameInput" placeholder="Document name" maxlength="64" ' +
+      'style="width:150px;padding:8px 10px;border-radius:10px;border:1px solid #334155;background:#0b1220;color:#fff" />' +
+      '<button type="button" class="acd-docs-btn primary" id="gspDocCreate">Create</button>' +
       "</div>" +
-      '<div id="gspConfigBar" style="display:none;padding:6px 10px;border-bottom:1px solid #1e293b;font-size:12px;gap:8px;flex-wrap:wrap;align-items:center;background:#0b1220"></div>' +
-      '<div style="display:flex;flex:1;min-height:0">' +
-      '<aside id="gspDocList" style="width:200px;overflow:auto;border-right:1px solid #1e293b;padding:8px;font-size:13px;background:#0b1220"></aside>' +
-      '<main id="gspDocGridWrap" style="flex:1;overflow:auto;padding:8px;background:#070b14"></main>' +
-      "</div>" +
-      '<div id="gspShellStatus" style="padding:6px 12px;font-size:11px;opacity:0.65;border-top:1px solid #1e293b"></div>';
+      '<div class="acd-docs-top" id="gspKindBar" style="background:#0b1220"></div>' +
+      '<div class="acd-docs-top" id="gspToolBar" style="display:none;background:#020617"></div>' +
+      '<div class="acd-docs-body">' +
+      '<aside class="acd-docs-side" id="gspDocList"></aside>' +
+      '<main class="acd-docs-main" id="gspDocStage"></main>' +
+      "</div>";
     document.body.appendChild(p);
 
     document.getElementById("gspDocBack").onclick = function () {
       p.style.display = "none";
-      // never clear currentRoomId
     };
     document.getElementById("gspDocCreate").onclick = function () {
       createDoc();
     };
-    document.getElementById("gspDocRefresh").onclick = function () {
-      refreshList();
-    };
 
-    var sw = document.getElementById("gspKindSwitch");
-    Object.keys(KIND_UI).forEach(function (k) {
+    var bar = document.getElementById("gspKindBar");
+    Object.keys(KINDS).forEach(function (k) {
       var b = document.createElement("button");
       b.type = "button";
-      b.className = "btn";
+      b.className = "acd-docs-btn";
       b.dataset.kind = k;
-      b.innerHTML = '<i class="fa-solid ' + KIND_UI[k].icon + '"></i> ' + KIND_UI[k].label;
+      b.innerHTML = '<i class="fa-solid ' + KINDS[k].icon + '"></i> ' + KINDS[k].label;
       b.onclick = function () {
         openKind(k);
       };
-      sw.appendChild(b);
+      bar.appendChild(b);
     });
     return p;
   }
 
-  function setStatus(msg) {
-    var el = document.getElementById("gspShellStatus");
-    if (el) el.textContent = msg || "";
-  }
-
   function openKind(kind) {
-    kind = kind || "sheets";
-    if (kind === "sheet" || kind === "excel" || kind === "xlsx" || kind === "workspace" || kind === "pptx") {
-      kind = {
-        sheet: "sheets",
-        excel: "dbase",
-        xlsx: "dbase",
-        workspace: "collabsheet",
-        pptx: "presentations",
-      }[kind] || kind;
+    if (kind === "sheet" || kind === "xlsx" || kind === "workspace" || kind === "pptx" || kind === "excel") {
+      kind = { sheet: "sheets", xlsx: "dbase", excel: "dbase", workspace: "collabsheet", pptx: "presentations" }[kind] || kind;
     }
-    if (!KIND_UI[kind]) kind = "sheets";
+    if (!KINDS[kind]) kind = "sheets";
     state.kind = kind;
     var par = resolveParent();
     state.parentType = par.parentType;
     state.parentId = par.parentId;
     state.parentRepo = par.parentRepo || par.parentId;
-
     if (kind === "sheets" || kind === "collabsheet") {
       state.nRows = 64;
       state.nCols = 54;
@@ -203,68 +213,72 @@
       state.nRows = state.gsp.R || 64;
       state.nCols = state.gsp.C || 26;
     }
-
     var panel = ensurePanel();
     panel.style.display = "flex";
-    document.getElementById("gspDocTitle").textContent = KIND_UI[kind].label;
-    document.getElementById("gspDocMeta").textContent =
-      state.parentType + ":" + (state.parentId || "").slice(0, 24);
+    document.getElementById("gspDocTitle").textContent = KINDS[kind].label;
+    document.getElementById("gspDocScope").textContent =
+      (state.parentType === "room" ? "Room" : "Home/Repo") + " · " + String(state.parentId).slice(0, 20);
+    document.querySelectorAll("#gspKindBar .acd-docs-btn").forEach(function (b) {
+      b.classList.toggle("active", b.dataset.kind === kind);
+    });
+    state.docName = "";
+    state.data = null;
+    paintEmpty();
+    refreshList();
+    paintToolbar();
+  }
 
-    var cfg = document.getElementById("gspConfigBar");
-    if (kind === "dbase") {
-      cfg.style.display = "flex";
-      cfg.innerHTML =
-        "DBase grid C×R " +
-        '<input id="gspCfgC" type="number" min="2" max="200" value="' +
-        state.gsp.C +
-        '" style="width:56px;margin:0 4px" />×' +
-        '<input id="gspCfgR" type="number" min="2" max="500" value="' +
-        state.gsp.R +
-        '" style="width:56px;margin:0 4px" />' +
-        " K<input id=\"gspCfgK\" type=\"number\" min=\"1\" value=\"" +
-        state.gsp.K +
-        '" style="width:48px;margin:0 4px" />' +
-        " D<input id=\"gspCfgD\" type=\"number\" min=\"1\" value=\"" +
-        state.gsp.D +
-        '" style="width:48px;margin:0 4px" />' +
-        " c<input id=\"gspCfgc\" type=\"number\" min=\"0\" value=\"" +
-        state.gsp.c +
-        '" style="width:48px;margin:0 4px" />' +
-        ' mode<select id="gspCfgMode"><option value="standard">standard</option><option value="progressive">progressive</option><option value="jump">jump</option></select><button type="button" class="btn" id="gspCfgApply">Apply</button>';
+  function paintToolbar() {
+    var tb = document.getElementById("gspToolBar");
+    if (!tb) return;
+    if (state.kind === "dbase") {
+      tb.style.display = "flex";
+      tb.innerHTML =
+        '<span class="acd-sub">Grid</span>' +
+        '<input id="gspCfgC" type="number" min="2" max="120" value="' +
+        (state.gsp.C || 26) +
+        '" style="width:56px;padding:6px;border-radius:8px;border:1px solid #334155;background:#0b1220;color:#fff" />' +
+        "<span>×</span>" +
+        '<input id="gspCfgR" type="number" min="2" max="200" value="' +
+        (state.gsp.R || 64) +
+        '" style="width:56px;padding:6px;border-radius:8px;border:1px solid #334155;background:#0b1220;color:#fff" />' +
+        '<button type="button" class="acd-docs-btn" id="gspCfgApply">Resize</button>';
       document.getElementById("gspCfgApply").onclick = function () {
         state.gsp.C = +document.getElementById("gspCfgC").value || 26;
         state.gsp.R = +document.getElementById("gspCfgR").value || 64;
-        state.gsp.K = +document.getElementById("gspCfgK").value || 5;
-        state.gsp.D = +document.getElementById("gspCfgD").value || 8;
-        state.gsp.c = +document.getElementById("gspCfgc").value || 0;
-        var md = document.getElementById("gspCfgMode");
-        if (md) state.gsp.mode = md.value;
         state.nCols = state.gsp.C;
         state.nRows = state.gsp.R;
-        if (typeof refreshPlacePreview === "function") refreshPlacePreview();
-        setStatus("DBase config C=" + state.gsp.C + " R=" + state.gsp.R + " K=" + state.gsp.K + " D=" + state.gsp.D);
         if (state.data) renderStage();
       };
     } else {
-      cfg.style.display = "none";
-      cfg.innerHTML = "";
+      tb.style.display = "none";
+      tb.innerHTML = "";
     }
+  }
 
-    setStatus(
-      KIND_UI[kind].label +
-        (KIND_UI[kind].canvas
-          ? " · blank canvas · 70 gradients"
-          : " · " + state.nCols + "×" + state.nRows) +
-        " · parent " +
-        state.parentType
-    );
-    refreshList();
+  function paintEmpty() {
+    var stage = document.getElementById("gspDocStage");
+    if (!stage) return;
+    var k = KINDS[state.kind];
+    stage.innerHTML =
+      '<div class="acd-empty">' +
+      '<div style="font-size:42px;margin-bottom:12px"><i class="fa-solid ' +
+      k.icon +
+      '"></i></div>' +
+      "<h2>" +
+      k.label +
+      "</h2>" +
+      "<p>" +
+      k.blurb +
+      "</p>" +
+      '<p style="margin-top:14px">Create a document on the right, or open one from the list.</p>' +
+      "</div>";
   }
 
   async function createDoc() {
     var name = (document.getElementById("gspDocNameInput").value || "").trim();
     if (!/^[A-Za-z][A-Za-z0-9_-]{0,62}$/.test(name)) {
-      alert("Doc name must start with a letter (A–Z); no leading symbols");
+      alert("Name must start with a letter");
       return;
     }
     var par = resolveParent();
@@ -272,19 +286,7 @@
     state.parentId = par.parentId;
     state.parentRepo = par.parentRepo || par.parentId;
     try {
-      if (window.acdFetchGspChain) {
-        try {
-          var ch = await window.acdFetchGspChain(name, "en");
-          state.gsp.L = ch.L || (name.length);
-          state.gsp.S = ch.S || 0;
-          if (ch.start_row) state.gsp.start_row = ch.start_row;
-        } catch (e) {
-          state.gsp.L = name.length;
-        }
-      } else {
-        state.gsp.L = name.length;
-      }
-      var body = {
+      var res = await api("/sandbox/docs", "POST", {
         scope: "user",
         parent_type: state.parentType === "room" ? "room" : "repo",
         parent_repo: state.parentRepo || state.parentId,
@@ -293,19 +295,16 @@
         kind: apiKind(state.kind),
         n_rows: state.nRows,
         n_cols: state.nCols,
-      };
-      var res = await api("/sandbox/docs", "POST", body);
+      });
       state.docName = name;
       state.docUid = res.doc_uid || "";
-      state.meta = res;
       if (state.kind === "presentations") {
-        state.data = {
-          slides: [{ id: "s0", title: name, body: "", gradient: "g00", blocks: [] }],
-        };
+        state.data = { slides: [{ id: "s0", title: name, body: "Start writing…", gradient: "g00" }] };
+      } else if (state.kind === "dbase") {
+        state.data = { sheets: { Sheet1: { cells: {} } }, active_sheet: "Sheet1", cells: {} };
       } else {
-        state.data = { cells: {}, n_rows: state.nRows, n_cols: state.nCols, gsp: state.gsp };
+        state.data = { cells: {} };
       }
-      setStatus("created " + name + " uid=" + (state.docUid || "").slice(0, 16));
       await refreshList();
       renderStage();
     } catch (e) {
@@ -316,7 +315,7 @@
   async function refreshList() {
     var list = document.getElementById("gspDocList");
     if (!list) return;
-    list.innerHTML = "<div style='opacity:0.6'>Loading…</div>";
+    list.innerHTML = '<div class="acd-sub">Documents</div>';
     try {
       var q =
         "/sandbox/docs?parent_repo=" +
@@ -327,238 +326,197 @@
         encodeURIComponent(state.parentId || "") +
         "&scope=user";
       var data = await api(q);
-      var docs = data.docs || data.documents || data || [];
-      if (!Array.isArray(docs)) docs = [];
+      var docs = data.docs || [];
       var want = apiKind(state.kind);
-      list.innerHTML = "";
-      var title = document.createElement("div");
-      title.style.cssText = "font-size:11px;opacity:0.6;margin-bottom:6px";
-      title.textContent = "DOCS · " + KIND_UI[state.kind].label;
-      list.appendChild(title);
+      var n = 0;
       docs.forEach(function (d) {
-        var k = d.kind || d.doc_kind || "";
-        if (k && k !== want && !(want === "presentations" && k === "pptx")) {
-          /* show all for collabsheet host */
-          if (state.kind !== "collabsheet") return;
-        }
-        var row = document.createElement("button");
-        row.type = "button";
-        row.className = "btn";
-        row.style.cssText = "display:block;width:100%;text-align:left;margin:2px 0;font-size:12px";
-        row.textContent = (d.doc_name || d.name || "?") + (k ? " · " + k : "");
-        row.onclick = function () {
-          openDoc(d.doc_name || d.name, d);
+        var k = d.kind || "";
+        if (state.kind !== "collabsheet" && k && k !== want && !(want === "pptx" && k === "presentations")) return;
+        n++;
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = "acd-doc-item";
+        b.innerHTML = "<strong>" + escapeHtml(d.doc_name || d.name || "?") + "</strong>";
+        b.onclick = function () {
+          openDoc(d.doc_name || d.name);
         };
-        list.appendChild(row);
+        list.appendChild(b);
       });
-      if (!list.querySelectorAll("button").length) {
-        list.innerHTML += "<div style='opacity:0.5;font-size:12px'>No docs yet — Create</div>";
+      if (!n) {
+        var empty = document.createElement("div");
+        empty.className = "acd-sub";
+        empty.style.marginTop = "10px";
+        empty.textContent = "No documents yet";
+        list.appendChild(empty);
       }
     } catch (e) {
-      list.innerHTML = "<div style='color:#f87171;font-size:12px'>" + e.message + "</div>";
+      list.innerHTML += '<div style="color:#f87171;font-size:12px;margin-top:8px">' + escapeHtml(e.message) + "</div>";
     }
   }
 
-  async function openDoc(name, meta) {
+  async function openDoc(name) {
     state.docName = name;
-    state.meta = meta || {};
-    state.docUid = (meta && (meta.doc_uid || meta.uid)) || "";
     try {
       var data = await api(
         "/sandbox/docs/get?parent_repo=" +
           encodeURIComponent(state.parentRepo || state.parentId) +
-          "&parent_type=" +
-          encodeURIComponent(state.parentType === "room" ? "room" : "repo") +
           "&parent_id=" +
           encodeURIComponent(state.parentId) +
+          "&parent_type=" +
+          encodeURIComponent(state.parentType === "room" ? "room" : "repo") +
           "&doc_name=" +
           encodeURIComponent(name) +
           "&scope=user"
       );
-      state.data = (data && data.data) || data || { cells: {} };
-      if (state.kind === "presentations" && !state.data.slides) {
-        state.data.slides = [{ id: "s0", title: name, body: "", gradient: "g00", blocks: [] }];
-      }
-      renderStage();
+      state.data = (data && data.data) || { cells: {} };
+      state.docUid = (data.meta && data.meta.doc_uid) || state.docUid;
     } catch (e) {
-      // local-only render if API missing get
-      state.data = state.data || { cells: {}, slides: [{ id: "s0", title: name, body: "", gradient: "g00", blocks: [] }] };
-      renderStage();
-      setStatus("open offline/partial: " + e.message);
+      state.data = state.data || { cells: {} };
     }
-  }
-
-
-  async function refreshPlacePreview() {
-    try {
-      var q = "/sandbox/gsp/place?L=" + encodeURIComponent(state.gsp.L || 1)
-        + "&S=" + encodeURIComponent(state.gsp.S || 0)
-        + "&c=" + encodeURIComponent(state.gsp.c || 0)
-        + "&K=" + encodeURIComponent(state.gsp.K || 5)
-        + "&D=" + encodeURIComponent(state.gsp.D || 8)
-        + "&C=" + encodeURIComponent(state.gsp.C || state.nCols || 26)
-        + "&R=" + encodeURIComponent(state.gsp.R || state.nRows || 64)
-        + "&mode=" + encodeURIComponent(state.gsp.mode || "standard");
-      if (state.docName) q += "&name=" + encodeURIComponent(state.docName);
-      var data = await api(q);
-      state._place = data;
-      if (state.kind === "dbase") renderStage();
-      setStatus("place mode=" + data.mode + " start_row=" + data.start_row);
-    } catch (e) { setStatus("place: " + e.message); }
-  }
-
-  function gspFragments() {
-    if (state._place && state._place.fragments) {
-      return { start_row: state._place.start_row, fragments: state._place.fragments };
+    if (state.kind === "presentations" && !(state.data && state.data.slides)) {
+      state.data = { slides: [{ id: "s0", title: name, body: "", gradient: "g00" }] };
     }
-    var C = state.gsp.C || state.nCols || 26;
-    var R = state.gsp.R || state.nRows || 64;
-    var K = state.gsp.K || 5;
-    var D = state.gsp.D || 8;
-    var c0 = state.gsp.c || 0;
-    var L = state.gsp.L || (state.docName || "").length || 1;
-    var S = state.gsp.S || 1;
-    var start = ((L + S - 1) % R) + 1;
-    var fr = [];
-    for (var k = 0; k < K; k++) {
-      fr.push({
-        k: k,
-        row: ((start - 1 + k * D) % R) + 1,
-        col: (c0 + k) % C,
-      });
-    }
-    return { start_row: start, fragments: fr };
-  }
-
-  function renderStage() {
-    var wrap = document.getElementById("gspDocGridWrap");
-    if (!wrap) return;
-    if (state.kind === "presentations") {
-      renderPresentation(wrap);
-      return;
-    }
-    renderGrid(wrap);
+    renderStage();
   }
 
   function activeCells() {
-    if (state.kind === "dbase" && state.data && state.data.sheets) {
+    state.data = state.data || { cells: {} };
+    if (state.kind === "dbase") {
+      state.data.sheets = state.data.sheets || { Sheet1: { cells: state.data.cells || {} } };
       var sn = state.data.active_sheet || "Sheet1";
       state.data.sheets[sn] = state.data.sheets[sn] || { cells: {} };
       return state.data.sheets[sn].cells;
     }
-    state.data = state.data || { cells: {} };
     state.data.cells = state.data.cells || {};
     return state.data.cells;
   }
 
-  function renderGrid(wrap) {
-    var rows = state.nRows || 64;
-    var cols = state.nCols || 54;
-    if (state.kind === "dbase" && state.data && !state.data.sheets) {
-      state.data.sheets = { Sheet1: { cells: state.data.cells || {} } };
-      state.data.active_sheet = "Sheet1";
-    }
-    var cells = activeCells();
-    var fr = state.kind === "dbase" ? gspFragments() : null;
-    var placeSet = {};
-    if (fr) {
-      fr.fragments.forEach(function (f) {
-        placeSet[f.row + ":" + f.col] = f.k;
-      });
-    }
+  function renderStage() {
+    if (state.kind === "presentations") return renderPresentation();
+    if (state.kind === "collabsheet" && !state.docName) return renderCollabHub();
+    return renderSheet();
+  }
 
-    var sheetTabs = "";
-    if (state.kind === "dbase") {
-      var sheets = (state.data && state.data.sheets) || { Sheet1: { cells: {} } };
-      var active = (state.data && state.data.active_sheet) || "Sheet1";
-      sheetTabs = '<div style="display:flex;gap:4px;margin-bottom:6px;flex-wrap:wrap">';
-      Object.keys(sheets).forEach(function (sn) {
-        sheetTabs +=
-          '<button type="button" class="btn" data-sheet="' +
-          sn +
-          '" style="font-size:11px;' +
-          (sn === active ? "border-color:#22d3ee" : "") +
+  function renderCollabHub() {
+    var stage = document.getElementById("gspDocStage");
+    stage.innerHTML =
+      '<div class="acd-docs-card"><h3>CollabSheet</h3><p>Team collaborative surface for this scope. Open a linked tool:</p></div>' +
+      '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
+      '<button type="button" class="acd-docs-btn primary" id="hubDBase"><i class="fa-solid fa-database"></i> DBase</button>' +
+      '<button type="button" class="acd-docs-btn" id="hubSheetS"><i class="fa-solid fa-table-cells"></i> SheetS</button>' +
+      '<button type="button" class="acd-docs-btn" id="hubPres"><i class="fa-solid fa-display"></i> Presentations</button>' +
+      "</div>" +
+      '<div class="acd-docs-card" style="margin-top:16px"><p>Or create a CollabSheet document above to edit the shared grid.</p></div>';
+    document.getElementById("hubDBase").onclick = function () {
+      openKind("dbase");
+    };
+    document.getElementById("hubSheetS").onclick = function () {
+      openKind("sheets");
+    };
+    document.getElementById("hubPres").onclick = function () {
+      openKind("presentations");
+    };
+  }
+
+  function renderSheet() {
+    var stage = document.getElementById("gspDocStage");
+    var rows = Math.min(state.nRows || 64, 64);
+    var cols = Math.min(state.nCols || 54, 54);
+    var cells = activeCells();
+    var html = '<div class="acd-docs-card"><h3>' + escapeHtml(state.docName || "Untitled") + "</h3>";
+    html += "<p>" + KINDS[state.kind].label + " · " + cols + "×" + rows + "</p></div>";
+
+    if (state.kind === "dbase" && state.data.sheets) {
+      html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">';
+      Object.keys(state.data.sheets).forEach(function (sn) {
+        var on = sn === (state.data.active_sheet || "Sheet1");
+        html +=
+          '<button type="button" class="acd-docs-btn' +
+          (on ? " active" : "") +
+          '" data-sheet="' +
+          escapeHtml(sn) +
           '">' +
-          sn +
+          escapeHtml(sn) +
           "</button>";
       });
-      sheetTabs +=
-        '<button type="button" class="btn" id="gspAddSheet" style="font-size:11px">+ Sheet</button></div>';
-      sheetTabs +=
-        '<div style="display:flex;gap:6px;margin-bottom:8px;align-items:center">' +
-        '<span id="gspCellRef" style="min-width:48px;font-size:12px;color:#22d3ee">A1</span>' +
-        '<input id="gspFormulaBar" placeholder="value or =formula" style="flex:1;padding:6px 8px;border-radius:8px;border:1px solid #334155;background:#0b1220;color:#e2e8f0" />' +
-        '<button type="button" class="btn" id="gspFormulaApply">Apply</button></div>';
+      html += '<button type="button" class="acd-docs-btn" id="addSheet">+ Sheet</button></div>';
     }
-    var html =
-      '<div style="margin-bottom:8px;font-size:12px;opacity:0.8">' +
-      (state.docName || "(new)") +
-      (fr ? " · start_row=" + fr.start_row + " · K=" + fr.fragments.length : "") +
-      "</div>" +
-      sheetTabs;
+
     html +=
-      '<div style="overflow:auto;max-height:calc(100vh - 160px)">' +
-      '<table style="border-collapse:collapse;font-size:11px">';
-    html += "<tr><th></th>";
-    for (var c = 0; c < Math.min(cols, 54); c++) {
-      html +=
-        '<th style="padding:2px 4px;border:1px solid #1e293b;color:#64748b">' + c + "</th>";
-    }
-    html += "</tr>";
-    for (var r = 1; r <= Math.min(rows, 64); r++) {
-      html +=
-        '<tr><th style="padding:2px 4px;border:1px solid #1e293b;color:#64748b">' + r + "</th>";
-      for (var c2 = 0; c2 < Math.min(cols, 54); c2++) {
+      '<div class="acd-formula"><span id="cellRef" style="min-width:40px;color:#22d3ee;font-weight:700">—</span>' +
+      '<input id="formulaBar" placeholder="Edit cell value" /><button type="button" class="acd-docs-btn primary" id="formulaApply">Apply</button></div>';
+
+    html += '<div class="acd-sheet-wrap"><table class="acd-sheet-table"><thead><tr><th></th>';
+    for (var c = 0; c < cols; c++) html += "<th>" + c + "</th>";
+    html += "</tr></thead><tbody>";
+    for (var r = 1; r <= rows; r++) {
+      html += "<tr><th>" + r + "</th>";
+      for (var c2 = 0; c2 < cols; c2++) {
         var key = r + ":" + c2;
-        var val = (cells[key] && (cells[key].value || cells[key])) || "";
-        if (typeof val === "object") val = val.value || "";
-        var bg = placeSet[key] != null ? "background:#14532d33;" : "";
+        var val = cells[key];
+        if (val && typeof val === "object") val = val.value || "";
         html +=
           '<td data-r="' +
           r +
           '" data-c="' +
           c2 +
-          '" style="min-width:28px;height:22px;border:1px solid #1e293b;padding:2px;' +
-          bg +
-          'cursor:pointer" title="' +
-          key +
           '">' +
-          escapeHtml(String(val).slice(0, 12)) +
+          escapeHtml(String(val || "").slice(0, 24)) +
           "</td>";
       }
       html += "</tr>";
     }
-    html += "</table></div>";
-    wrap.innerHTML = html;
-    wrap.querySelectorAll("td[data-r]").forEach(function (td) {
+    html += "</tbody></table></div>";
+    stage.innerHTML = html;
+
+    stage.querySelectorAll("td[data-r]").forEach(function (td) {
       td.onclick = function () {
+        stage.querySelectorAll("td.on").forEach(function (x) {
+          x.classList.remove("on");
+        });
+        td.classList.add("on");
         var r = +td.getAttribute("data-r");
         var c = +td.getAttribute("data-c");
+        state.selected = { r: r, c: c };
+        document.getElementById("cellRef").textContent = r + ":" + c;
         var cur = cells[r + ":" + c];
-        var prev = (cur && (cur.value || cur)) || "";
-        var v = prompt("Cell " + r + ":" + c, typeof prev === "string" ? prev : "");
-        if (v == null) return;
-        writeCell(r, c, v, state.kind === "collabsheet");
+        document.getElementById("formulaBar").value =
+          cur && typeof cur === "object" ? cur.value || "" : cur || "";
+        document.getElementById("formulaBar").focus();
       };
     });
+    var apply = function () {
+      if (!state.selected) return;
+      writeCell(state.selected.r, state.selected.c, document.getElementById("formulaBar").value);
+    };
+    document.getElementById("formulaApply").onclick = apply;
+    document.getElementById("formulaBar").onkeydown = function (ev) {
+      if (ev.key === "Enter") apply();
+    };
+    stage.querySelectorAll("[data-sheet]").forEach(function (b) {
+      b.onclick = function () {
+        state.data.active_sheet = b.getAttribute("data-sheet");
+        renderSheet();
+        snapshotSave();
+      };
+    });
+    var add = document.getElementById("addSheet");
+    if (add) {
+      add.onclick = function () {
+        var n = "Sheet" + (Object.keys(state.data.sheets).length + 1);
+        state.data.sheets[n] = { cells: {} };
+        state.data.active_sheet = n;
+        renderSheet();
+        snapshotSave();
+      };
+    }
   }
 
-  async function writeCell(row, col, value, place) {
-    if (!state.docName) {
-      alert("Create or open a doc first");
-      return;
-    }
+  async function writeCell(row, col, value) {
+    if (!state.docName) return;
     var cells = activeCells();
-    cells[row + ":" + col] = { value: value, row: row, col: col, placed: !!place };
-    if (state.kind === "dbase") {
-      var sn = state.data.active_sheet || "Sheet1";
-      state.data.sheets = state.data.sheets || {};
-      state.data.sheets[sn] = state.data.sheets[sn] || { cells: {} };
-      state.data.sheets[sn].cells = cells;
-    } else {
-      state.data.cells = cells;
-    }
-    renderStage();
+    cells[row + ":" + col] = { value: value, row: row, col: col };
+    renderSheet();
     try {
       await api("/sandbox/docs/cell", "POST", {
         scope: "user",
@@ -570,28 +528,20 @@
         row: row,
         col: col,
         value: value,
-        place: !!place,
+        place: state.kind === "collabsheet",
       });
-      setStatus("saved " + row + ":" + col);
     } catch (e) {
-      setStatus("local only: " + e.message);
+      snapshotSave();
     }
   }
 
-  function ensureTransCss() {
-    if (document.getElementById("acdPresAnim")) return;
-    var st = document.createElement("style");
-    st.id = "acdPresAnim";
-    st.textContent = "@keyframes acdFade{from{opacity:0}to{opacity:1}}@keyframes acdZoom{from{transform:scale(.92);opacity:.5}to{transform:none;opacity:1}}@keyframes acdSlideL{from{transform:translateX(20px);opacity:.5}to{transform:none;opacity:1}}@keyframes acdSlideR{from{transform:translateX(-20px);opacity:.5}to{transform:none;opacity:1}}@keyframes acdPush{from{transform:translateY(12px);opacity:.5}to{transform:none;opacity:1}}";
-    document.head.appendChild(st);
-  }
-
-  function renderPresentation(wrap) {
-    ensureTransCss();
-
+  function renderPresentation() {
+    var stage = document.getElementById("gspDocStage");
     var slides = (state.data && state.data.slides) || [
-      { id: "s0", title: state.docName || "Slide", body: "", gradient: "g00", blocks: [] },
+      { id: "s0", title: state.docName || "Slide", body: "", gradient: "g00" },
     ];
+    state.data = state.data || {};
+    state.data.slides = slides;
     if (state.slideIndex >= slides.length) state.slideIndex = 0;
     var s = slides[state.slideIndex];
     var g = GRADIENTS.find(function (x) {
@@ -599,34 +549,30 @@
     }) || GRADIENTS[0];
 
     var html =
-      '<div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;align-items:center">' +
-      '<button type="button" class="btn" id="gspSlidePrev">←</button>' +
-      "<span>Face " +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center">' +
+      '<button type="button" class="acd-docs-btn" id="prevFace">←</button>' +
+      "<strong>Face " +
       (state.slideIndex + 1) +
-      "/" +
+      " / " +
       slides.length +
-      "</span>" +
-      '<button type="button" class="btn" id="gspSlideNext">→</button>' +
-      '<button type="button" class="btn" id="gspSlideAdd">+ Face</button>' +
-      '<label style="font-size:12px">Gradient <select id="gspGradSel"></select></label>' +
-      '<label style="font-size:12px">Transition <select id="gspTransition">' +
-      '<option value="fade">fade</option><option value="slide-left">slide-left</option>' +
-      '<option value="slide-right">slide-right</option><option value="zoom">zoom</option>' +
-      '<option value="push">push</option></select></label>' +
-      '<span id="gspStyleBar" style="display:flex;gap:4px;margin-left:6px;flex-wrap:wrap"><button type="button" class="btn" data-cmd="bold"><b>B</b></button><button type="button" class="btn" data-cmd="italic"><i>I</i></button><button type="button" class="btn" data-cmd="underline"><u>U</u></button><button type="button" class="btn" data-size="dec">A-</button><button type="button" class="btn" data-size="inc">A+</button><button type="button" class="btn" id="gspCropToggle">Crop</button></span></div>';
+      "</strong>" +
+      '<button type="button" class="acd-docs-btn" id="nextFace">→</button>' +
+      '<button type="button" class="acd-docs-btn primary" id="addFace">+ Face</button>' +
+      '<select id="gradSel" class="acd-docs-btn"></select></div>';
     html +=
-      ((function(){ var tr = s.transition || "fade"; var anim = tr==="zoom"?"acdZoom":tr==="slide-left"?"acdSlideL":tr==="slide-right"?"acdSlideR":tr==="push"?"acdPush":"acdFade"; return '<div id="gspFace" style="min-height:320px;border-radius:12px;padding:28px;background:' + g.css + ';color:#f8fafc;box-shadow:0 8px 30px #0006;animation:' + anim + ' .35s ease">'; })()) +
-      '<div contenteditable="true" id="gspFaceTitle" style="font-size:1.6rem;font-weight:700;outline:none;margin-bottom:12px">' +
+      '<div class="acd-face" style="background:' +
+      g.css +
+      '">' +
+      '<div class="acd-face-title" contenteditable="true" id="faceTitle">' +
       escapeHtml(s.title || "") +
       "</div>" +
-      '<div contenteditable="true" id="gspFaceBody" style="font-size:1rem;line-height:1.5;outline:none;min-height:120px">' +
-      escapeHtml(s.body || "Tap to write…") +
+      '<div class="acd-face-body" contenteditable="true" id="faceBody">' +
+      escapeHtml(s.body || "") +
       "</div></div>";
-    html +=
-      '<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap" id="gspGradStrip"></div>';
-    wrap.innerHTML = html;
+    html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px" id="gradStrip"></div>';
+    stage.innerHTML = html;
 
-    var sel = document.getElementById("gspGradSel");
+    var sel = document.getElementById("gradSel");
     GRADIENTS.forEach(function (gg) {
       var o = document.createElement("option");
       o.value = gg.id;
@@ -637,124 +583,68 @@
     sel.onchange = function () {
       s.gradient = sel.value;
       persistSlides(slides);
-      renderPresentation(wrap);
+      renderPresentation();
     };
-    var trSel = document.getElementById("gspTransition");
-    if (trSel) {
-      trSel.value = s.transition || "fade";
-      trSel.onchange = function () {
-        s.transition = trSel.value;
-        persistSlides(slides);
-        renderPresentation(wrap);
-      };
-    }
-
-    var strip = document.getElementById("gspGradStrip");
-    GRADIENTS.slice(0, 24).forEach(function (gg) {
+    var strip = document.getElementById("gradStrip");
+    GRADIENTS.slice(0, 20).forEach(function (gg) {
       var b = document.createElement("button");
       b.type = "button";
       b.title = gg.id;
       b.style.cssText =
-        "width:28px;height:28px;border-radius:6px;border:2px solid " +
+        "width:28px;height:28px;border-radius:8px;border:2px solid " +
         (gg.id === s.gradient ? "#22d3ee" : "#334155") +
         ";background:" +
-        gg.css +
-        ";cursor:pointer";
+        gg.css;
       b.onclick = function () {
         s.gradient = gg.id;
         persistSlides(slides);
-        renderPresentation(wrap);
+        renderPresentation();
       };
       strip.appendChild(b);
     });
-
-    document.getElementById("gspSlidePrev").onclick = function () {
+    document.getElementById("prevFace").onclick = function () {
       state.slideIndex = (state.slideIndex - 1 + slides.length) % slides.length;
-      renderPresentation(wrap);
+      renderPresentation();
     };
-    document.getElementById("gspSlideNext").onclick = function () {
+    document.getElementById("nextFace").onclick = function () {
       state.slideIndex = (state.slideIndex + 1) % slides.length;
-      renderPresentation(wrap);
+      renderPresentation();
     };
-    document.getElementById("gspSlideAdd").onclick = function () {
-      slides.push({
-        id: "s" + slides.length,
-        title: "Face " + (slides.length + 1),
-        body: "",
-        gradient: "g00",
-        blocks: [],
-      });
+    document.getElementById("addFace").onclick = function () {
+      slides.push({ id: "s" + slides.length, title: "Face " + (slides.length + 1), body: "", gradient: "g00" });
       state.slideIndex = slides.length - 1;
       persistSlides(slides);
-      renderPresentation(wrap);
+      renderPresentation();
     };
-    document.getElementById("gspFaceTitle").onblur = function () {
+    document.getElementById("faceTitle").onblur = function () {
       s.title = this.innerText;
       persistSlides(slides);
     };
-    document.getElementById("gspFaceBody").onblur = function () {
-      s.body = this.innerHTML;
+    document.getElementById("faceBody").onblur = function () {
+      s.body = this.innerText;
       persistSlides(slides);
     };
-    var styleBar = document.getElementById("gspStyleBar");
-    if (styleBar) {
-      styleBar.querySelectorAll("[data-cmd]").forEach(function (b) {
-        b.onclick = function () {
-          document.execCommand(b.getAttribute("data-cmd"), false, null);
-        };
-      });
-      styleBar.querySelectorAll("[data-size]").forEach(function (b) {
-        b.onclick = function () {
-          var body = document.getElementById("gspFaceBody");
-          if (!body) return;
-          var cur = parseFloat(window.getComputedStyle(body).fontSize) || 16;
-          body.style.fontSize = (b.getAttribute("data-size") === "inc" ? cur + 2 : Math.max(10, cur - 2)) + "px";
-          s.bodySize = body.style.fontSize;
-          persistSlides(slides);
-        };
-      });
-    }
-    var cropBtn = document.getElementById("gspCropToggle");
-    if (cropBtn) {
-      cropBtn.onclick = function () {
-        var face = document.getElementById("gspFace");
-        if (!face) return;
-        var box = document.getElementById("gspCropBox");
-        if (box) {
-          s.crop = { top: box.style.top, left: box.style.left, width: box.style.width, height: box.style.height };
-          box.remove();
-          cropBtn.textContent = "Crop";
-          persistSlides(slides);
-          return;
-        }
-        box = document.createElement("div");
-        box.id = "gspCropBox";
-        box.style.cssText = "position:absolute;border:2px dashed #22d3ee;left:10%;top:10%;width:80%;height:60%;cursor:move;box-sizing:border-box;background:rgba(34,211,238,0.08);z-index:2";
-        face.style.position = "relative";
-        face.appendChild(box);
-        cropBtn.textContent = "Apply crop";
-        var dragging = false, ox = 0, oy = 0;
-        box.onmousedown = function (ev) {
-          dragging = true;
-          ox = ev.clientX - box.offsetLeft;
-          oy = ev.clientY - box.offsetTop;
-          ev.preventDefault();
-        };
-        document.onmousemove = function (ev) {
-          if (!dragging) return;
-          box.style.left = Math.max(0, ev.clientX - ox) + "px";
-          box.style.top = Math.max(0, ev.clientY - oy) + "px";
-        };
-        document.onmouseup = function () { dragging = false; };
-      };
-    }
   }
 
   function persistSlides(slides) {
     state.data = state.data || {};
     state.data.slides = slides;
-    setStatus("Presentation faces=" + slides.length + " · gradient=" + (slides[state.slideIndex] || {}).gradient);
     snapshotSave();
+  }
+
+  async function snapshotSave() {
+    if (!state.docName || !state.data) return;
+    try {
+      await api("/sandbox/docs/snapshot", "POST", {
+        scope: "user",
+        parent_type: state.parentType === "room" ? "room" : "repo",
+        parent_repo: state.parentRepo || state.parentId,
+        parent_id: state.parentId,
+        doc_name: state.docName,
+        doc_uid: state.docUid,
+        data: state.data,
+      });
+    } catch (e) {}
   }
 
   function escapeHtml(s) {
@@ -765,7 +655,6 @@
       .replace(/"/g, "&quot;");
   }
 
-  // Public API — names locked
   window.acdOpenSheetS = function () {
     openKind("sheets");
   };
@@ -778,49 +667,115 @@
   window.acdOpenPresentations = function () {
     openKind("presentations");
   };
-  // aliases
   window.acdOpenSheet = window.acdOpenSheetS;
   window.acdOpenExcel = window.acdOpenDBase;
   window.acdOpenWorkspaceGrid = window.acdOpenCollabSheet;
-  window.acdGspDocs = {
-    openKind: openKind,
-    kinds: KIND_UI,
-    gradients: GRADIENTS,
-  };
+
+  function mkBtn(s, prefix) {
+    var id = prefix + s.id;
+    if (document.getElementById(id)) return document.getElementById(id);
+    var b = document.createElement("button");
+    b.type = "button";
+    b.id = id;
+    b.className = "acd-docs-btn";
+    b.innerHTML = '<i class="fa-solid ' + s.icon + '"></i> ' + s.label;
+    b.onclick = function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (window[s.fn]) window[s.fn]();
+    };
+    return b;
+  }
 
   function injectButtons() {
+    ensureCss();
     var specs = [
       { id: "btnSheetS", label: "SheetS", icon: "fa-table-cells", fn: "acdOpenSheetS" },
       { id: "btnDBase", label: "DBase", icon: "fa-database", fn: "acdOpenDBase" },
       { id: "btnCollabSheet", label: "CollabSheet", icon: "fa-people-arrows", fn: "acdOpenCollabSheet" },
       { id: "btnPresentations", label: "Presentations", icon: "fa-display", fn: "acdOpenPresentations" },
     ];
-    function addTo(parent, prefix) {
-      if (!parent) return;
+
+    // HOME only — dedicated strip under home hub
+    var homeHost = document.getElementById("homeDocsStrip");
+    if (!homeHost) {
+      var hub = document.getElementById("homeHub") || document.getElementById("homeActions");
+      if (hub) {
+        homeHost = document.createElement("div");
+        homeHost.id = "homeDocsStrip";
+        homeHost.className = "acd-home-docs";
+        homeHost.style.cssText = "margin-top:10px;padding:8px 0";
+        hub.appendChild(homeHost);
+      }
+    }
+    if (homeHost) {
       specs.forEach(function (s) {
-        var id = prefix + s.id;
-        if (document.getElementById(id)) return;
-        var b = document.createElement("button");
-        b.type = "button";
-        b.id = id;
-        b.className = "btn";
-        b.innerHTML = '<i class="fa-solid ' + s.icon + '"></i> ' + s.label;
-        b.style.margin = "0 4px";
-        b.onclick = function (ev) {
-          ev.preventDefault();
-          ev.stopPropagation();
-          if (window[s.fn]) window[s.fn]();
-        };
-        parent.appendChild(b);
+        if (!document.getElementById("home" + s.id)) homeHost.appendChild(mkBtn(s, "home"));
       });
     }
-    addTo(document.getElementById("homeActions") || document.getElementById("homeHub"), "home");
-    addTo(document.querySelector("#mainScreen .top-nav") || document.getElementById("mainNav"), "ws");
+
+    // ROOM only — dedicated strip, not dumping into random top-nav
+    var roomHost = document.getElementById("roomDocsStrip");
+    if (!roomHost) {
+      var main = document.getElementById("mainScreen");
+      if (main) {
+        roomHost = document.createElement("div");
+        roomHost.id = "roomDocsStrip";
+        roomHost.className = "acd-room-docs";
+        roomHost.style.cssText =
+          "padding:6px 10px;gap:6px;background:#0f172a;border-bottom:1px solid #1e293b;flex-wrap:wrap";
+        var header = main.querySelector(".top-bar") || main.querySelector("header") || main.firstElementChild;
+        if (header && header.parentNode) header.parentNode.insertBefore(roomHost, header.nextSibling);
+        else main.insertBefore(roomHost, main.firstChild);
+      }
+    }
+    if (roomHost) {
+      specs.forEach(function (s) {
+        if (!document.getElementById("ws" + s.id)) roomHost.appendChild(mkBtn(s, "ws"));
+      });
+    }
   }
 
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", injectButtons);
-  else injectButtons();
-  setTimeout(injectButtons, 600);
+  // Codespace open hardening (display:flex !important)
+  function hardenCodespace() {
+    var prev = window.openCodePanel;
+    if (typeof prev !== "function") return;
+    if (prev._acdDocsSafe) return;
+    window.openCodePanel = function () {
+      var panel = document.getElementById("codePanel");
+      if (panel) {
+        panel.style.setProperty("display", "flex", "important");
+        panel.style.setProperty("flex-direction", "column", "important");
+        panel.style.setProperty("z-index", "9999", "important");
+      }
+      document.body.classList.add("codespace-active");
+      document.body.classList.remove("home-active");
+      var docs = document.getElementById("gspDocsPanel");
+      if (docs) docs.style.display = "none";
+      return prev.apply(this, arguments);
+    };
+    window.openCodePanel._acdDocsSafe = true;
+    if (typeof window.acdOpenCodespace !== "function") {
+      window.acdOpenCodespace = function (ev) {
+        if (ev && ev.preventDefault) ev.preventDefault();
+        if (window.openCodePanel) window.openCodePanel();
+        return false;
+      };
+    }
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", function () {
+      injectButtons();
+      hardenCodespace();
+    });
+  } else {
+    injectButtons();
+    hardenCodespace();
+  }
+  setTimeout(injectButtons, 500);
+  setTimeout(hardenCodespace, 500);
   setTimeout(injectButtons, 1500);
-  console.log("[acd] DocsShell SheetS|DBase|CollabSheet|Presentations");
+  setTimeout(hardenCodespace, 1500);
+  console.log("[acd] Docs UI: real screens · home/room strips separated");
 })();

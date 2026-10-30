@@ -278,6 +278,71 @@ async def gsp_resolve(req: GspResolveReq):
     return compute_start_row(req.repo_name, req.repo_uid)
 
 
+
+@router.get("/repos/{name}/rootcheck")
+async def repo_rootcheck(name: str, scope: str = "user", cwd: str = ""):
+    """Deep repo integrity for acd rootcheck."""
+    try:
+        name = validate_resource_name(name, what="repo name")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    rdir = _repo_dir(scope, name)
+    issues = []
+    ok = True
+    if not rdir.exists():
+        return {
+            "ok": False,
+            "repo": name,
+            "scope": scope,
+            "on_disk": False,
+            "issues": ["repo directory missing — create or restore volume"],
+            "root": str(rdir),
+        }
+    meta = _read_meta(rdir) or {}
+    expected_uid = uid_from_name(name)
+    info = start_row_for_name(name)
+    if not (rdir / ".gsp.json").is_file():
+        issues.append("missing .gsp.json")
+        ok = False
+    meta_uid = str(meta.get("repo_uid") or "")
+    if meta_uid and meta_uid != expected_uid:
+        issues.append("repo_uid mismatch vs tokenizer chain")
+        ok = False
+    if meta.get("start_row") is not None and int(meta.get("start_row")) != int(info.get("start_row") or 0):
+        issues.append("start_row drift vs name formula")
+        ok = False
+    cwd_rel = (cwd or "").replace("\\", "/").lstrip("/")
+    cwd_ok = True
+    if cwd_rel:
+        target = (rdir / cwd_rel).resolve()
+        try:
+            target.relative_to(rdir.resolve())
+        except ValueError:
+            cwd_ok = False
+            ok = False
+            issues.append("cwd escapes repo root")
+        if cwd_ok and not target.exists():
+            issues.append("cwd path does not exist")
+            ok = False
+    nfiles = sum(1 for f in rdir.rglob("*") if f.is_file())
+    return {
+        "ok": ok and not issues,
+        "repo": name,
+        "scope": scope,
+        "on_disk": True,
+        "root": str(rdir),
+        "repo_uid": meta_uid or expected_uid,
+        "expected_uid": expected_uid,
+        "start_row": meta.get("start_row") or info.get("start_row"),
+        "expected_start_row": info.get("start_row"),
+        "chain": meta.get("chain") or info.get("chain"),
+        "files": nfiles,
+        "cwd": cwd_rel or "/",
+        "cwd_ok": cwd_ok,
+        "issues": issues,
+        "manifest_listed": any(e.get("name") == name for e in _load_manifest(scope)),
+    }
+
 @router.get("/repos/{name}/gsp")
 async def repo_gsp(name: str, scope: str = "user", reveal_uid: bool = False):
     rdir = _repo_dir(scope, name)

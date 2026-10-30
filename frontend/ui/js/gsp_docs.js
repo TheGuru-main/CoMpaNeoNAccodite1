@@ -612,7 +612,8 @@
       '<label style="font-size:12px">Transition <select id="gspTransition">' +
       '<option value="fade">fade</option><option value="slide-left">slide-left</option>' +
       '<option value="slide-right">slide-right</option><option value="zoom">zoom</option>' +
-      '<option value="push">push</option></select></label></div>';
+      '<option value="push">push</option></select></label>' +
+      '<span id="gspStyleBar" style="display:flex;gap:4px;margin-left:6px;flex-wrap:wrap"><button type="button" class="btn" data-cmd="bold"><b>B</b></button><button type="button" class="btn" data-cmd="italic"><i>I</i></button><button type="button" class="btn" data-cmd="underline"><u>U</u></button><button type="button" class="btn" data-size="dec">A-</button><button type="button" class="btn" data-size="inc">A+</button><button type="button" class="btn" id="gspCropToggle">Crop</button></span></div>';
     html +=
       ((function(){ var tr = s.transition || "fade"; var anim = tr==="zoom"?"acdZoom":tr==="slide-left"?"acdSlideL":tr==="slide-right"?"acdSlideR":tr==="push"?"acdPush":"acdFade"; return '<div id="gspFace" style="min-height:320px;border-radius:12px;padding:28px;background:' + g.css + ';color:#f8fafc;box-shadow:0 8px 30px #0006;animation:' + anim + ' .35s ease">'; })()) +
       '<div contenteditable="true" id="gspFaceTitle" style="font-size:1.6rem;font-weight:700;outline:none;margin-bottom:12px">' +
@@ -692,9 +693,61 @@
       persistSlides(slides);
     };
     document.getElementById("gspFaceBody").onblur = function () {
-      s.body = this.innerText;
+      s.body = this.innerHTML;
       persistSlides(slides);
     };
+    var styleBar = document.getElementById("gspStyleBar");
+    if (styleBar) {
+      styleBar.querySelectorAll("[data-cmd]").forEach(function (b) {
+        b.onclick = function () {
+          document.execCommand(b.getAttribute("data-cmd"), false, null);
+        };
+      });
+      styleBar.querySelectorAll("[data-size]").forEach(function (b) {
+        b.onclick = function () {
+          var body = document.getElementById("gspFaceBody");
+          if (!body) return;
+          var cur = parseFloat(window.getComputedStyle(body).fontSize) || 16;
+          body.style.fontSize = (b.getAttribute("data-size") === "inc" ? cur + 2 : Math.max(10, cur - 2)) + "px";
+          s.bodySize = body.style.fontSize;
+          persistSlides(slides);
+        };
+      });
+    }
+    var cropBtn = document.getElementById("gspCropToggle");
+    if (cropBtn) {
+      cropBtn.onclick = function () {
+        var face = document.getElementById("gspFace");
+        if (!face) return;
+        var box = document.getElementById("gspCropBox");
+        if (box) {
+          s.crop = { top: box.style.top, left: box.style.left, width: box.style.width, height: box.style.height };
+          box.remove();
+          cropBtn.textContent = "Crop";
+          persistSlides(slides);
+          return;
+        }
+        box = document.createElement("div");
+        box.id = "gspCropBox";
+        box.style.cssText = "position:absolute;border:2px dashed #22d3ee;left:10%;top:10%;width:80%;height:60%;cursor:move;box-sizing:border-box;background:rgba(34,211,238,0.08);z-index:2";
+        face.style.position = "relative";
+        face.appendChild(box);
+        cropBtn.textContent = "Apply crop";
+        var dragging = false, ox = 0, oy = 0;
+        box.onmousedown = function (ev) {
+          dragging = true;
+          ox = ev.clientX - box.offsetLeft;
+          oy = ev.clientY - box.offsetTop;
+          ev.preventDefault();
+        };
+        document.onmousemove = function (ev) {
+          if (!dragging) return;
+          box.style.left = Math.max(0, ev.clientX - ox) + "px";
+          box.style.top = Math.max(0, ev.clientY - oy) + "px";
+        };
+        document.onmouseup = function () { dragging = false; };
+      };
+    }
   }
 
   function persistSlides(slides) {

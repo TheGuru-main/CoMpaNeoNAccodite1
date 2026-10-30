@@ -1026,16 +1026,26 @@ if (cmd === "cat" && arg) {
       if (sub === "rootcheck") {
         if (!requireRepo()) return;
         try {
-          var g = await api("/sandbox/repos/" + encodeURIComponent(repo) + "/gsp?scope=" + encodeURIComponent(scope));
+          var g = await api("/sandbox/repos/" + encodeURIComponent(repo) + "/rootcheck?scope=" + encodeURIComponent(scope) + "&cwd=" + encodeURIComponent(cwd || ""));
           writeLog(
-            "rootcheck OK\n" +
-            "  repo=" + repo + "\n" +
-            "  start_row=" + (g.start_row || "?") + "\n" +
-            "  repo_uid=" + (g.repo_uid || getRepoUid(repo) || "?") + "\n" +
-            "  cwd=" + (cwd || "/") + "\n"
+            "rootcheck " + (g.ok ? "OK" : "FAIL") + "
+" +
+            "  repo=" + repo + " on_disk=" + g.on_disk + "
+" +
+            "  start_row=" + (g.start_row || "?") + " expected=" + (g.expected_start_row || "?") + "
+" +
+            "  repo_uid=" + (g.repo_uid || "?") + "
+" +
+            "  cwd=" + (g.cwd || "/") + " cwd_ok=" + g.cwd_ok + "
+" +
+            "  files=" + (g.files || 0) + " manifest=" + g.manifest_listed + "
+" +
+            (g.issues && g.issues.length ? ("  issues: " + g.issues.join("; ") + "
+") : "")
           );
         } catch (e) {
-          writeLog("rootcheck FAIL: " + errText(e) + "\n");
+          writeLog("rootcheck FAIL: " + errText(e) + "
+");
         }
         return;
       }

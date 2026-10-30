@@ -269,6 +269,18 @@
     state.parentId = par.parentId;
     state.parentRepo = par.parentRepo || par.parentId;
     try {
+      if (window.acdFetchGspChain) {
+        try {
+          var ch = await window.acdFetchGspChain(name, "en");
+          state.gsp.L = ch.L || (name.length);
+          state.gsp.S = ch.S || 0;
+          if (ch.start_row) state.gsp.start_row = ch.start_row;
+        } catch (e) {
+          state.gsp.L = name.length;
+        }
+      } else {
+        state.gsp.L = name.length;
+      }
       var body = {
         scope: "user",
         parent_type: state.parentType === "room" ? "room" : "repo",
@@ -403,10 +415,25 @@
     renderGrid(wrap);
   }
 
+  function activeCells() {
+    if (state.kind === "dbase" && state.data && state.data.sheets) {
+      var sn = state.data.active_sheet || "Sheet1";
+      state.data.sheets[sn] = state.data.sheets[sn] || { cells: {} };
+      return state.data.sheets[sn].cells;
+    }
+    state.data = state.data || { cells: {} };
+    state.data.cells = state.data.cells || {};
+    return state.data.cells;
+  }
+
   function renderGrid(wrap) {
     var rows = state.nRows || 64;
     var cols = state.nCols || 54;
-    var cells = (state.data && state.data.cells) || {};
+    if (state.kind === "dbase" && state.data && !state.data.sheets) {
+      state.data.sheets = { Sheet1: { cells: state.data.cells || {} } };
+      state.data.active_sheet = "Sheet1";
+    }
+    var cells = activeCells();
     var fr = state.kind === "dbase" ? gspFragments() : null;
     var placeSet = {};
     if (fr) {
@@ -415,11 +442,35 @@
       });
     }
 
+    var sheetTabs = "";
+    if (state.kind === "dbase") {
+      var sheets = (state.data && state.data.sheets) || { Sheet1: { cells: {} } };
+      var active = (state.data && state.data.active_sheet) || "Sheet1";
+      sheetTabs = '<div style="display:flex;gap:4px;margin-bottom:6px;flex-wrap:wrap">';
+      Object.keys(sheets).forEach(function (sn) {
+        sheetTabs +=
+          '<button type="button" class="btn" data-sheet="' +
+          sn +
+          '" style="font-size:11px;' +
+          (sn === active ? "border-color:#22d3ee" : "") +
+          '">' +
+          sn +
+          "</button>";
+      });
+      sheetTabs +=
+        '<button type="button" class="btn" id="gspAddSheet" style="font-size:11px">+ Sheet</button></div>';
+      sheetTabs +=
+        '<div style="display:flex;gap:6px;margin-bottom:8px;align-items:center">' +
+        '<span id="gspCellRef" style="min-width:48px;font-size:12px;color:#22d3ee">A1</span>' +
+        '<input id="gspFormulaBar" placeholder="value or =formula" style="flex:1;padding:6px 8px;border-radius:8px;border:1px solid #334155;background:#0b1220;color:#e2e8f0" />' +
+        '<button type="button" class="btn" id="gspFormulaApply">Apply</button></div>';
+    }
     var html =
       '<div style="margin-bottom:8px;font-size:12px;opacity:0.8">' +
       (state.docName || "(new)") +
       (fr ? " · start_row=" + fr.start_row + " · K=" + fr.fragments.length : "") +
-      "</div>";
+      "</div>" +
+      sheetTabs;
     html +=
       '<div style="overflow:auto;max-height:calc(100vh - 160px)">' +
       '<table style="border-collapse:collapse;font-size:11px">';
@@ -472,9 +523,16 @@
       alert("Create or open a doc first");
       return;
     }
-    state.data = state.data || { cells: {} };
-    state.data.cells = state.data.cells || {};
-    state.data.cells[row + ":" + col] = { value: value, row: row, col: col, placed: !!place };
+    var cells = activeCells();
+    cells[row + ":" + col] = { value: value, row: row, col: col, placed: !!place };
+    if (state.kind === "dbase") {
+      var sn = state.data.active_sheet || "Sheet1";
+      state.data.sheets = state.data.sheets || {};
+      state.data.sheets[sn] = state.data.sheets[sn] || { cells: {} };
+      state.data.sheets[sn].cells = cells;
+    } else {
+      state.data.cells = cells;
+    }
     renderStage();
     try {
       await api("/sandbox/docs/cell", "POST", {
@@ -599,7 +657,7 @@
     state.data = state.data || {};
     state.data.slides = slides;
     setStatus("Presentation faces=" + slides.length + " · gradient=" + (slides[state.slideIndex] || {}).gradient);
-    // API snapshot optional
+    snapshotSave();
   }
 
   function escapeHtml(s) {

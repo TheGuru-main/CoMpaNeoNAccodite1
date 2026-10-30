@@ -112,7 +112,11 @@ def create_document(
             raise ValueError("room id required")
     doc_name = validate_resource_name(doc_name, what="doc name")
     kind = (kind or "sheet").strip().lower()
-    if kind not in ("sheet", "xlsx", "workspace", "pptx"):
+    kind = {
+        "sheets": "sheet", "dbase": "xlsx", "collabsheet": "workspace",
+        "presentations": "pptx",
+    }.get(kind, kind)
+    if kind not in ("sheet", "sheets", "xlsx", "dbase", "workspace", "collabsheet", "pptx", "presentations"):
         raise ValueError("invalid kind")
 
     info = start_row_for_name(doc_name)
@@ -120,8 +124,10 @@ def create_document(
     if kind in ("sheet", "workspace"):
         cells = {"cells": {}, "row_min": 1, "row_max": 64, "col_min": 0, "col_max": 53}
         n_rows, n_cols = 64, 54
+    elif kind == "pptx":
+        cells = {"slides": [{"id": "s0", "title": doc_name, "body": "", "gradient": "g00", "blocks": []}]}
     else:
-        cells = {"cells": {}, "n_rows": n_rows, "n_cols": n_cols, "configurable": True}
+        cells = {"cells": {}, "sheets": {"Sheet1": {"cells": {}}}, "active_sheet": "Sheet1", "n_rows": n_rows, "n_cols": n_cols, "configurable": True, "gsp": {}}
 
     doc_id = uuid.uuid4()
     b2_key = None

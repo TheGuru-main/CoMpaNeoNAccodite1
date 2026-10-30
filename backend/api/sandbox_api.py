@@ -637,13 +637,27 @@ async def sandbox_exec(req: ExecRequest):
 
 
 # --- Docs (sheet/xlsx/workspace) — uid from tokenizer letter-chain ---
+
+def _normalize_doc_kind(kind: str) -> str:
+    k = (kind or "sheet").strip().lower()
+    return {
+        "sheets": "sheet",
+        "dbase": "xlsx",
+        "collabsheet": "workspace",
+        "presentations": "pptx",
+        "pptx": "pptx",
+        "sheet": "sheet",
+        "xlsx": "xlsx",
+        "workspace": "workspace",
+    }.get(k, k)
+
 class DocCreate(BaseModel):
     scope: str = Field("user", pattern="^(user|org|ai)$")
     parent_type: str = Field("repo", pattern="^(repo|room)$")
     parent_repo: str = ""  # when parent_type=repo
     parent_id: str = ""    # when parent_type=room (or override)
     doc_name: str
-    kind: str = Field("sheet", pattern="^(sheet|xlsx|workspace)$")
+    kind: str = Field("sheet", pattern="^(sheet|sheets|xlsx|dbase|workspace|collabsheet|pptx|presentations)$")
     n_rows: int = Field(100, ge=1, le=5000)
     n_cols: int = Field(26, ge=1, le=512)
 
@@ -711,6 +725,7 @@ async def create_doc(req: DocCreate, request: Request = None):
         except Exception:
             user = None
     _enforce_docs_access(user, parent_type, parent_id)
+    req.kind = _normalize_doc_kind(req.kind)
     # Prefer Neon+B2 when available
     try:
         from docs_store import create_document as _ds_create
@@ -747,15 +762,19 @@ async def create_doc(req: DocCreate, request: Request = None):
         "parent_repo": req.parent_repo,
         "scope": req.scope,
         "created_at": time.time(),
-        "grid": {"rows": "1..64", "cols": "0..53"} if req.kind in ("sheet", "workspace") else {
-            "n_rows": req.n_rows, "n_cols": req.n_cols, "configurable": True
-        },
+        "grid": (
+            {"rows": "1..64", "cols": "0..53"} if req.kind in ("sheet", "workspace")
+            else {"slides": True} if req.kind in ("pptx", "presentations")
+            else {"n_rows": req.n_rows, "n_cols": req.n_cols, "configurable": True, "gsp": True}
+        ),
     }
     _write_meta(ddir, meta)
-    if req.kind in ("sheet", "workspace"):
+    if req.kind in ("pptx", "presentations"):
+        data = {"slides": [{"id": "s0", "title": req.doc_name, "body": "", "gradient": "g00", "blocks": []}]}
+    elif req.kind in ("sheet", "workspace"):
         data = {"cells": {}, "row_min": 1, "row_max": 64, "col_min": 0, "col_max": 53}
     else:
-        data = {"cells": {}, "n_rows": req.n_rows, "n_cols": req.n_cols, "configurable": True}
+        data = {"cells": {}, "sheets": {"Sheet1": {"cells": {}}}, "active_sheet": "Sheet1", "n_rows": req.n_rows, "n_cols": req.n_cols, "configurable": True, "gsp": {}}
     _doc_data_path(ddir).write_text(json.dumps(data), encoding="utf-8")
     return {"ok": True, **meta}
 
@@ -810,6 +829,63 @@ async def get_doc(doc_name: str, parent_repo: str, scope: str = "user"):
         except Exception:
             data = {}
     return {"meta": meta, "data": data}
+
+
+class DocSnapshot(BaseModel):
+    scope: str = Field("user", pattern="^(user|org|ai)$")
+    parent_type: str = Field("repo", pattern="^(repo|room)$")
+    parent_repo: str = ""
+    parent_id: str = ""
+    doc_name: str
+    doc_uid: str = ""
+    data: dict
+
+
+@router.post("/docs/snapshot")
+async def save_doc_snapshot(req: DocSnapshot, request: Request = None):
+    """Persist full doc payload (cells, sheets, slides)."""
+    pt = req.parent_type or "repo"
+    pid = req.parent_id or req.parent_repo
+    user = None
+    if request is not None:
+        try:
+            from auth.auth import decode_access_token
+            auth = request.headers.get("Authorization") or ""
+            if auth.lower().startswith("bearer "):
+                payload = decode_access_token(auth.split(" ", 1)[1])
+                class _U: pass
+                user = _U()
+                user.id = payload.get("sub") or payload.get("user_id")
+        except Exception:
+            pass
+    _enforce_docs_access(user, pt, pid)
+    parent = req.parent_repo or req.parent_id
+    ddir = _doc_dir(req.scope, parent, req.doc_name)
+    if not ddir.exists():
+        raise HTTPException(404, "doc not found")
+    if req.doc_uid and not verify_uid_matches_name(req.doc_name, req.doc_uid):
+        raise HTTPException(403, "doc_uid mismatch")
+    dp = _doc_data_path(ddir)
+    payload = req.data if isinstance(req.data, dict) else {}
+    dp.write_text(json.dumps(payload), encoding="utf-8")
+    meta = _read_meta(ddir) or {}
+    meta["updated_at"] = time.time()
+    _write_meta(ddir, meta)
+    return {"ok": True, "doc_name": req.doc_name}
+
+
+@router.get("/docs/get")
+async def get_doc_query(
+    parent_repo: str = "",
+    parent_id: str = "",
+    parent_type: str = "repo",
+    doc_name: str = "",
+    scope: str = "user",
+):
+    parent = parent_repo or parent_id
+    if not parent or not doc_name:
+        raise HTTPException(400, "parent_repo/parent_id and doc_name required")
+    return await get_doc(doc_name, parent, scope)
 
 @router.post("/docs/cell")
 async def write_doc_cell(req: DocCellWrite, request: Request = None):

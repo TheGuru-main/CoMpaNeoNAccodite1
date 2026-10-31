@@ -1111,7 +1111,7 @@ def _get_seed_loop():
 
 
 # ACCD-SEED-CHUNK
-def _chunk_text_for_grid(text: str, max_chars: int = 400, min_chars: int = 12):
+def _chunk_text_for_grid(text: str, max_chars: int = 1299, min_chars: int = 40):
     """Split one adapter body into paragraph/sentence chunks for unique grid docs."""
     text = (text or "").strip()
     if not text:
@@ -1222,7 +1222,7 @@ def seed_crawl(
                         break
                     if not isinstance(chunk, str) or not chunk.strip():
                         continue
-                    units = _chunk_text_for_grid(chunk[:8192])
+                    units = _chunk_text_for_grid(chunk[:12000])
                     if not units:
                         units = [chunk[:400].strip()] if chunk.strip() else []
                     for ui, unit in enumerate(units):

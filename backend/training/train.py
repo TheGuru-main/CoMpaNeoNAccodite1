@@ -621,7 +621,7 @@ def train(
     data_dir: Optional[str] = None,
     epochs: int = 100,
     batch_size: int = 8,
-    seq_len: int = 32,
+    seq_len: int = 75,
     lr: float = 1e-4,
     save_model: str = "companion_model.pth",
     save_vocab: str = "tokenizer_vocab.json",

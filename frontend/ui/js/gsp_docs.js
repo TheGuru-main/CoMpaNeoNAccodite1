@@ -6,6 +6,33 @@
 (function () {
   "use strict";
 
+  var KIND_THEME = {
+    sheets: {
+      bar: "linear-gradient(105deg, #6b7280 0%, #9ca3af 35%, #bae6fd 70%, #7dd3fc 100%)",
+      accent: "#38bdf8",
+      side: "linear-gradient(180deg, #374151 0%, #1f2937 55%, #0c4a6e 100%)",
+      cell: "linear-gradient(180deg, #4b5563 0%, #64748b 100%)",
+    },
+    dbase: {
+      bar: "linear-gradient(105deg, #4b5563 0%, #6b7280 30%, #e0f2fe 65%, #7dd3fc 100%)",
+      accent: "#0ea5e9",
+      side: "linear-gradient(180deg, #1f2937 0%, #334155 50%, #0369a1 100%)",
+      cell: "linear-gradient(180deg, #475569 0%, #38bdf8 100%)",
+    },
+    collabsheet: {
+      bar: "linear-gradient(105deg, #94a3b8 0%, #cbd5e1 40%, #bae6fd 75%, #38bdf8 100%)",
+      accent: "#0284c7",
+      side: "linear-gradient(180deg, #64748b 0%, #475569 45%, #0ea5e9 100%)",
+      cell: "linear-gradient(180deg, #94a3b8 0%, #7dd3fc 100%)",
+    },
+    presentations: {
+      bar: "linear-gradient(105deg, #64748b 0%, #94a3b8 40%, #e0f2fe 100%)",
+      accent: "#38bdf8",
+      side: "linear-gradient(180deg, #334155 0%, #1e293b 100%)",
+      cell: "linear-gradient(180deg, #475569 0%, #94a3b8 100%)",
+    },
+  };
+
   var KINDS = {
     sheets: { label: "SheetS", icon: "fa-table-cells", api: "sheet", blurb: "54×64 GSP sheet" },
     dbase: { label: "DBase", icon: "fa-database", api: "xlsx", blurb: "Records · meta place · lexicon lookup" },
@@ -102,14 +129,14 @@
       "body.workspace-active:not(.codespace-active) #roomDocsStrip{display:flex!important}" +
       "body:not(.workspace-active) #roomDocsStrip,body.codespace-active #roomDocsStrip{display:none!important}" +
       "body.codespace-active #gspDocsPanel{display:none!important}" +
-      "#homeDocsStrip,#roomDocsStrip{flex-wrap:wrap;gap:6px;align-items:center}" +
+      "#homeDocsStrip,#roomDocsStrip{flex-wrap:wrap;gap:6px;align-items:center}#homebtnSheetS,.homebtnSheetS,button#homebtnSheetS{background:linear-gradient(105deg,#6b7280 0%,#bae6fd 100%)!important;border:none;color:#0f172a}#homebtnDBase,button#homebtnDBase{background:linear-gradient(105deg,#4b5563 0%,#7dd3fc 100%)!important;border:none;color:#0f172a}#homebtnCollabSheet,button#homebtnCollabSheet{background:linear-gradient(105deg,#94a3b8 0%,#38bdf8 100%)!important;border:none;color:#0f172a}#wsbtnSheetS,button#wsbtnSheetS{background:linear-gradient(105deg,#6b7280 0%,#bae6fd 100%)!important;border:none;color:#0f172a}#wsbtnDBase,button#wsbtnDBase{background:linear-gradient(105deg,#4b5563 0%,#7dd3fc 100%)!important;border:none;color:#0f172a}#wsbtnCollabSheet,button#wsbtnCollabSheet{background:linear-gradient(105deg,#94a3b8 0%,#38bdf8 100%)!important;border:none;color:#0f172a}" +
       "#gspDocsPanel{font-family:Inter,system-ui,sans-serif!important;display:none;position:fixed;inset:0;z-index:11000;background:#020617;color:#e2e8f0;flex-direction:column}" +
       "#gspDocsPanel.acd-open{display:flex!important}" +
       ".acd-top{display:flex;align-items:center;gap:8px;padding:10px 12px;background:#0f172a;border-bottom:1px solid #1e293b;flex-wrap:wrap}" +
       ".acd-btn{border:1px solid #334155;background:#1e293b;color:#e2e8f0;border-radius:10px;padding:8px 12px;font-size:13px;cursor:pointer}" +
       ".acd-btn:hover{border-color:#22d3ee}" +
       ".acd-btn.primary{background:#0e7490;border-color:#06b6d4}" +
-      ".acd-btn.active{border-color:#22d3ee;box-shadow:0 0 0 1px #22d3ee}" +
+      ".acd-btn.active{border-color:#e0f2fe;box-shadow:0 0 0 1px var(--acd-accent,#38bdf8)}" +
       ".acd-inp{padding:8px 10px;border-radius:10px;border:1px solid #334155;background:#0b1220;color:#fff;font-size:13px}" +
       ".acd-body{display:flex;flex:1;min-height:0}" +
       ".acd-side{width:240px;min-width:240px;background:#0b1220;border-right:1px solid #1e293b;overflow:auto;transition:width .2s,min-width .2s,padding .2s}" +
@@ -122,7 +149,7 @@
       ".acd-grid-wrap{flex:1;overflow:auto;padding:8px}" +
       ".acd-sheet-table{border-collapse:collapse;width:max-content;font-size:12px}" +
       ".acd-sheet-table th{background:#1e293b;color:#94a3b8;padding:6px 8px;border:1px solid #334155;position:sticky;top:0;z-index:1}" +
-      ".acd-sheet-table td{min-width:88px;height:30px;border:1px solid #1e293b;padding:4px 6px;color:#e2e8f0;cursor:pointer;background:#0b1220;vertical-align:top}" +
+      ".acd-sheet-table td{min-width:88px;height:30px;border:1px solid #334155;padding:4px 6px;color:#f8fafc;cursor:pointer;background:var(--acd-cell-grad,#4b5563);vertical-align:top}" +
       ".acd-sheet-table td:hover{background:#1e293b}" +
       ".acd-sheet-table td.on{outline:2px solid #22d3ee}" +
       ".acd-sheet-table td.hit{background:#14532d66}" +
@@ -192,6 +219,35 @@
     }
   }
 
+
+  function applyKindTheme(kind) {
+    var th = KIND_THEME[kind] || KIND_THEME.dbase;
+    var panel = document.getElementById("gspDocsPanel");
+    if (!panel) return;
+    panel.setAttribute("data-kind", kind);
+    var top = panel.querySelector(".acd-top");
+    var bar = document.getElementById("gspKindBar");
+    var side = document.getElementById("gspSide");
+    if (top) top.style.background = th.bar;
+    if (bar) bar.style.background = th.bar;
+    if (side) side.style.background = th.side;
+    panel.style.setProperty("--acd-accent", th.accent);
+    panel.style.setProperty("--acd-cell-grad", th.cell);
+    document.querySelectorAll("#gspKindBar .acd-btn").forEach(function (b) {
+      var on = b.dataset.kind === kind;
+      b.classList.toggle("active", on);
+      if (on) {
+        b.style.background = th.accent;
+        b.style.borderColor = "#e0f2fe";
+        b.style.color = "#0f172a";
+      } else {
+        b.style.background = "rgba(15,23,42,0.45)";
+        b.style.borderColor = "rgba(226,232,240,0.35)";
+        b.style.color = "#f8fafc";
+      }
+    });
+  }
+
   function openKind(kind) {
     if (document.body.classList.contains("codespace-active")) {
       // never under codespace
@@ -219,6 +275,7 @@
     panel.classList.add("acd-open");
     panel.style.display = "flex";
     document.getElementById("gspDocTitle").textContent = KINDS[kind].label;
+    applyKindTheme(kind);
     document.getElementById("gspDocScope").textContent =
       (state.parentType === "room" ? "Room" : "Home") + " · " + String(state.parentId).slice(0, 24);
     document.querySelectorAll("#gspKindBar .acd-btn").forEach(function (b) {

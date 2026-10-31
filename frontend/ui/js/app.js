@@ -5694,3 +5694,42 @@ document.addEventListener("click", function (ev) {
   setTimeout(installOpen, 2500);
   console.log("[acd] WS-OPEN-V4");
 })();
+
+
+// ACCD-MODE-GUARD-V1
+(function () {
+  function leaveCodespace() {
+    document.body.classList.remove("codespace-active");
+    var panel = document.getElementById("codePanel");
+    if (panel) panel.style.setProperty("display", "none", "important");
+    if (typeof window.acdCloseDocs === "function") try { window.acdCloseDocs(); } catch (e) {}
+  }
+  var _show = typeof showHomeState === "function" ? showHomeState : null;
+  if (_show) {
+    showHomeState = function () {
+      leaveCodespace();
+      try {
+        if (typeof currentRoomId !== "undefined") currentRoomId = null;
+        window.currentRoomId = null;
+      } catch (e) {}
+      document.body.classList.remove("workspace-active");
+      document.body.classList.add("home-active");
+      var r = _show.apply(this, arguments);
+      if (typeof window.updateInputVisibility === "function") {
+        try { window.updateInputVisibility(); } catch (e) {}
+      }
+      return r;
+    };
+  }
+  // Codespace must not fall through to home routers
+  var _open = window.acdOpenCodespace;
+  window.acdOpenCodespace = function (ev) {
+    if (ev) { try { ev.preventDefault(); ev.stopPropagation(); } catch (e) {} }
+    document.body.classList.add("codespace-active");
+    document.body.classList.remove("home-active");
+    if (typeof _open === "function") return _open.apply(this, arguments);
+    if (typeof window.openCodePanel === "function") window.openCodePanel();
+    return false;
+  };
+  console.log("[acd] MODE-GUARD-V1");
+})();

@@ -1186,15 +1186,71 @@ if (cmd === "cat" && arg) {
 
   async function showPanel() {
     var panel = $("codePanel");
-    if (!panel) return;
+    if (!panel) {
+      console.error("[codespace] #codePanel missing from DOM");
+      return;
+    }
+    document.body.classList.add("codespace-active");
+    document.body.classList.remove("home-active");
+    // Full-screen overlay above docs (docs uses z-index 11000)
+    panel.style.cssText = [
+      "display:flex",
+      "flex-direction:column",
+      "position:fixed",
+      "inset:0",
+      "width:100%",
+      "height:100%",
+      "max-height:100dvh",
+      "background:#0b1120",
+      "z-index:12000",
+      "visibility:visible",
+      "opacity:1",
+      "pointer-events:auto"
+    ].join(";") + " !important".replace(" !important", "");
+    // setProperty for display important (inline cssText may drop important on some engines)
     panel.style.setProperty("display", "flex", "important");
+    panel.style.setProperty("z-index", "12000", "important");
+    panel.style.setProperty("visibility", "visible", "important");
+    panel.style.setProperty("opacity", "1", "important");
     panel.style.flexDirection = "column";
-    panel.style.zIndex = "9999";
+    panel.style.position = "fixed";
+    panel.style.inset = "0";
+    panel.style.background = "#0b1120";
+    panel.classList.add("active");
+
+    var body = $("codeBody");
+    if (body) {
+      body.style.display = "flex";
+      body.style.flex = "1 1 auto";
+      body.style.minHeight = "0";
+      body.style.visibility = "visible";
+    }
+    var cons = $("codeConsole");
+    if (cons) {
+      cons.style.display = "flex";
+      cons.style.flexDirection = "column";
+      cons.style.minHeight = "140px";
+      cons.style.visibility = "visible";
+    }
+    var mon = $("monacoContainer");
+    if (mon) {
+      mon.style.minHeight = "160px";
+      mon.style.flex = "1";
+      mon.style.visibility = "visible";
+    }
+
+    // close docs overlay if open
+    try {
+      if (typeof window.acdCloseDocs === "function") window.acdCloseDocs();
+      var docs = document.getElementById("gspDocsPanel");
+      if (docs) { docs.style.display = "none"; docs.classList.remove("acd-open"); }
+    } catch (e) {}
+
     bindToolbar();
     ensureGhostInput();
     setSidebar(true);
     setTermCollapsed(false);
-    initMonaco();
+    try { initMonaco(); } catch (e) { console.warn("[codespace] monaco", e); }
     try {
       await refreshRepos();
       await loadTree();
@@ -1202,11 +1258,15 @@ if (cmd === "cat" && arg) {
         await openFirstInActiveRepo();
       }
     } catch (e) {
-      writeLog("boot: " + errText(e) + "\n");
+      writeLog("boot: " + errText(e) + "
+");
     }
+    writeLog("Codespace ready · type help
+");
+    paintTerm();
     setTimeout(function () {
-      layoutEditor();
-      focusTerm();
+      try { layoutEditor(); } catch (e) {}
+      try { focusTerm(); } catch (e) {}
     }, 200);
   }
 

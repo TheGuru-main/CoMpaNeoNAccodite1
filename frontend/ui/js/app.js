@@ -5733,3 +5733,88 @@ document.addEventListener("click", function (ev) {
   };
   console.log("[acd] MODE-GUARD-V1");
 })();
+
+
+// ACCD-CS-OPEN-V3 — last definition wins; forces real codespace panel
+(function () {
+  function forceOpenCodespace(ev) {
+    if (ev) {
+      try { ev.preventDefault(); ev.stopPropagation(); } catch (e) {}
+    }
+    document.body.classList.add("codespace-active");
+    document.body.classList.remove("home-active");
+    try {
+      if (typeof window.acdCloseDocs === "function") window.acdCloseDocs();
+    } catch (e) {}
+    var docs = document.getElementById("gspDocsPanel");
+    if (docs) {
+      docs.style.display = "none";
+      docs.classList.remove("acd-open");
+    }
+    var input = document.getElementById("inputArea");
+    if (input) input.setAttribute("hidden", "");
+
+    function reveal() {
+      var panel = document.getElementById("codePanel");
+      if (!panel) {
+        console.error("[acd] #codePanel not in DOM — check index.html");
+        alert("Codespace panel missing. Hard refresh or redeploy frontend.");
+        return;
+      }
+      panel.style.setProperty("display", "flex", "important");
+      panel.style.setProperty("z-index", "12000", "important");
+      panel.style.setProperty("visibility", "visible", "important");
+      panel.style.setProperty("opacity", "1", "important");
+      panel.style.flexDirection = "column";
+      panel.style.position = "fixed";
+      panel.style.inset = "0";
+      panel.style.width = "100%";
+      panel.style.height = "100%";
+      panel.style.background = "#0b1120";
+      panel.classList.add("active");
+      ["codeBody", "codeConsole", "codeSidebar", "monacoContainer", "codeOutput"].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        el.style.visibility = "visible";
+        el.style.opacity = "1";
+        if (id === "codeBody" || id === "codeConsole") el.style.display = "flex";
+      });
+    }
+
+    reveal();
+    if (typeof window.openCodePanel === "function") {
+      try {
+        var r = window.openCodePanel();
+        if (r && typeof r.then === "function") r.then(reveal).catch(function (e) {
+          console.warn("[acd] openCodePanel", e);
+          reveal();
+        });
+      } catch (e) {
+        console.warn("[acd] openCodePanel throw", e);
+        reveal();
+      }
+    } else {
+      console.warn("[acd] openCodePanel not loaded yet — panel forced visible");
+      reveal();
+    }
+    setTimeout(reveal, 50);
+    setTimeout(reveal, 300);
+    return false;
+  }
+
+  window.acdOpenCodespace = forceOpenCodespace;
+
+  // Wire home button (onclick attribute may be stale)
+  function wire() {
+    var b = document.getElementById("btnHomeCode");
+    if (b && !b.dataset.csV3) {
+      b.dataset.csV3 = "1";
+      b.onclick = function (ev) { return forceOpenCodespace(ev); };
+    }
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", wire);
+  else wire();
+  setTimeout(wire, 500);
+  setTimeout(wire, 1500);
+  console.log("[acd] CS-OPEN-V3 installed");
+})();

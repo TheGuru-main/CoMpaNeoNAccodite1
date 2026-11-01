@@ -1569,7 +1569,11 @@ body.logged-in .bottom-nav {
 body.codespace-active #codePanel {
   display: flex !important;
   pointer-events: auto !important;
-  z-index: 9999 !important;
+  z-index: 12000 !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  position: fixed !important;
+  inset: 0 !important;
 }
 
 

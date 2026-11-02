@@ -262,7 +262,13 @@ def model_readiness() -> dict:
     }
 
 
+try:
+    from bootstrap_weights import ensure_weights
+    ensure_weights()
+except Exception as e:
+    print("[weights] ensure failed", type(e).__name__, e)
 load_model_if_exists()
+
 # ACCD-STARTUP-READY
 try:
     _rd = model_readiness()

@@ -129,7 +129,7 @@
       "body.workspace-active:not(.codespace-active) #roomDocsStrip{display:flex!important}" +
       "body:not(.workspace-active) #roomDocsStrip,body.codespace-active #roomDocsStrip{display:none!important}" +
       "body.codespace-active #gspDocsPanel{display:none!important}" +
-      "#homeDocsStrip,#roomDocsStrip{flex-wrap:wrap;gap:6px;align-items:center}#homebtnSheetS,.homebtnSheetS,button#homebtnSheetS{background:linear-gradient(105deg,#6b7280 0%,#bae6fd 100%)!important;border:none;color:#0f172a}#homebtnDBase,button#homebtnDBase{background:linear-gradient(105deg,#4b5563 0%,#7dd3fc 100%)!important;border:none;color:#0f172a}#homebtnCollabSheet,button#homebtnCollabSheet{background:linear-gradient(105deg,#94a3b8 0%,#38bdf8 100%)!important;border:none;color:#0f172a}#wsbtnSheetS,button#wsbtnSheetS{background:linear-gradient(105deg,#6b7280 0%,#bae6fd 100%)!important;border:none;color:#0f172a}#wsbtnDBase,button#wsbtnDBase{background:linear-gradient(105deg,#4b5563 0%,#7dd3fc 100%)!important;border:none;color:#0f172a}#wsbtnCollabSheet,button#wsbtnCollabSheet{background:linear-gradient(105deg,#94a3b8 0%,#38bdf8 100%)!important;border:none;color:#0f172a}" +
+      "#homeDocsStrip,#roomDocsStrip{flex-wrap:wrap;gap:6px;align-items:center}#homebtnSheetS,.homebtnSheetS,button#homebtnSheetS{background:linear-gradient(105deg,#6b7280 0%,#bae6fd 100%)!important;border:none;color:#0f172a}#homebtnDBase,button#homebtnDBase{background:linear-gradient(105deg,#4b5563 0%,#7dd3fc 100%)!important;border:none;color:#0f172a}#homebtnCollabSheet,button#homebtnCollabSheet{background:linear-gradient(105deg,#94a3b8 0%,#38bdf8 100%)!important;border:none;color:#0f172a}" +
       "#gspDocsPanel{font-family:Inter,system-ui,sans-serif!important;display:none;position:fixed;inset:0;z-index:11000;background:#020617;color:#e2e8f0;flex-direction:column}" +
       "#gspDocsPanel.acd-open{display:flex!important}" +
       ".acd-top{display:flex;align-items:center;gap:8px;padding:10px 12px;background:#0f172a;border-bottom:1px solid #1e293b;flex-wrap:wrap}" +
@@ -733,6 +733,7 @@
   }
 
   function injectButtons() {
+    /* Phase 0: docs ONLY on home hub — never room header */
     ensureCss();
     var specs = [
       { id: "btnSheetS", label: "SheetS", icon: "fa-table-cells", fn: "acdOpenSheetS" },
@@ -740,42 +741,24 @@
       { id: "btnCollabSheet", label: "CollabSheet", icon: "fa-people-arrows", fn: "acdOpenCollabSheet" },
       { id: "btnPresentations", label: "Presentations", icon: "fa-display", fn: "acdOpenPresentations" },
     ];
+    document.querySelectorAll(
+      "#roomDocsStrip, .acd-room-docs, #wsbtnSheetS, #wsbtnDBase, #wsbtnCollabSheet, #wsbtnPresentations, [id^=wsbtn]"
+    ).forEach(function (n) { try { n.remove(); } catch (e) {} });
+    document.querySelectorAll(
+      "#mainNav [id*=btnDBase], #mainNav [id*=btnSheetS], .top-bar [id^=homebtn], .top-bar [id^=wsbtn], header [id^=wsbtn]"
+    ).forEach(function (n) { try { n.remove(); } catch (e) {} });
 
-    // HOME only under homeHub
     var hub = document.getElementById("homeHub") || document.getElementById("homeActions");
     var homeHost = document.getElementById("homeDocsStrip");
     if (!homeHost && hub) {
       homeHost = document.createElement("div");
       homeHost.id = "homeDocsStrip";
-      homeHost.style.cssText = "margin-top:10px;width:100%";
+      homeHost.style.cssText = "margin-top:10px;width:100%;display:flex;flex-wrap:wrap;gap:6px";
       hub.appendChild(homeHost);
     }
-    // strip any docs buttons wrongly left in header/nav
-    document.querySelectorAll("#mainNav [id$=btnDBase], #mainNav [id$=btnSheetS], .top-nav [id^=homebtn], .top-nav [id^=wsbtn]").forEach(function (n) {
-      try {
-        n.remove();
-      } catch (e) {}
-    });
     if (homeHost) {
       specs.forEach(function (s) {
         if (!document.getElementById("home" + s.id)) homeHost.appendChild(mkBtn(s, "home"));
-      });
-    }
-
-    // ROOM only — dedicated strip under mainScreen header
-    var main = document.getElementById("mainScreen");
-    var roomHost = document.getElementById("roomDocsStrip");
-    if (!roomHost && main) {
-      roomHost = document.createElement("div");
-      roomHost.id = "roomDocsStrip";
-      roomHost.style.cssText = "padding:6px 10px;background:#0f172a;border-bottom:1px solid #1e293b";
-      var header = main.querySelector(".top-bar") || main.querySelector("header");
-      if (header && header.parentNode) header.parentNode.insertBefore(roomHost, header.nextSibling);
-      else main.insertBefore(roomHost, main.firstChild);
-    }
-    if (roomHost) {
-      specs.forEach(function (s) {
-        if (!document.getElementById("ws" + s.id)) roomHost.appendChild(mkBtn(s, "ws"));
       });
     }
   }
@@ -797,25 +780,11 @@
     };
     window.openCodePanel._acdDocsSafe2 = true;
 
-    window.acdOpenCodespace = function (ev) {
-      if (ev && ev.preventDefault) {
-        ev.preventDefault();
-        ev.stopPropagation();
-      }
-      closeDocs();
-      document.body.classList.add("codespace-active");
-      document.body.classList.remove("home-active");
-      if (typeof window.openCodePanel === "function") window.openCodePanel();
-      var panel = document.getElementById("codePanel");
-      if (panel) panel.style.setProperty("display", "flex", "important");
-      return false;
-    };
-
-    // back from codespace → restore classes via updateInputVisibility
+    /* Phase 0: do not redefine acdOpenCodespace — app.js owns open */
     document.addEventListener(
       "click",
       function (ev) {
-        var t = ev.target && ev.target.closest && ev.target.closest("#codeBack, #btnCodeBack, [data-code-back]");
+        var t = ev.target && ev.target.closest && ev.target.closest("#codeBack, #btnCodeBack, #btnCloseCode, [data-code-back]");
         if (!t) return;
         document.body.classList.remove("codespace-active");
         var panel = document.getElementById("codePanel");
@@ -834,5 +803,5 @@
   else boot();
   setTimeout(boot, 600);
   setTimeout(boot, 1600);
-  console.log("[acd] docs v3 — sidebar paths, full grid, home/room/codespace isolation");
+  console.log("[acd] docs Phase0 — home-only docs strip; no room header buttons");
 })();

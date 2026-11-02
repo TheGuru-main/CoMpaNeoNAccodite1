@@ -85,13 +85,26 @@ def _try_load_b2():
 
 def get_shared_grid(*, require_docs: bool = False, allow_empty: bool = True):
     """
-    Return the shared MemoryGrid. Does NOT create a brand-new empty grid
-    except when allow_bootstrap_empty is handled only by explicit bootstrap_empty().
+    DEPRECATED name: means PLATFORM grid (Accodite seed/train target), not tenant instance.
 
-    require_docs: if True, raise GridUnavailable when zero documents after load attempts.
-    allow_empty: if True, may return an existing shared empty grid (still not a *new* one
-                 unless bootstrap already placed it once at app start via bootstrap_shared_grid).
+    Prefer memory.platform_grid.get_platform_grid / save_platform_grid.
+    Instance grids (org|user) use memory.instance_grid when wired.
     """
+    # 0) platform grid first
+    try:
+        from memory.platform_grid import load_platform_grid, PlatformGridError
+        try:
+            return load_platform_grid(require_docs=require_docs, allow_empty=allow_empty)
+        except PlatformGridError:
+            if require_docs:
+                raise GridUnavailable("platform grid missing or empty — seed platform first")
+    except ImportError:
+        pass
+    except GridUnavailable:
+        raise
+    except Exception as e:
+        print("[shared_grid] platform load:", type(e).__name__, e)
+
     grid = None
     # 1) integration state
     try:
@@ -148,10 +161,14 @@ def get_shared_grid(*, require_docs: bool = False, allow_empty: bool = True):
 
 def bootstrap_shared_grid(*, create_if_missing: bool = True):
     """
-    App startup only: bind one shared grid.
-    Loads disk/B2 first; only if create_if_missing and nothing exists, creates ONE empty
-    shared instance so seed can fill it — never per-request.
+    App startup / seed only: bind PLATFORM grid (legacy name bootstrap_shared_grid).
+    Prefer bootstrap_platform_grid.
     """
+    try:
+        from memory.platform_grid import bootstrap_platform_grid
+        return bootstrap_platform_grid(create_if_missing=create_if_missing)
+    except Exception as e:
+        print("[shared_grid] bootstrap_platform:", type(e).__name__, e)
     try:
         return get_shared_grid(require_docs=False, allow_empty=True)
     except GridUnavailable:

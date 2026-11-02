@@ -1161,25 +1161,30 @@ def seed_crawl(
         "by_domain": {}, "errors": [],
     }
 
-    # resolve grid — SHARED only (never invent empty MemoryGrid)
+    # resolve grid — PLATFORM only (seed training writes platform, not tenant instance)
     if grid is None:
         try:
-            from integration import get_state
-            grid = get_state().get("grid")
-        except Exception:
-            grid = None
-    if grid is None:
-        try:
-            from memory.shared_grid import get_shared_grid, bootstrap_shared_grid
+            from memory.platform_grid import (
+                load_platform_grid,
+                bootstrap_platform_grid,
+                PlatformGridError,
+            )
             try:
-                grid = get_shared_grid(require_docs=False, allow_empty=True)
-            except Exception:
-                grid = bootstrap_shared_grid(create_if_missing=True)
+                grid = load_platform_grid(require_docs=False, allow_empty=True)
+            except PlatformGridError:
+                grid = bootstrap_platform_grid(create_if_missing=True)
         except Exception as e:
-            stats["errors"].append(f"no shared grid: {type(e).__name__}: {e}")
-            return stats
+            try:
+                from memory.shared_grid import get_shared_grid, bootstrap_shared_grid
+                try:
+                    grid = get_shared_grid(require_docs=False, allow_empty=True)
+                except Exception:
+                    grid = bootstrap_shared_grid(create_if_missing=True)
+            except Exception as e2:
+                stats["errors"].append(f"no platform grid: {type(e).__name__}: {e}; fallback: {e2}")
+                return stats
     if grid is None:
-        stats["errors"].append("no shared grid available")
+        stats["errors"].append("no platform grid available")
         return stats
 
     plan = DOMAIN_PLAN
@@ -1317,7 +1322,15 @@ def seed_crawl(
                 set_process_grid(grid)
             except Exception:
                 pass
-            path = save_grid(grid, os.environ.get("ACCD_GRID_PATH") or None)
+            try:
+                from memory.platform_grid import save_platform_grid, snapshot_platform_grid
+                path = save_platform_grid(grid)
+                try:
+                    snapshot_platform_grid(label="post_seed")
+                except Exception as _snap_e:
+                    print("[seed] platform snapshot skip:", _snap_e)
+            except Exception:
+                path = save_grid(grid, os.environ.get("ACCD_PLATFORM_GRID_PATH") or os.environ.get("ACCD_GRID_PATH") or None)
         except Exception:
             from memory_grid import save_grid, set_process_grid
             try:

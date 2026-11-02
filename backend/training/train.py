@@ -632,11 +632,15 @@ def train(
     # ACCD-TRAIN-REQUIRE-SHARED
     if memory_grid is None:
         try:
-            from memory.shared_grid import get_shared_grid
-            memory_grid = get_shared_grid(require_docs=True)
+            try:
+                from memory.platform_grid import load_platform_grid
+                memory_grid = load_platform_grid(require_docs=True, allow_empty=False)
+            except Exception:
+                from memory.shared_grid import get_shared_grid
+                memory_grid = get_shared_grid(require_docs=True)
         except Exception as e:
             raise RuntimeError(
-                "train requires shared MemoryGrid with documents — seed first"
+                "train requires PLATFORM MemoryGrid with documents — seed platform first"
             ) from e
     else:
         docs = getattr(memory_grid, "documents", None) or {}

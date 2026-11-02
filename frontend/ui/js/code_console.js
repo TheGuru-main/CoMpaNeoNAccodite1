@@ -1028,24 +1028,16 @@ if (cmd === "cat" && arg) {
         try {
           var g = await api("/sandbox/repos/" + encodeURIComponent(repo) + "/rootcheck?scope=" + encodeURIComponent(scope) + "&cwd=" + encodeURIComponent(cwd || ""));
           writeLog(
-            "rootcheck " + (g.ok ? "OK" : "FAIL") + "
-" +
-            "  repo=" + repo + " on_disk=" + g.on_disk + "
-" +
-            "  start_row=" + (g.start_row || "?") + " expected=" + (g.expected_start_row || "?") + "
-" +
-            "  repo_uid=" + (g.repo_uid || "?") + "
-" +
-            "  cwd=" + (g.cwd || "/") + " cwd_ok=" + g.cwd_ok + "
-" +
-            "  files=" + (g.files || 0) + " manifest=" + g.manifest_listed + "
-" +
-            (g.issues && g.issues.length ? ("  issues: " + g.issues.join("; ") + "
-") : "")
+            "rootcheck " + (g.ok ? "OK" : "FAIL") + "\n" +
+            "  repo=" + repo + " on_disk=" + g.on_disk + "\n" +
+            "  start_row=" + (g.start_row || "?") + " expected=" + (g.expected_start_row || "?") + "\n" +
+            "  repo_uid=" + (g.repo_uid || "?") + "\n" +
+            "  cwd=" + (g.cwd || "/") + " cwd_ok=" + g.cwd_ok + "\n" +
+            "  files=" + (g.files || 0) + " manifest=" + g.manifest_listed + "\n" +
+            (g.issues && g.issues.length ? ("  issues: " + g.issues.join("; ") + "\n") : "")
           );
         } catch (e) {
-          writeLog("rootcheck FAIL: " + errText(e) + "
-");
+          writeLog("rootcheck FAIL: " + errText(e) + "\n");
         }
         return;
       }
@@ -1168,7 +1160,7 @@ if (cmd === "cat" && arg) {
         if (id === "btnSaveFile") return saveFile();
         if (id === "btnPushRepo") return pushRepo();
         if (id === "btnToggleSidebar") return setSidebar(!sidebarOpen);
-        if (id === "btnCloseSidebar") return setSidebar(false);
+        if (id === "btnCodeExplorerClose") return setSidebar(false);
         if (id === "btnToggleTerm") return setTermCollapsed(!termCollapsed);
       } catch (err) {
         console.error("[codespace]", id, err);
@@ -1258,11 +1250,9 @@ if (cmd === "cat" && arg) {
         await openFirstInActiveRepo();
       }
     } catch (e) {
-      writeLog("boot: " + errText(e) + "
-");
+      writeLog("boot: " + errText(e) + "\n");
     }
-    writeLog("Codespace ready · type help
-");
+    writeLog("Codespace ready · type help\n");
     paintTerm();
     setTimeout(function () {
       try { layoutEditor(); } catch (e) {}
@@ -1291,7 +1281,7 @@ if (cmd === "cat" && arg) {
     wireBtn("btnSaveFile", saveFile);
     wireBtn("btnPushRepo", pushRepo);
     wireBtn("btnToggleSidebar", function () { setSidebar(!sidebarOpen); });
-    wireBtn("btnCloseSidebar", function () { setSidebar(false); });
+    wireBtn("btnCodeExplorerClose", function () { setSidebar(false); });
     wireBtn("btnToggleTerm", function () { setTermCollapsed(!termCollapsed); });
     // hub open is owned by app.js acdOpenCodespace — do not steal btnHomeCode here
   }

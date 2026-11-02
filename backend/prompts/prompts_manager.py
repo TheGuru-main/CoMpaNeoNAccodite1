@@ -441,6 +441,81 @@ COMMON_CONTEXT = (
 # PROFESSIONAL ASSISTANT PROMPTS
 # ==============================================================================
 
+# ==============================================================================
+# TEMPERAMENT DEFINITIONS
+# Shape tone and pacing only. They never override accuracy, safety, or honesty.
+# ==============================================================================
+
+DEFAULT_TEMPERAMENT = "sanguine"
+
+TEMPERAMENT_PROFILES: Dict[str, str] = {
+    "sanguine": (
+        "Warm, upbeat, and quick to offer options. Keep momentum, "
+        "encourage the next step, and keep answers light but complete."
+    ),
+    "melancholy": (
+        "Careful and thorough. Check details and edge cases, name risks "
+        "before they bite, and prefer precise wording over speed."
+    ),
+    "phlegmatic": (
+        "Calm, steady, and patient. Explain step by step without drama, "
+        "avoid rushing, and keep the tone even when the problem is hard."
+    ),
+    "choleric": (
+        "Direct and decisive. Lead with the conclusion, keep answers short, "
+        "and push toward one concrete next action."
+    ),
+}
+
+
+def normalize_temperament(value: Optional[str]) -> str:
+    """Return a known temperament key; unknown or empty values fall back to the default."""
+    key = (value or "").strip().lower()
+    return key if key in TEMPERAMENT_PROFILES else DEFAULT_TEMPERAMENT
+
+
+def temperament_directive(key: str) -> str:
+    key = normalize_temperament(key)
+    return (
+        f"TEMPERAMENT ({key}): {TEMPERAMENT_PROFILES[key]} "
+        "This sets tone and pacing only; accuracy, safety, and honesty "
+        "come first."
+    )
+
+
+# ==============================================================================
+# CODING-AGENT IF-BRANCHES (added only when code_mode is on)
+# ==============================================================================
+
+CODING_AGENT_IF_BRANCHES = """
+CODING ROUTING (follow these if-branches when code_mode is on):
+
+if the user reports a bug or error:
+  -> read the failing file with fs.read_file, and run lsp.diagnostics or build.compile if relevant. Name the defect before editing.
+
+if the user asks for a change:
+  -> read the file first, then make the smallest edit that fixes the defect with fs.write_file. Do not touch unrelated code.
+
+if the user asks to create a file, folder, or project:
+  -> create it only inside the active repo path with fs.write_file. Report the exact path created.
+
+if the user asks to understand the project:
+  -> fs.list_dir and fs.glob first, then ts.symbols for the files that matter. Do not guess at structure.
+
+if the user asks to run or check the code:
+  -> sandbox.verify for execution, build.lint or build.compile for static checks, test.run for tests.
+  -> never say tests pass without a test.run result.
+
+if mutations are blocked (allow_mutations: no) or approval is required:
+  -> show the proposed change as text and wait. Do not attempt the write.
+
+if a tool call fails:
+  -> read the error, fix the cause, and retry no more than max_iterations times.
+
+if you do not yet have a tool result for a file:
+  -> do not state its contents. Read it first.
+"""
+
 # __ACC_PROMPTS_V2__
 PROMPTS: Dict[str, str] = {
 
@@ -1291,7 +1366,10 @@ class PromptManager:
         parts.append(AGENTIC_EXECUTION_DIRECTIVE)
         if code_mode:
             parts.append(AGENTIC_CODING_DIRECTIVE)
-        parts.append(f"Country: {c} | Language: {lang} | Temperament: {temp}")
+            parts.append(CODING_AGENT_IF_BRANCHES.strip())
+        temp_key = normalize_temperament(temp)
+        parts.append(f"Country: {c} | Language: {lang} | Temperament: {temp_key}")
+        parts.append(temperament_directive(temp_key))
         if dialect:
             parts.append(f"Dialect for narration: {dialect}")
         if verifier:

@@ -745,7 +745,7 @@
       "#roomDocsStrip, .acd-room-docs, #wsbtnSheetS, #wsbtnDBase, #wsbtnCollabSheet, #wsbtnPresentations, [id^=wsbtn]"
     ).forEach(function (n) { try { n.remove(); } catch (e) {} });
     document.querySelectorAll(
-      "#mainNav [id*=btnDBase], #mainNav [id*=btnSheetS], .top-bar [id^=homebtn], .top-bar [id^=wsbtn], header [id^=wsbtn]"
+      "#mainNav [id*=btnDBase], #mainNav [id*=btnSheetS], #mainNav [id*=btnCollabSheet], #mainNav [id*=btnPresentations], .top-bar [id^=homebtn], .top-bar [id^=wsbtn], header [id^=wsbtn], header [id^=homebtn], .top-header [id^=homebtn], .top-header [id*=btnDBase], .top-header [id*=btnSheetS], .top-header [id*=btnCollabSheet], .top-header [id*=btnPresentations]"
     ).forEach(function (n) { try { n.remove(); } catch (e) {} });
 
     var hub = document.getElementById("homeHub") || document.getElementById("homeActions");

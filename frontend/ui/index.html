@@ -250,19 +250,19 @@
             
             <!-- HOME HUB: Messages, Search, Folder, Train, Codespace -->
             <div id="homeHub" class="home-hub" style="display:none; padding:16px; gap:12px; flex-wrap:wrap;">
-              <button type="button" class="primary-btn home-hub-btn" data-hub="messages" style="flex:1; min-width:140px; padding:14px;">
+              <button type="button" class="primary-btn home-hub-btn" data-hub="messages">
                 <i class="fa-solid fa-comments"></i> Messages
               </button>
-              <button type="button" class="primary-btn secondary-btn home-hub-btn" data-hub="search" style="flex:1; min-width:140px; padding:14px;">
+              <button type="button" class="primary-btn secondary-btn home-hub-btn" data-hub="search">
                 <i class="fa-solid fa-magnifying-glass"></i> Search
               </button>
-              <button type="button" class="primary-btn secondary-btn home-hub-btn" data-hub="docs" style="flex:1; min-width:140px; padding:14px;">
+              <button type="button" class="primary-btn secondary-btn home-hub-btn" data-hub="docs">
                 <i class="fa-solid fa-folder"></i> Files
               </button>
-              <button type="button" class="primary-btn secondary-btn home-hub-btn" data-hub="train" style="flex:1; min-width:140px; padding:14px;">
+              <button type="button" class="primary-btn secondary-btn home-hub-btn" data-hub="train">
                 <i class="fa-solid fa-wand-magic-sparkles"></i> Train
               </button>
-              <button type="button" class="primary-btn home-hub-btn" data-hub="codespace" id="btnHomeCode" onclick="return window.acdOpenCodespace && window.acdOpenCodespace(event);" style="flex:1; min-width:140px; padding:14px;">
+              <button type="button" class="primary-btn home-hub-btn" data-hub="codespace" id="btnHomeCode" onclick="return window.acdOpenCodespace && window.acdOpenCodespace(event);">
                 <i class="fa-solid fa-code"></i> Codespace
               </button>
             </div>
@@ -671,26 +671,26 @@
 
 <!-- ACCD-CODESPACE-P5 -->
 <div id="codePanel" style="display:none !important; flex-direction:column; position:fixed; inset:0; background:#0b1120; z-index:9999;">
-  <div style="display:flex; gap:6px; padding:8px 10px; background:#111827; align-items:center; flex-wrap:wrap; border-bottom:1px solid #1e293b; flex:0 0 auto;">
-    <button type="button" id="btnCodeBack" style="background:none;border:1px solid #334155;color:#e2e8f0;padding:6px 10px;border-radius:6px;cursor:pointer;">←</button>
-    <button type="button" id="btnToggleSidebar" style="background:none;border:1px solid #334155;color:#e2e8f0;padding:6px 10px;border-radius:6px;cursor:pointer;">☰</button>
+  <div class="cs-toolbar">
+    <button class="cs-btn cs-btn-ghost" type="button" id="btnCodeBack">←</button>
+    <button class="cs-btn" type="button" id="btnToggleSidebar">☰</button>
     <strong style="color:#e2e8f0;">Codespace</strong>
     <span id="codeActivePath" style="color:#94a3b8;font-size:12px;max-width:36vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
     <select id="codeRepoSelect" style="padding:5px;border-radius:4px;background:#0f172a;color:#e2e8f0;border:1px solid #334155;max-width:140px;"></select>
-    <button type="button" id="btnNewRepo" style="padding:5px 8px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer;">+ Repo</button>
-    <button type="button" id="btnNewFile" style="padding:5px 8px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer;">+ File</button>
-    <button type="button" id="btnNewFolder" style="padding:5px 8px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer;">+ Folder</button>
-    <button type="button" id="btnSaveFile" style="padding:5px 8px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer;">Save</button>
-    <button type="button" id="btnPushRepo" style="padding:5px 8px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer;">Push</button>
-    <button type="button" id="btnRunCode" style="padding:6px 12px;border-radius:6px;border:none;background:#22d3ee;color:#0f172a;font-weight:700;cursor:pointer;">▶ Run</button>
-    <button type="button" id="btnToggleTerm" style="padding:5px 8px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer;">Terminal ▾</button>
-    <button type="button" id="btnCloseCode" style="margin-left:auto;background:none;border:1px solid #334155;color:#94a3b8;padding:6px 10px;border-radius:6px;cursor:pointer;">✕</button>
+    <button class="cs-btn" type="button" id="btnNewRepo">+ Repo</button>
+    <button class="cs-btn" type="button" id="btnNewFile">+ File</button>
+    <button class="cs-btn" type="button" id="btnNewFolder">+ Folder</button>
+    <button class="cs-btn" type="button" id="btnSaveFile">Save</button>
+    <button class="cs-btn" type="button" id="btnPushRepo">Push</button>
+    <button class="cs-btn cs-btn-run" type="button" id="btnRunCode">▶ Run</button>
+    <button class="cs-btn" type="button" id="btnToggleTerm">Terminal ▾</button>
+    <button class="cs-btn cs-btn-ghost cs-end" type="button" id="btnCloseCode">✕</button>
   </div>
   <div id="codeBody" style="flex:1 1 auto; display:flex; min-height:0;">
     <aside id="codeSidebar" style="width:200px; flex:0 0 200px; background:#0f172a; border-right:1px solid #1e293b; overflow:auto; padding:8px; color:#cbd5e1; font-size:12px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
         <span style="opacity:0.55;">Explorer</span>
-        <button type="button" id="btnCloseSidebar" style="background:none;border:none;color:#94a3b8;cursor:pointer;">✕</button>
+        <button class="cs-btn cs-btn-ghost" type="button" id="btnCodeExplorerClose">✕</button>
       </div>
       <div id="codeFileTree"></div>
     </aside>
@@ -722,7 +722,7 @@
             </div>
 
     <div id="termActionBar" style="display:flex; gap:8px; align-items:center; padding:6px 10px; border-top:1px solid #1e293b; background:#0a0f1a; flex:0 0 auto;">
-      <button type="button" id="btnTermRun" style="padding:6px 12px;border-radius:6px;border:none;background:#22d3ee;color:#0f172a;font-weight:700;cursor:pointer;">▶ Term</button>
+      <button class="cs-btn cs-btn-run" type="button" id="btnTermRun">▶ Term</button>
     </div>
   </div>
 </div>

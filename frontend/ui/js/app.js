@@ -3677,35 +3677,7 @@ openRoomSocket = function(roomId) {
 // Called inline from the HTML. Not affected by any CSS or DOM cloning.
 // ============================================================================
 
-window.acdNav = function(action, el) {
-    // # ACD-NAV-GLOBAL
-    console.log('[acdNav]', action);
-
-    // active state
-    document.querySelectorAll('.bottom-nav .nav-link').forEach(l => l.classList.remove('active'));
-    if (el) el.classList.add('active');
-
-    try {
-        if (action === 'home') {
-            if (typeof showHomeState === 'function') showHomeState();
-        } else if (action === 'research') {
-            if (typeof hideAllPanels === 'function') hideAllPanels();
-            if (typeof openSearchPanel === 'function') openSearchPanel();
-        } else if (action === 'workspace') {
-            if (typeof hideAllPanels === 'function') hideAllPanels();
-            if (typeof openDocuments === 'function') openDocuments();
-        } else if (action === 'messages') {
-            if (typeof hideAllPanels === 'function') hideAllPanels();
-            if (typeof openDMPanel === 'function') openDMPanel();
-        } else if (action === 'train') {
-            if (typeof hideAllPanels === 'function') hideAllPanels();
-            if (typeof openTrainingModal === 'function') openTrainingModal();
-        }
-    } catch (e) {
-        console.warn('[acdNav] failed:', action, e);
-    }
-    return false;
-};
+// removed duplicate acdNav (dead): live version is defined below
 
 // Also handle Enter/Space activation for accessibility
 document.addEventListener('click', (e) => {

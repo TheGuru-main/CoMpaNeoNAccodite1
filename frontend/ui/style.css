@@ -2432,3 +2432,69 @@ body:not(.logged-in) .bottom-nav-fixed { display: none !important; }
     }
     #orgScreen.active { height: 100dvh; max-height: 100dvh; }
 }
+
+/* === CODESPACE + HOME HUB BUTTONS === */
+.cs-toolbar {
+    display: flex;
+    gap: 0.4rem;
+    padding: 0.5rem 0.6rem;
+    align-items: center;
+    flex-wrap: wrap;
+    background: var(--bg-2);
+    border-bottom: 1px solid var(--border);
+    flex: 0 0 auto;
+}
+.cs-toolbar > strong {
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    color: var(--aqua-bright);
+    margin-right: 0.2rem;
+}
+.cs-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-height: 32px;
+    padding: 0.35rem 0.7rem;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease, transform 0.12s ease;
+}
+.cs-btn:hover {
+    color: var(--aqua-bright);
+    border-color: rgba(125, 211, 208, 0.4);
+    background: rgba(79, 140, 255, 0.12);
+}
+.cs-btn:active { transform: translateY(1px); }
+.cs-btn:focus-visible { outline: 2px solid var(--aqua-bright); outline-offset: 2px; }
+.cs-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.cs-btn-run {
+    background: linear-gradient(275deg, var(--neon-blue) 0%, var(--aqua) 100%);
+    border-color: transparent;
+    color: #0c0c10;
+    font-weight: 700;
+    box-shadow: 0 4px 14px rgba(79, 140, 255, 0.3);
+}
+.cs-btn-run:hover {
+    color: #0c0c10;
+    background: linear-gradient(275deg, var(--neon-blue) 0%, var(--aqua) 100%);
+    filter: brightness(1.08);
+}
+.cs-btn-ghost { background: transparent; border-color: transparent; }
+.cs-btn-ghost:hover { color: var(--text); background: rgba(255, 255, 255, 0.06); border-color: var(--border); }
+.cs-end { margin-left: auto; }
+
+.home-hub-btn {
+    flex: 1 1 140px;
+    min-width: 140px;
+    width: auto;
+    margin-top: 0;
+    padding: 14px;
+}

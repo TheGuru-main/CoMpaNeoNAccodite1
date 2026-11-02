@@ -64,6 +64,12 @@ def _try_load_disk():
 
 
 def _try_load_b2():
+    import os
+    if os.environ.get("ACCD_B2_ENABLED", "1").strip().lower() in ("0", "false", "no", "off"):
+        return None
+    if os.environ.get("ACCD_SKIP_B2_GRID", "").strip() in ("1", "true", "yes"):
+        return None
+
     try:
         from storage.b2 import b2_enabled, b2_get_json
         if not b2_enabled():
@@ -79,7 +85,7 @@ def _try_load_b2():
         set_process_grid(grid)
         return grid
     except Exception as e:
-        print("[shared_grid] B2 load failed:", type(e).__name__, e)
+        print("[shared_grid] B2 load failed (disabled further this process if Class B):", type(e).__name__, e)
         return None
 
 

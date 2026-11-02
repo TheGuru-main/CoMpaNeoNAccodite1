@@ -31,6 +31,15 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from memory.artifact_policy import check_b2_key, gzip_file, gunzip_file, sha256_file
+try:
+    from memory.platform_grid import platform_grid_path as _live_platform_grid_path
+except Exception:
+    def _live_platform_grid_path(base=None):
+        import os
+        from pathlib import Path
+        o = os.environ.get("ACCD_PLATFORM_GRID_PATH") or os.environ.get("ACCD_GRID_PATH")
+        return Path(o) if o else Path(os.environ.get("ACCD_MEMORY_ROOT", "/var/data/accd_memory")) / "platform" / "grid.pkl"
+
 
 KINDS = ("org", "user")
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
@@ -194,6 +203,33 @@ def _write_manifest(d: Path, payload: dict) -> None:
     os.replace(tmp, d / MANIFEST_NAME)
 
 
+
+def resolve_platform_source(
+    platform_version: int,
+    *,
+    base: Optional[str] = None,
+    expected_sha256: Optional[str] = None,
+) -> Path:
+    """
+    Prefer sha-pinned HF cache; else live platform grid from seed/train on this machine.
+    """
+    cached = platform_cache_path(int(platform_version), base)
+    if cached.is_file():
+        if expected_sha256 and sha256_file(cached) != expected_sha256:
+            raise InstanceGridError("cached platform snapshot sha256 mismatch")
+        return cached
+    try:
+        live = _live_platform_grid_path(base)
+    except Exception:
+        live = None
+    if live is not None and Path(live).is_file():
+        print(f"[instance_grid] using live platform grid {live}")
+        return Path(live)
+    raise InstanceGridError(
+        "platform snapshot not cached and no live platform grid.pkl; "
+        "run platform seed or fetch_platform_snapshot before signup"
+    )
+
 def create_instance_grid(
     owner: OwnerRef,
     *,
@@ -207,9 +243,7 @@ def create_instance_grid(
     grid = grid_path(owner, base)
     if grid.exists():
         raise InstanceGridError(f"{owner.key} already has a grid; creation is once per owner")
-    src = platform_cache_path(platform_version, base)
-    if not src.is_file():
-        raise InstanceGridError("platform snapshot not cached; fetch it before signup completes")
+    src = resolve_platform_source(int(platform_version), base=base)
 
     d = grid.parent
     d.mkdir(parents=True, exist_ok=True)

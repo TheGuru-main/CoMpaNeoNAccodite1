@@ -197,10 +197,38 @@ def _find_model_asset(name: str) -> str:
             return cand
     return name  # fall back to relative name for error messages
 
+
+def _expand_state_dict(raw):
+    """Support fp32 / fp16 / accd_int8pack_v1 checkpoints."""
+    import torch
+    if not isinstance(raw, dict):
+        return raw
+    if raw.get("format") == "accd_int8pack_v1" or "model_state_dict_int8pack" in raw:
+        packed = raw["model_state_dict_int8pack"]
+        out = {}
+        for k, v in packed.items():
+            if isinstance(v, dict) and v.get("dtype") == "int8" and "q" in v:
+                q = v["q"].float() * float(v["scale"])
+                out[k] = q
+            else:
+                out[k] = v
+        return out
+    if "model_state_dict" in raw:
+        return raw["model_state_dict"]
+    return raw
+
 def load_model_if_exists():
     global model, tokenizer_vocab, reverse_vocab
     vocab_path = _find_model_asset("tokenizer_vocab.json")
-    weights_path = _find_model_asset("companion_model.pth")
+    weights_path = (
+        _find_model_asset("companion_model_int8pack.pth")
+        if os.path.isfile(_find_model_asset("companion_model_int8pack.pth"))
+        else (
+            _find_model_asset("companion_model_fp16.pth")
+            if os.path.isfile(_find_model_asset("companion_model_fp16.pth"))
+            else _find_model_asset("companion_model.pth")
+        )
+    )
     if os.path.isfile(vocab_path):
         with open(vocab_path, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -214,7 +242,7 @@ def load_model_if_exists():
         print("[ACCD] vocab missing; using specials only")
     if os.path.isfile(weights_path) and TORCH_AVAILABLE:
         try:
-            model = MiniCompanionAI(len(tokenizer_vocab))
+            model = MiniCompanionAI(vocab_size=int(os.environ.get("ACCD_EMBED_ROWS", "8192")))
             model.load_state_dict(torch.load(weights_path, map_location=device))
             model.to(device)
             model.eval()

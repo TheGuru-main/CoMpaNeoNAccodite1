@@ -125,14 +125,16 @@ def bootstrap(*, root: Optional[str] = None) -> Dict[str, Any]:
 
     # optional: grid + partition + data filter for pstm promotion
     try:
-        from memory.shared_grid import bootstrap_shared_grid
-        grid = bootstrap_shared_grid(create_if_missing=True)
+        from memory.platform_grid import bootstrap_platform_grid
+        grid = bootstrap_platform_grid(create_if_missing=True)
         _STATE["grid"] = grid
+        _STATE["grid_kind"] = "platform"
     except Exception as e:
         try:
-            from shared_grid import bootstrap_shared_grid
+            from memory.shared_grid import bootstrap_shared_grid
             grid = bootstrap_shared_grid(create_if_missing=True)
             _STATE["grid"] = grid
+            _STATE["grid_kind"] = "platform"
         except Exception as e2:
             _STATE["grid_error"] = f"{type(e).__name__}: {e} | {type(e2).__name__}: {e2}"
 
@@ -359,6 +361,50 @@ def verify_and_frame(
 # GENERATE
 # ============================================================================
 
+
+def ensure_request_grid(
+    *,
+    user_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+    is_active_member=None,
+    prefer_platform: bool = False,
+) -> Any:
+    """
+    Bind instance (org|user) grid for this request; fall back to platform.
+    Does not invent an empty MemoryGrid. GSP placement S is not used here.
+    """
+    grid = None
+    try:
+        from memory.grid_request import bind_request_grid
+        grid = bind_request_grid(
+            user_id=user_id,
+            org_id=org_id,
+            is_active_member=is_active_member,
+            prefer_platform=prefer_platform,
+        )
+    except Exception as e:
+        print("[integration] bind_request_grid:", type(e).__name__, e)
+        grid = None
+    if grid is None and not prefer_platform:
+        try:
+            from memory.platform_grid import load_platform_grid
+            grid = load_platform_grid(require_docs=False, allow_empty=True)
+        except Exception as e:
+            print("[integration] platform fallback:", type(e).__name__, e)
+    if grid is not None:
+        _STATE["grid"] = grid
+        try:
+            from training.background_training import resolve_partition_for_grid
+            resolve_partition_for_grid(grid)
+        except Exception:
+            try:
+                from memory_partition import create_memory_partition
+                _STATE["partition"] = create_memory_partition(grid)
+            except Exception:
+                pass
+    return grid
+
+
 def handle_generate(
     *,
     workspace_id: str,
@@ -404,6 +450,15 @@ def handle_generate(
 
     if generate_fn is None:
         raise RuntimeError("handle_generate requires generate_fn(prompt)->str")
+    # ACCD: bind tenant instance grid (or platform) before retrieval / PSTM
+    try:
+        org_id = None
+        if isinstance(pstm_context, dict):
+            org_id = pstm_context.get("org_id") or pstm_context.get("organization_id")
+        ensure_request_grid(user_id=user_id, org_id=org_id, prefer_platform=False)
+    except Exception as _eg:
+        print("[integration] ensure_request_grid:", type(_eg).__name__, _eg)
+
 
     # MODE-AWARE: skip code verification entirely for chat/plan/research
     policy = mode_policy or {}
@@ -500,6 +555,11 @@ def handle_message(
     Decide whether the incoming message should invoke the AI.
     Returns {invoked: bool, trigger: str|None}.
     """
+    try:
+        ensure_request_grid(user_id=user_id, prefer_platform=False)
+    except Exception as _em:
+        print("[integration] ensure_request_grid msg:", type(_em).__name__, _em)
+
     trigger = decide_trigger(
         member_count=member_count,
         actor_id=user_id,
@@ -800,13 +860,5 @@ def get_shared_grid():
     except Exception as e:
         print("[integration] get_shared_grid:", type(e).__name__, e)
         return None
-    try:
-        from memory.memory_grid import MemoryGrid
-    except ImportError:
-        try:
-            from memory_grid import MemoryGrid
-        except ImportError:
-            return None
-    grid = MemoryGrid()
-    state["grid"] = grid
-    return grid
+    # refuse empty invent — use platform_grid / instance via ensure_request_grid
+    return None

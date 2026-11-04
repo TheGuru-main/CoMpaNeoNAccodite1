@@ -373,6 +373,15 @@ def ensure_request_grid(
     Bind instance (org|user) grid for this request; fall back to platform.
     Does not invent an empty MemoryGrid. GSP placement S is not used here.
     """
+    if is_active_member is None and org_id and user_id:
+        try:
+            from memory.membership_access import is_active_member as _iam
+            is_active_member = lambda uid, owner=None, _oid=org_id: _iam(
+                str(uid),
+                str(getattr(owner, "id", None) or _oid),
+            )
+        except Exception as e:
+            print("[integration] membership_access:", type(e).__name__, e)
     grid = None
     try:
         from memory.grid_request import bind_request_grid

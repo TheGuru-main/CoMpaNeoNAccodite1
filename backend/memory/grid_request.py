@@ -41,9 +41,21 @@ def bind_request_grid(
 
     if org_id and user_id:
         owner = OwnerRef("org", str(org_id))
-        if is_active_member is not None:
+        if is_active_member is None:
+            try:
+                from memory.membership_access import is_active_member as _iam
+                if not _iam(str(user_id), str(org_id)):
+                    print("[grid_request] not active member", user_id, org_id)
+                    return None
+            except Exception as e:
+                print("[grid_request] membership check:", type(e).__name__, e)
+        else:
             try:
                 require_access(user_id=str(user_id), owner=owner, is_active_member=is_active_member)
+            except TypeError:
+                # some require_access signatures differ
+                if not is_active_member(str(user_id), owner):
+                    return None
             except Exception as e:
                 print("[grid_request] access denied:", e)
                 return None

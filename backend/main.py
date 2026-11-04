@@ -2309,6 +2309,39 @@ try:
                 }, ensure_ascii=False) + "\n\n"
                 return
 
+            # ACCD-TOOL-LOOP soft: try registry tools once
+            tool_final = ""
+            try:
+                from integration import run_registry_tool_loop, bootstrap
+                bootstrap()
+                def _gen_once(p):
+                    try:
+                        return generate_from_prompt(p, 256, 0.7) or ""
+                    except Exception:
+                        return ""
+                tool_result = await asyncio.to_thread(
+                    lambda: run_registry_tool_loop(
+                        prompt=prompt, generate_fn=_gen_once,
+                        actor_id=str(getattr(user, "phone", None) or user.id),
+                        organization_id=getattr(req, "org_id", None),
+                        workspace_id=getattr(req, "workspace_id", None) or getattr(req, "room_id", None),
+                        max_rounds=4,
+                    )
+                )
+                for c in (tool_result.get("calls") or []):
+                    yield "data: " + json.dumps({"event": "status", "stage": "tool_result", "label": c.get("name"), "ok": c.get("ok")}, ensure_ascii=False) + "\n\n"
+                tool_final = (tool_result.get("final") or "").strip()
+            except Exception as _tl:
+                print("[ACCD-STREAM] tool_loop:", type(_tl).__name__, _tl)
+            if tool_final and len(tool_final) > 8:
+                acc = ""
+                for i, w in enumerate(tool_final.split(" ")):
+                    piece = w if i == 0 else (" " + w)
+                    acc += piece
+                    yield "data: " + json.dumps({"event": "token", "text": piece, "stream_text": acc}, ensure_ascii=False) + "\n\n"
+                yield "data: " + json.dumps({"event": "complete", "stream_text": acc, "text": acc}, ensure_ascii=False) + "\n\n"
+                return
+
             streamer = ResponseStream(model=model, vocab=tokenizer_vocab or {},
                 reverse=reverse_vocab or {}, model_version="1.0.0.1idr", device=device)
             context = streamer.create_context(language="en")

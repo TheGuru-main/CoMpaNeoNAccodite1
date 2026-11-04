@@ -803,7 +803,7 @@ def build_registry(
 
 
     # ---------------------------------------------------------------
-    # ACCD: schedule / alarm / flight / grid namespaces (owner instance)
+    # ACCD: schedule / alarm / grid namespaces (owner instance)
     # ---------------------------------------------------------------
 
     @reg.tool(
@@ -916,76 +916,6 @@ def build_registry(
             org_phone=org_phone,
             workspace_id=workspace_id,
         )
-
-    @reg.tool(
-        name="alarm.set",
-        category="schedule",
-        description="Record an alarm/reminder intent on ns:schedule (does not control device clocks).",
-        mutating=True,
-    )
-    def alarm_set(
-        time_spec: str,
-        label: str = "alarm",
-        org_id: str = "",
-        user_id: str = "",
-        user_phone: str = "",
-        org_phone: str = "",
-        workspace_id: str = "",
-    ) -> Dict[str, Any]:
-        body = f"ALARM\ntime: {time_spec}\nlabel: {label}\nstatus: recorded (device notification not attached yet)"
-        safe = "".join(ch for ch in (label or "alarm") if ch.isalnum() or ch in " _-")[:40].strip() or "Alarm"
-        if safe[0].isdigit():
-            safe = "A" + safe
-        from memory.grid_ns_api import place_ns_object
-        out = place_ns_object(
-            ns="schedule",
-            object_name=("Alarm_" + safe).replace(" ", "_"),
-            text=body,
-            description=f"{label} @ {time_spec}",
-            user_id=user_id,
-            org_id=org_id,
-            user_phone=user_phone,
-            org_phone=org_phone,
-            workspace_id=workspace_id,
-        )
-        if isinstance(out, dict):
-            out["device_alarm"] = False
-            out["note"] = "Stored on owner grid; phone OS alarm not triggered from server."
-        return out
-
-    @reg.tool(
-        name="flight.lookup",
-        category="travel",
-        description="Lookup flight by number/date when external API available; else request details.",
-        mutating=False,
-    )
-    def flight_lookup(
-        flight_number: str = "",
-        date: str = "",
-        origin: str = "",
-        destination: str = "",
-    ) -> Dict[str, Any]:
-        fn = (flight_number or "").strip().upper()
-        if not fn and not (origin and destination):
-            return {
-                "ok": False,
-                "need": ["flight_number or origin+destination", "date"],
-                "error": "Provide flight number and date (or route).",
-            }
-        # Optional external adapter — never invent gates
-        try:
-            from external.flights import lookup_flight  # type: ignore
-            return lookup_flight(flight_number=fn, date=date, origin=origin, destination=destination)
-        except Exception:
-            return {
-                "ok": False,
-                "flight_number": fn,
-                "date": date,
-                "origin": origin,
-                "destination": destination,
-                "error": "Flight provider not configured. Confirm number and date; live status unavailable.",
-                "hint": "Set external flight API or paste itinerary text for the agent to parse.",
-            }
 
     @reg.tool(
         name="dbase.place",

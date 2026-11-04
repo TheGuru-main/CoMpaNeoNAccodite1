@@ -425,6 +425,48 @@ def ensure_request_grid(
     return grid
 
 
+
+
+def run_registry_tool_loop(
+    *,
+    prompt: str,
+    generate_fn,
+    actor_id: str = "",
+    organization_id: str = None,
+    workspace_id: str = None,
+    max_rounds: int = 6,
+    system_prompt: str = None,
+) -> dict:
+    """
+    Run tool_loop against the bootstrapped ToolRegistry (all registered tools).
+    Returns {frames, final, calls, rounds} or empty final on failure.
+    """
+    bootstrap()
+    registry = _STATE.get("registry")
+    if registry is None or _tool_loop is None:
+        return {"frames": [], "final": "", "calls": [], "rounds": 0, "ok": False, "error": "registry_unavailable"}
+    try:
+        from prompts.prompts_manager import accd_apply_tool_routing_prompt
+        sys_p = accd_apply_tool_routing_prompt(system_prompt or "")
+    except Exception:
+        sys_p = system_prompt or ""
+    try:
+        return _tool_loop(
+            prompt=prompt,
+            generate_fn=generate_fn,
+            registry=registry,
+            actor_id=actor_id or "",
+            organization_id=organization_id,
+            workspace_id=workspace_id,
+            max_rounds=max_rounds,
+            system_prompt=sys_p or None,
+            progress=None,
+        )
+    except Exception as e:
+        print("[integration] tool_loop:", type(e).__name__, e)
+        return {"frames": [], "final": "", "calls": [], "rounds": 0, "ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
 def handle_generate(
     *,
     workspace_id: str,

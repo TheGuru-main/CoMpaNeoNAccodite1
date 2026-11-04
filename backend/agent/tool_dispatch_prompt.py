@@ -1,28 +1,28 @@
 """
-Explicit if-style tool routing text for Accodite agent prompts.
+Explicit if-style tool routing for Accodite agent prompts.
 """
 from __future__ import annotations
 
 TOOL_IF_BRANCHES = """
-TOOL ROUTING (emit ```tool fences with these names when needed):
+TOOL ROUTING (emit one ```tool fence per call; names must match the registry):
 
 if calendar / schedule / meeting agenda:
   → schedule.list or schedule.add (title, when, note)
 
 if alarm / reminder / wake-up:
-  → alarm.set (time_spec, label) — records on grid; does not set phone OS alarm
-
-if flight / itinerary / airport:
-  → flight.lookup (flight_number, date) — never invent gates
+  → alarm.set (time_spec, label) — grid record only, not phone OS alarm
 
 if DBase record create/list:
-  → dbase.place / dbase.list  (or grid.ns.place ns=dbase)
+  → dbase.place / dbase.list
 
 if sheets / collab / presentations / codespace objects on memory grid:
-  → grid.ns.place / grid.ns.list with ns=sheets|collabsheet|presentations|codespace
+  → grid.ns.place / grid.ns.list (ns=sheets|collabsheet|presentations|codespace|schedule|workflow)
 
 if codespace files on disk:
-  → fs.read_file / fs.list_dir / fs.write_file inside workspace root only
+  → fs.read_file / fs.list_dir / fs.write_file / fs.eof_append (workspace root only)
+
+if docs by name:
+  → docs.team_open (doc_name, parent_type, parent_id)
 
 if image / voice:
   → use provided OCR/transcript context only
@@ -35,6 +35,8 @@ if train/seed requested:
 
 if none apply:
   → answer from context; honor temperament; stay short
+
+Do not call flight APIs. For travel questions, ask the user for itinerary text or known times.
 """
 
 

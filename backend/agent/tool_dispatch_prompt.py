@@ -6,11 +6,14 @@ from __future__ import annotations
 TOOL_IF_BRANCHES = """
 TOOL ROUTING (emit one ```tool fence per call; names must match the registry):
 
-if calendar / schedule / meeting agenda:
-  → schedule.list or schedule.add (title, when, note)
+if calendar / schedule / meeting agenda / "remind me" / task due:
+  → schedule.add or schedule.list; for pure reminders also alarm.set or followup.remember
 
-if alarm / reminder / wake-up:
+if alarm / wake-up / reminder time:
   → alarm.set (time_spec, label) — grid record only, not phone OS alarm
+
+if "remember this" / follow-up / later / don't forget:
+  → followup.remember (task, due, note); list with followup.list
 
 if DBase record create/list:
   → dbase.place / dbase.list
@@ -36,7 +39,7 @@ if train/seed requested:
 if none apply:
   → answer from context; honor temperament; stay short
 
-Do not call flight APIs. For travel questions, ask the user for itinerary text or known times.
+No flight APIs. For travel, ask for itinerary text or known times.
 """
 
 

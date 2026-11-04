@@ -970,4 +970,97 @@ def build_registry(
         )
 
 
+    @reg.tool(
+        name="alarm.set",
+        category="schedule",
+        description="Record an alarm/reminder on ns:schedule (grid only; not phone OS alarm).",
+        mutating=True,
+    )
+    def alarm_set(
+        time_spec: str,
+        label: str = "alarm",
+        org_id: str = "",
+        user_id: str = "",
+        user_phone: str = "",
+        org_phone: str = "",
+        workspace_id: str = "",
+    ) -> Dict[str, Any]:
+        body = f"ALARM\ntime: {time_spec}\nlabel: {label}\nstatus: recorded"
+        safe = "".join(ch for ch in (label or "alarm") if ch.isalnum() or ch in " _-")[:40].strip() or "Alarm"
+        if safe[0].isdigit():
+            safe = "A" + safe
+        from memory.grid_ns_api import place_ns_object
+        out = place_ns_object(
+            ns="schedule",
+            object_name=("Alarm_" + safe).replace(" ", "_"),
+            text=body,
+            description=f"{label} @ {time_spec}",
+            user_id=user_id,
+            org_id=org_id,
+            user_phone=user_phone,
+            org_phone=org_phone,
+            workspace_id=workspace_id,
+        )
+        if isinstance(out, dict):
+            out["device_alarm"] = False
+            out["note"] = "Stored on owner grid; device OS alarm not triggered from server."
+        return out
+
+    @reg.tool(
+        name="followup.remember",
+        category="schedule",
+        description="Remember a task/follow-up on ns:workflow for later recall.",
+        mutating=True,
+    )
+    def followup_remember(
+        task: str,
+        due: str = "",
+        note: str = "",
+        org_id: str = "",
+        user_id: str = "",
+        user_phone: str = "",
+        org_phone: str = "",
+        workspace_id: str = "",
+    ) -> Dict[str, Any]:
+        body = f"FOLLOWUP\ntask: {task}\ndue: {due}\nnote: {note}".strip()
+        safe = "".join(ch for ch in (task or "Task") if ch.isalnum() or ch in " _-")[:48].strip() or "Task"
+        if safe[0].isdigit():
+            safe = "T" + safe
+        from memory.grid_ns_api import place_ns_object
+        return place_ns_object(
+            ns="workflow",
+            object_name=("Followup_" + safe).replace(" ", "_"),
+            text=body,
+            description=note or due or task,
+            user_id=user_id,
+            org_id=org_id,
+            user_phone=user_phone,
+            org_phone=org_phone,
+            workspace_id=workspace_id,
+        )
+
+    @reg.tool(
+        name="followup.list",
+        category="schedule",
+        description="List remembered follow-ups from ns:workflow.",
+        mutating=False,
+    )
+    def followup_list(
+        org_id: str = "",
+        user_id: str = "",
+        user_phone: str = "",
+        org_phone: str = "",
+        workspace_id: str = "",
+    ) -> Dict[str, Any]:
+        from memory.grid_ns_api import list_ns
+        return list_ns(
+            ns="workflow",
+            user_id=user_id,
+            org_id=org_id,
+            user_phone=user_phone,
+            org_phone=org_phone,
+            workspace_id=workspace_id,
+        )
+
+
     return reg

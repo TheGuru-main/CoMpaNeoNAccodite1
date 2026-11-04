@@ -603,13 +603,49 @@ async def send_message_to_room(
         ai_text = ""
         try:
             from integration import handle_generate
-            # ACCD-MARATHON: worker PSTM scope for this room message
+
+            # ACCD-CLEAN: membership + org phone + full PSTM every AI turn
+            _membership = None
+            _org_id = str(ws_row.organization_id) if getattr(ws_row, "organization_id", None) else None
+            _org_phone = ""
+            if _org_id:
+                try:
+                    from db_models import OrganizationMembership, Organization
+                    import uuid as _uuid
+                    _membership = db.query(OrganizationMembership).filter(
+                        OrganizationMembership.user_id == user.id,
+                        OrganizationMembership.organization_id == ws_row.organization_id,
+                        OrganizationMembership.credential_active.is_(True),
+                    ).first()
+                    _org = db.query(Organization).filter(Organization.id == ws_row.organization_id).first()
+                    if _org is not None:
+                        from memory.owner_identity import phone_uid
+                        _org_phone = phone_uid(getattr(_org, "phone", None))
+                except Exception as _me:
+                    print(f"[rooms] membership: {type(_me).__name__}: {_me}")
+
             try:
-                from memory.pstm_scope import hydrate_worker_pstm
-                _pstm_ctx = hydrate_worker_pstm(user=user, membership=None,
-                    workspace_id=str(room_id), org_phone='', room_kind=getattr(ws, 'workspace_type', '') or '')
+                from memory.pstm_scope import hydrate_worker_pstm, apply_pstm_scope
+                _pstm_ctx = hydrate_worker_pstm(
+                    user=user,
+                    membership=_membership,
+                    workspace_id=str(ws_row.id),
+                    org_phone=_org_phone,
+                    room_kind=getattr(ws_row, "workspace_type", "") or "",
+                )
+                try:
+                    from integration import get_state
+                    _pstm = get_state().get("pstm")
+                    apply_pstm_scope(_pstm, str(ws_row.id), _pstm_ctx.get("pstm_id") or (user.phone or ""), _pstm_ctx)
+                except Exception:
+                    pass
             except Exception:
-                _pstm_ctx = {'user_id': str(user.id), 'workspace_id': str(room_id)}
+                _pstm_ctx = {
+                    "user_id": str(user.id),
+                    "workspace_id": str(ws_row.id),
+                    "phone_uid": getattr(user, "phone", None) or "",
+                    "org_id": _org_id,
+                }
 
             def _gen(prompt):
                 try:
@@ -617,22 +653,30 @@ async def send_message_to_room(
                     return generate_from_prompt(prompt, 128, 0.7)
                 except Exception:
                     return prompt
-            # PSTM-AUTO-SWIPE: read the invoker's private working memory so
-            # the AI takes context from *their* PSTM, not the room's shared pool
-            _pstm_context = None
+
+            _pstm_context = {
+                **(_pstm_ctx if isinstance(_pstm_ctx, dict) else {}),
+                "org_id": _org_id,
+                "organization_id": _org_id,
+                "org_phone": _org_phone,
+                "user": user,
+                "membership": _membership,
+                "hydrate_membership": True,
+                "slide_target_id": req.ref_message_id,
+                "trigger_message_id": str(msg.id),
+                "query_prompt": content,
+                "actor": user.phone or str(user.id),
+            }
             try:
                 from integration import get_state
                 _pstm = get_state().get("pstm")
                 _actor = user.phone or str(user.id)
                 if _pstm is not None:
                     _state = _pstm.as_dict(str(ws_row.id), _actor) or {}
-                    _pstm_context = {
-                        "draft":        _state.get("draft") or "",
-                        "scratchpad":   _state.get("scratchpad") or "",
-                        "suggestions":  (_state.get("suggestions") or [])[-5:],
-                        "extras":       _state.get("extras") or {},
-                        "actor":        _actor,
-                    }
+                    _pstm_context["draft"] = _state.get("draft") or ""
+                    _pstm_context["scratchpad"] = _state.get("scratchpad") or ""
+                    _pstm_context["suggestions"] = (_state.get("suggestions") or [])[-5:]
+                    _pstm_context["extras"] = _state.get("extras") or {}
             except Exception as e:
                 print(f"[rooms] pstm read failed: {type(e).__name__}: {e}")
 
@@ -644,11 +688,7 @@ async def send_message_to_room(
                 generate_fn=_gen,
                 brain_uid=getattr(ws_row, "brain_uid", None),
                 ref_message_id=str(req.ref_message_id or msg.id),
-                pstm_context={**(_pstm_context or {}), **(_pstm_ctx if isinstance(_pstm_ctx, dict) else {}),
-                              'slide_target_id': req.ref_message_id,
-                              'trigger_message_id': str(msg.id),
-                              'query_prompt': content},
-
+                pstm_context=_pstm_context,
             )
             frames = out.get("frames") or []
             ai_text = out.get("raw") or ""

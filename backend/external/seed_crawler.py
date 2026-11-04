@@ -1240,8 +1240,27 @@ def seed_crawl(
                         )
                         before = len(getattr(grid, "documents", {}) or {})
                         try:
+                            _lang = "en"
+                            try:
+                                if domain in ("language", "yoruba", "french", "hausa", "igbo"):
+                                    _lang = "auto"
+                                from tokenizer.tokenizer import detect_lang
+                                _lang = detect_lang(body) or _lang
+                            except Exception:
+                                try:
+                                    from langdetect import detect as _ld
+                                    _lang = _ld(body[:500]) or "en"
+                                except Exception:
+                                    _lang = "en"
+                            if domain in ("code", "programming", "python", "javascript", "typescript"):
+                                try:
+                                    from code_tokenizer import tokenize_code  # noqa: F401
+                                    _lang = "code"
+                                except Exception:
+                                    pass
                             grid.add_document(
                                 body,
+                                lang=_lang,
                                 source=f"seed:{domain}",
                                 metadata={
                                     "domain": domain,
@@ -1249,6 +1268,7 @@ def seed_crawl(
                                     "chunk_i": ui,
                                     "attempt": attempts,
                                     "unique_index": unique_ok,
+                                    "lang": _lang,
                                 },
                             )
                         except Exception as e:

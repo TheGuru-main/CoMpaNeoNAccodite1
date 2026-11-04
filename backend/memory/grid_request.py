@@ -69,8 +69,13 @@ def bind_request_grid(
         print(f"[grid_request] no grid yet for {owner.key}")
         return None
     try:
-        from memory.memory_grid import load_grid
-        grid = load_grid(str(path))
+        try:
+            from memory.memory_grid import load_grid
+            grid = load_grid(str(path))
+        except Exception:
+            import pickle
+            with open(path, "rb") as f:
+                grid = pickle.load(f)
     except Exception as e:
         print("[grid_request] load:", type(e).__name__, e)
         return None

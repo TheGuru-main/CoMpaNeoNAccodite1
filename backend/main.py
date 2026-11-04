@@ -542,8 +542,18 @@ async def signup(req: SignupRequest):
         db.add(new_user)
         db.commit()
         db.refresh(new_user)
+        # ACCD-CLEAN: personal instance grid keyed by phone UID
+        try:
+            from memory.instance_grid import OwnerRef, create_instance_grid
+            from memory.owner_identity import phone_uid
+            create_instance_grid(
+                OwnerRef("user", phone_uid(new_user.phone)),
+                platform_version=int(os.environ.get("ACCD_PLATFORM_GRID_VERSION") or "1"),
+            )
+        except Exception as _ug:
+            print(f"[ACCD-SIGNUP] user instance grid: {type(_ug).__name__}: {_ug}")
         token = create_access_token(str(new_user.id))
-        return {"access_token": token, "user": {"id": str(new_user.id), "full_name": new_user.full_name, "start_row": start_row}}
+        return {"access_token": token, "user": {"id": str(new_user.id), "full_name": new_user.full_name, "start_row": start_row, "phone": new_user.phone}}
     finally:
         db.close()
 
@@ -661,7 +671,9 @@ async def org_create(req: OrgCreateRequest):
         # ACCD: org instance grid from platform snapshot (disk + optional B2 layout)
         try:
             from memory.instance_grid import OwnerRef, create_instance_grid, grid_path
-            owner = OwnerRef("org", str(org.id))
+            from memory.owner_identity import phone_uid
+            _org_phone = phone_uid(getattr(org, "phone", None) or req.phone)
+            owner = OwnerRef("org", _org_phone)
             try:
                 create_instance_grid(owner, platform_version=int(os.environ.get("ACCD_PLATFORM_GRID_VERSION") or "1"))
             except TypeError:
@@ -672,7 +684,7 @@ async def org_create(req: OrgCreateRequest):
                 from memory.b2_grid_layout import publish_instance_grid_file
                 gp = grid_path(owner)
                 if gp.is_file():
-                    publish_instance_grid_file("org", str(org.id), str(gp))
+                    publish_instance_grid_file("org", _org_phone, str(gp))
             except Exception as _b2:
                 print(f"[ACCD-ORG] b2 instance publish: {type(_b2).__name__}: {_b2}")
         except Exception as _ig:

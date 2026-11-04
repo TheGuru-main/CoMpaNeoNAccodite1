@@ -33,21 +33,137 @@ except ImportError:
     MemoryGrid = None
 
 try:
-    from tokenizer import tokenize, normalize_lang
+    from tokenizer.tokenizer import tokenize, normalize_lang, uid_sequence, lexical_S
 except ImportError:
-    def tokenize(t): return (t or "").split()
-    def normalize_lang(l): return l or "en"
+    try:
+        from tokenizer import tokenize, normalize_lang, uid_sequence, lexical_S
+    except ImportError:
+        def tokenize(t, lang="en"):
+            return (t or "").split()
+        def normalize_lang(l):
+            return l or "en"
+        def uid_sequence(token, lang="en"):
+            return []
+        def lexical_S(token, lang="en"):
+            # token S = sum(uid_sequence) — never GSP placement S
+            return sum(uid_sequence(token, lang))
 
 
 # ============================================================================
 # MEMORY GRID
 # ============================================================================
 
-try:
-    from memory.shared_grid import get_shared_grid
-    memory = get_shared_grid(require_docs=True)
-except Exception:
-    memory = MemoryGrid()
+# ============================================================================
+# GRID RESOLVE — platform vs instance (GSP placement S is NOT used here)
+# Token S = sum(uid_sequence) via tokenizer; placement S stays in GSP/keyboard.
+# ============================================================================
+
+def resolve_training_grid(
+    grid=None,
+    *,
+    owner=None,
+    owner_kind: str | None = None,
+    owner_id: str | None = None,
+    prefer_platform: bool = False,
+):
+    """
+    Background / consolidation grid selection.
+
+    - prefer_platform=True  → platform grid only (product seed continuity)
+    - owner / owner_kind+id → instance grid for that org|user (no worker grid)
+    - else                  → platform if present; never invent empty tenant grid
+    """
+    if grid is not None:
+        return grid
+
+    # Explicit instance owner
+    kind = owner_kind
+    oid = owner_id
+    if owner is not None:
+        kind = getattr(owner, "kind", None) or (owner.get("kind") if isinstance(owner, dict) else None)
+        oid = getattr(owner, "id", None) or (owner.get("id") if isinstance(owner, dict) else None)
+
+    if kind in ("org", "user") and oid:
+        try:
+            from memory.instance_grid import OwnerRef, grid_path
+            from memory.memory_grid import load_grid
+            o = owner if hasattr(owner, "kind") else OwnerRef(str(kind), str(oid))
+            path = grid_path(o)
+            if path.is_file():
+                g = load_grid(str(path))
+                print(f"[bg-train] instance grid {o.kind}:{o.id} docs={len(getattr(g,'documents',{}) or {})}")
+                return g
+            print(f"[bg-train] no instance grid file for {kind}:{oid}")
+            return None
+        except Exception as e:
+            print(f"[bg-train] instance resolve: {type(e).__name__}: {e}")
+            return None
+
+    if prefer_platform or True:
+        try:
+            from memory.platform_grid import load_platform_grid, PlatformGridError
+            try:
+                g = load_platform_grid(require_docs=False, allow_empty=True)
+                print(f"[bg-train] platform grid docs={len(getattr(g,'documents',{}) or {})}")
+                return g
+            except PlatformGridError as e:
+                print(f"[bg-train] platform missing: {e}")
+        except Exception as e:
+            print(f"[bg-train] platform_grid: {type(e).__name__}: {e}")
+
+        try:
+            from memory.shared_grid import get_shared_grid
+            g = get_shared_grid(require_docs=False, allow_empty=True)
+            return g
+        except Exception as e:
+            print(f"[bg-train] shared fallback: {type(e).__name__}: {e}")
+            return None
+
+    return None
+
+
+def resolve_partition_for_grid(grid, *, owner=None):
+    """Bind MemoryPartition to the active grid (instance or platform). Soft fail."""
+    if grid is None:
+        return None
+    try:
+        from memory.memory_partition import MemoryPartition
+    except Exception:
+        try:
+            from memory_partition import MemoryPartition
+        except Exception:
+            return None
+    try:
+        part = MemoryPartition(grid) if callable(MemoryPartition) else None
+        # constructors vary — try common shapes
+    except TypeError:
+        try:
+            part = MemoryPartition()
+            if hasattr(part, "bind_grid"):
+                part.bind_grid(grid)
+            elif hasattr(part, "grid"):
+                part.grid = grid
+        except Exception as e:
+            print(f"[bg-train] partition: {type(e).__name__}: {e}")
+            return None
+    except Exception as e:
+        print(f"[bg-train] partition: {type(e).__name__}: {e}")
+        return None
+    try:
+        from integration import get_state
+        st = get_state()
+        st["grid"] = grid
+        st["partition"] = part
+        if owner is not None:
+            st["grid_owner"] = getattr(owner, "key", None) or str(owner)
+        st["grid_kind"] = "instance" if owner else st.get("grid_kind") or "platform"
+    except Exception:
+        pass
+    return part
+
+
+
+memory = None  # resolved per-call via resolve_training_grid
 
 
 # ============================================================================
@@ -89,7 +205,7 @@ def detect_lang(text: str) -> str:
 # MEMORY GRID DATA EXTRACTION
 # ============================================================================
 
-def collect_memorygrid_texts() -> List[str]:
+def collect_memorygrid_texts(grid=None) -> List[str]:
     """
     Collect training material directly from MemoryGrid.
 
@@ -107,6 +223,14 @@ def collect_memorygrid_texts() -> List[str]:
 
     The complete document text is retained as the training document.
     """
+    global memory
+    if grid is not None:
+        memory = grid
+    elif memory is None:
+        memory = resolve_training_grid(prefer_platform=True)
+    if memory is None:
+        return []
+
 
     texts: List[str] = []
 
@@ -144,7 +268,7 @@ def collect_memorygrid_texts() -> List[str]:
 # MEMORY GRID TOKEN EXTRACTION
 # ============================================================================
 
-def collect_memorygrid_tokens() -> List[Dict[str, Any]]:
+def collect_memorygrid_tokens(grid=None) -> List[Dict[str, Any]]:
     """
     Collect tokenized knowledge already stored in MemoryGrid.
 
@@ -155,6 +279,14 @@ def collect_memorygrid_tokens() -> List[Dict[str, Any]]:
     If a document does not contain stored tokenizer output, its text is
     tokenized dynamically.
     """
+    global memory
+    if grid is not None:
+        memory = grid
+    elif memory is None:
+        memory = resolve_training_grid(prefer_platform=True)
+    if memory is None:
+        return []
+
 
     token_records: List[Dict[str, Any]] = []
 
@@ -525,7 +657,8 @@ def train_model(
     # COLLECT MEMORY GRID KNOWLEDGE
     # ----------------------------------------------------------------------
 
-    texts = collect_memorygrid_texts()
+    _g = resolve_training_grid(prefer_platform=False)
+    texts = collect_memorygrid_texts(_g)
 
     if not texts:
 
@@ -882,24 +1015,21 @@ def run_consolidation_cycle(grid=None) -> dict:
     """
     report = {"collected": 0, "kept": 0, "rejected": 0, "processed": 0, "errors": 0}
 
-    # shared grid > fresh grid
+    # instance owner grid if provided on report context; else platform — NEVER empty MemoryGrid()
     if grid is None:
-        try:
-            from integration import get_shared_grid
-            grid = get_shared_grid()
-        except Exception:
-            grid = None
-        if grid is None:
-            try:
-                from integration import get_state
-                grid = get_state().get("grid")
-            except Exception:
-                grid = None
+        owner = report.get("_owner")  # optional inject
+        grid = resolve_training_grid(
+            None,
+            owner=owner,
+            prefer_platform=(owner is None),
+        )
     if grid is None:
-        try:
-            grid = MemoryGrid()
-        except Exception:
-            return report
+        print("[consolidation] no platform/instance grid — skip (refusing empty MemoryGrid)")
+        return report
+    try:
+        resolve_partition_for_grid(grid, owner=report.get("_owner"))
+    except Exception as e:
+        print("[consolidation] partition bind:", type(e).__name__, e)
 
     try:
         texts = collect_memorygrid_texts(grid)

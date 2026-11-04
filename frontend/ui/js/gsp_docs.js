@@ -745,7 +745,7 @@
       "#roomDocsStrip, .acd-room-docs, #wsbtnSheetS, #wsbtnDBase, #wsbtnCollabSheet, #wsbtnPresentations, [id^=wsbtn]"
     ).forEach(function (n) { try { n.remove(); } catch (e) {} });
     document.querySelectorAll(
-      "#mainNav [id*=btnDBase], #mainNav [id*=btnSheetS], #mainNav [id*=btnCollabSheet], #mainNav [id*=btnPresentations], .top-bar [id^=homebtn], .top-bar [id^=wsbtn], header [id^=wsbtn], header [id^=homebtn], .top-header [id^=homebtn], .top-header [id*=btnDBase], .top-header [id*=btnSheetS], .top-header [id*=btnCollabSheet], .top-header [id*=btnPresentations]"
+      "#mainNav [id*=btnDBase], #mainNav [id*=btnSheetS], .top-bar [id^=homebtn], .top-bar [id^=wsbtn], header [id^=wsbtn]"
     ).forEach(function (n) { try { n.remove(); } catch (e) {} });
 
     var hub = document.getElementById("homeHub") || document.getElementById("homeActions");
@@ -805,3 +805,33 @@
   setTimeout(boot, 1600);
   console.log("[acd] docs Phase0 — home-only docs strip; no room header buttons");
 })();
+
+
+// ACCD-MARATHON: place DBase/sheet object onto owner MemoryGrid namespace
+window.accdPlaceNs = async function (ns, objectName, description, text) {
+  try {
+    var api = (typeof window.api === "function") ? window.api : null;
+    if (!api) return { ok: false, error: "no api" };
+    return await api("/grid/ns/place", "POST", {
+      ns: ns || "dbase",
+      object_name: objectName,
+      description: description || "",
+      text: text || description || objectName,
+      org_id: (typeof activeOrgId !== "undefined" ? activeOrgId : null),
+      workspace_id: (typeof currentRoomId !== "undefined" ? currentRoomId : null),
+    });
+  } catch (e) {
+    return { ok: false, error: String(e && e.message ? e.message : e) };
+  }
+};
+window.accdListNs = async function (ns) {
+  try {
+    var q = "/grid/ns/list?ns=" + encodeURIComponent(ns || "dbase");
+    if (typeof activeOrgId !== "undefined" && activeOrgId) q += "&org_id=" + encodeURIComponent(activeOrgId);
+    var api = (typeof window.api === "function") ? window.api : null;
+    if (!api) return { ok: false, items: [] };
+    return await api(q, "GET");
+  } catch (e) {
+    return { ok: false, items: [], error: String(e && e.message ? e.message : e) };
+  }
+};

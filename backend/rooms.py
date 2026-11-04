@@ -596,6 +596,14 @@ async def send_message_to_room(
         ai_text = ""
         try:
             from integration import handle_generate
+            # ACCD-MARATHON: worker PSTM scope for this room message
+            try:
+                from memory.pstm_scope import hydrate_worker_pstm
+                _pstm_ctx = hydrate_worker_pstm(user=user, membership=None,
+                    workspace_id=str(room_id), org_phone='', room_kind=getattr(ws, 'workspace_type', '') or '')
+            except Exception:
+                _pstm_ctx = {'user_id': str(user.id), 'workspace_id': str(room_id)}
+
             def _gen(prompt):
                 try:
                     from main import generate_from_prompt

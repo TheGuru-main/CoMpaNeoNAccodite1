@@ -3677,7 +3677,35 @@ openRoomSocket = function(roomId) {
 // Called inline from the HTML. Not affected by any CSS or DOM cloning.
 // ============================================================================
 
-// removed duplicate acdNav (dead): live version is defined below
+window.acdNav = function(action, el) {
+    // # ACD-NAV-GLOBAL
+    console.log('[acdNav]', action);
+
+    // active state
+    document.querySelectorAll('.bottom-nav .nav-link').forEach(l => l.classList.remove('active'));
+    if (el) el.classList.add('active');
+
+    try {
+        if (action === 'home') {
+            if (typeof showHomeState === 'function') showHomeState();
+        } else if (action === 'research') {
+            if (typeof hideAllPanels === 'function') hideAllPanels();
+            if (typeof openSearchPanel === 'function') openSearchPanel();
+        } else if (action === 'workspace') {
+            if (typeof hideAllPanels === 'function') hideAllPanels();
+            if (typeof openDocuments === 'function') openDocuments();
+        } else if (action === 'messages') {
+            if (typeof hideAllPanels === 'function') hideAllPanels();
+            if (typeof openDMPanel === 'function') openDMPanel();
+        } else if (action === 'train') {
+            if (typeof hideAllPanels === 'function') hideAllPanels();
+            if (typeof openTrainingModal === 'function') openTrainingModal();
+        }
+    } catch (e) {
+        console.warn('[acdNav] failed:', action, e);
+    }
+    return false;
+};
 
 // Also handle Enter/Space activation for accessibility
 document.addEventListener('click', (e) => {
@@ -5809,3 +5837,86 @@ document.addEventListener("click", function (ev) {
   setTimeout(boot, 1200);
   console.log("[acd] PHASE0-UI codespace single open + home-only docs");
 })();
+
+// ACCD-MARATHON-STREAM-UNIFY — one AI bubble via JSON SSE; room still stores user msg
+(function () {
+  function ensureStreamBubble() {
+    var chatBox = document.getElementById("chatBox");
+    if (!chatBox) return null;
+    var div = document.createElement("div");
+    div.className = "message ai accd-stream-bubble";
+    var tray = document.createElement("div");
+    tray.className = "status-tray";
+    div.appendChild(tray);
+    var body = document.createElement("div");
+    body.className = "accd-stream-body";
+    body.textContent = "";
+    div.appendChild(body);
+    chatBox.appendChild(div);
+    chatBox.scrollTop = chatBox.scrollHeight;
+    return { div: div, tray: tray, body: body };
+  }
+  function statusToTray(tray, ev) {
+    if (!tray || !ev) return;
+    var pill = document.createElement("div");
+    pill.className = "status-pill pending";
+    var stage = ev.stage || ev.kind || ev.event || "status";
+    var label = ev.label || ev.description || ev.msg || stage;
+    pill.innerHTML = '<span class="status-icon">•</span><span class="status-text">' +
+      String(stage) + (label ? " · " + String(label) : "") + "</span>";
+    tray.appendChild(pill);
+    if (ev.event === "complete" || stage === "done") {
+      tray.querySelectorAll(".status-pill.pending").forEach(function (el) { el.classList.remove("pending"); el.classList.add("ok"); });
+    }
+  }
+  window.accdStreamAiReply = async function (promptText) {
+    if (typeof streamGenerate !== "function") {
+      console.warn("streamGenerate missing");
+      return;
+    }
+    var bubble = ensureStreamBubble();
+    if (!bubble) return;
+    await streamGenerate(
+      promptText,
+      function (tok, full) {
+        bubble.body.textContent = full || tok || "";
+        var chatBox = document.getElementById("chatBox");
+        if (chatBox) chatBox.scrollTop = chatBox.scrollHeight;
+      },
+      function (full) {
+        bubble.body.textContent = full || bubble.body.textContent || "";
+        statusToTray(bubble.tray, { event: "complete", stage: "done", label: "complete" });
+      },
+      function (err) {
+        bubble.body.textContent = (bubble.body.textContent || "") + "\n[stream error] " + err;
+        statusToTray(bubble.tray, { event: "error", stage: "error", label: String(err) });
+      },
+      {
+        onStatus: function (ev) { statusToTray(bubble.tray, ev); },
+        org_id: (typeof activeOrgId !== "undefined" ? activeOrgId : null),
+        workspace_id: (typeof currentRoomId !== "undefined" ? currentRoomId : null),
+        room_id: (typeof currentRoomId !== "undefined" ? currentRoomId : null),
+        temperament: "sanguine",
+        max_len: 256,
+      }
+    );
+  };
+  if (typeof sendMessage === "function") {
+    var _smMarathon = sendMessage;
+    sendMessage = async function (text, isFirst) {
+      var t = String(text || "");
+      var data = await _smMarathon(t, isFirst);
+      // Prefer live SSE bubble when stream exists; skip duplicate one-shot AI if we stream
+      var wantStream = typeof streamGenerate === "function" && (
+        /@AI\b/i.test(t) || !currentRoomId || (typeof roomList !== "undefined" && roomList.some(function (r) {
+          return r.id === currentRoomId && (r.workspace_type === "personal_brainstorm" || r.type === "personal_brainstorm");
+        }))
+      );
+      if (wantStream) {
+        try { await window.accdStreamAiReply(t); } catch (e) { console.warn("stream ai", e); }
+      }
+      return data;
+    };
+  }
+})();
+

@@ -453,6 +453,10 @@ class GenerateRequest(BaseModel):
     workspace_name: Optional[str] = ""
     conversation_history: Optional[str] = ""
     temperament: str = "sanguine"
+    # ACCD-MARATHON: instance grid + room scope (phone resolved server-side)
+    org_id: Optional[str] = None
+    workspace_id: Optional[str] = None
+    room_id: Optional[str] = None
 
 class ResearchRequest(BaseModel):
     query: str
@@ -2227,6 +2231,55 @@ try:
         if not query:
             raise HTTPException(400, "Prompt cannot be empty.")
 
+        # ACCD-MARATHON: bind owner instance grid (phone UID) + soft PSTM room scope
+        try:
+            from integration import ensure_request_grid
+            ensure_request_grid(
+                user_id=str(getattr(user, "id", "") or ""),
+                org_id=getattr(req, "org_id", None),
+            )
+        except Exception as _eg:
+            print("[ACCD-STREAM] ensure_request_grid:", type(_eg).__name__, _eg)
+        try:
+            from memory.pstm_scope import hydrate_worker_pstm, apply_pstm_scope
+            from integration import get_state
+            st = get_state()
+            pstm = st.get("pstm")
+            scope = hydrate_worker_pstm(
+                user=user,
+                membership=None,
+                workspace_id=getattr(req, "workspace_id", None) or getattr(req, "room_id", None) or "",
+                org_phone="",
+                room_kind="",
+            )
+            # fill membership if org_id
+            if getattr(req, "org_id", None):
+                try:
+                    from database import SessionLocal
+                    from db_models import OrganizationMembership
+                    import uuid as _uuid
+                    _db = SessionLocal()
+                    try:
+                        m = _db.query(OrganizationMembership).filter(
+                            OrganizationMembership.user_id == user.id,
+                            OrganizationMembership.organization_id == _uuid.UUID(str(req.org_id)),
+                            OrganizationMembership.credential_active.is_(True),
+                        ).first()
+                        if m:
+                            scope = hydrate_worker_pstm(
+                                user=user, membership=m,
+                                workspace_id=getattr(req, "workspace_id", None) or getattr(req, "room_id", None) or "",
+                                org_phone="", room_kind="org",
+                            )
+                    finally:
+                        _db.close()
+                except Exception as _m:
+                    print("[ACCD-STREAM] membership hydrate:", type(_m).__name__, _m)
+            if pstm and scope.get("pstm_id"):
+                apply_pstm_scope(pstm, str(getattr(req, "room_id", None) or "stream"), scope["pstm_id"], scope)
+        except Exception as _ps:
+            print("[ACCD-STREAM] pstm:", type(_ps).__name__, _ps)
+
         async def event_generator():
             if model is None:
                 yield "data: " + json.dumps({"event": "error", "error": "Model is not loaded."}, ensure_ascii=False) + "\n\n"
@@ -2272,6 +2325,9 @@ try:
         "[ACCD-STREAM] /generate/stream mounted"
     )
 
+
+
+
 except Exception as _accd_stream_route_error:
 
     print(
@@ -2279,6 +2335,57 @@ except Exception as _accd_stream_route_error:
         type(_accd_stream_route_error).__name__,
         _accd_stream_route_error,
     )
+
+# ACCD-GRID-NS-ROUTES — DBase/sheets/codespace namespaces on owner instance grid
+try:
+    from pydantic import BaseModel as _BM
+
+    class _NsPlaceReq(_BM):
+        ns: str
+        object_name: str
+        text: str = ""
+        description: str = ""
+        org_id: Optional[str] = None
+        workspace_id: Optional[str] = None
+
+    @app.post("/grid/ns/place")
+    async def grid_ns_place(req: _NsPlaceReq, user: User = Depends(get_current_user)):
+        from memory.grid_ns_api import place_ns_object
+        from memory.owner_identity import phone_uid, resolve_org_phone
+        return place_ns_object(
+            ns=req.ns,
+            object_name=req.object_name,
+            text=req.text,
+            description=req.description,
+            user_id=str(user.id),
+            org_id=req.org_id or "",
+            user_phone=phone_uid(getattr(user, "phone", None)),
+            org_phone=resolve_org_phone(org_id=req.org_id) if req.org_id else "",
+            workspace_id=req.workspace_id or "",
+        )
+
+    @app.get("/grid/ns/list")
+    async def grid_ns_list(
+        ns: str = "dbase",
+        org_id: Optional[str] = None,
+        workspace_id: Optional[str] = None,
+        user: User = Depends(get_current_user),
+    ):
+        from memory.grid_ns_api import list_ns
+        from memory.owner_identity import phone_uid, resolve_org_phone
+        return list_ns(
+            ns=ns,
+            user_id=str(user.id),
+            org_id=org_id or "",
+            user_phone=phone_uid(getattr(user, "phone", None)),
+            org_phone=resolve_org_phone(org_id=org_id) if org_id else "",
+            workspace_id=workspace_id or "",
+        )
+
+    print("[ACCD] grid ns routes /grid/ns/place /grid/ns/list")
+except Exception as _nsr:
+    print("[ACCD] grid ns routes skipped:", type(_nsr).__name__, _nsr)
+
 
 # ============================================================
 # ACCD-SANDBOX (appended at EOF – do not move or interleave)

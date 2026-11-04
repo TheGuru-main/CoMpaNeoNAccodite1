@@ -7,7 +7,10 @@ async function streamGenerate(prompt, onToken, onDone, onError, options) {
     temperature: options.temperature != null ? options.temperature : 0.8,
     conversation_history: options.conversation_history || "",
     workspace_name: options.workspace_name || "",
-    temperament: options.temperament || "sanguine"
+    temperament: options.temperament || "sanguine",
+    org_id: options.org_id || (typeof activeOrgId !== "undefined" ? activeOrgId : null) || null,
+    workspace_id: options.workspace_id || (typeof currentRoomId !== "undefined" ? currentRoomId : null) || null,
+    room_id: options.room_id || (typeof currentRoomId !== "undefined" ? currentRoomId : null) || null
   };
   let res;
   try {

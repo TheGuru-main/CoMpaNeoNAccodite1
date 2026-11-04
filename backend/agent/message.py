@@ -65,6 +65,14 @@ def send_message(
         db.add(row)
         db.commit()
         db.refresh(row)
+        # Message box coords (phone UID + start_row) — placement S, not token S
+        try:
+            row._sender_box = (getattr(sender, "start_row", None), getattr(sender, "start_col", None))
+            row._recipient_box = (getattr(recipient, "start_row", None), getattr(recipient, "start_col", None))
+            row._sender_phone_uid = sender_phone
+            row._recipient_phone_uid = recipient_phone
+        except Exception:
+            pass
         return row
     finally:
         db.close()
@@ -181,5 +189,29 @@ def mark_read(user_phone: str, other_phone: str) -> int:
         )
         db.commit()
         return int(n or 0)
+    finally:
+        db.close()
+
+
+def describe_message_box(phone: str) -> dict:
+    """Return phone UID + start_row/start_col message box for a user."""
+    phone = normalize_phone(phone)
+    db = SessionLocal()
+    try:
+        u = db.query(User).filter(User.phone == phone).first()
+        if not u:
+            # try variants
+            for v in (variants(phone) or []):
+                u = db.query(User).filter(User.phone == v).first()
+                if u:
+                    break
+        if not u:
+            return {"phone_uid": phone, "start_row": None, "start_col": None}
+        return {
+            "phone_uid": normalize_phone(u.phone),
+            "start_row": u.start_row,
+            "start_col": u.start_col,
+            "full_name": u.full_name,
+        }
     finally:
         db.close()

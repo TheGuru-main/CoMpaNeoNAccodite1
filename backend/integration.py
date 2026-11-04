@@ -385,9 +385,20 @@ def ensure_request_grid(
     grid = None
     try:
         from memory.grid_request import bind_request_grid
+        # phone UID is grid authority; resolve when client only sent uuid
+        user_phone = None
+        org_phone = None
+        try:
+            from memory.owner_identity import resolve_user_phone, resolve_org_phone
+            user_phone = resolve_user_phone(user_id=user_id)
+            org_phone = resolve_org_phone(org_id=org_id) if org_id else None
+        except Exception:
+            pass
         grid = bind_request_grid(
             user_id=user_id,
             org_id=org_id,
+            user_phone=user_phone,
+            org_phone=org_phone,
             is_active_member=is_active_member,
             prefer_platform=prefer_platform,
         )
@@ -467,6 +478,25 @@ def handle_generate(
         ensure_request_grid(user_id=user_id, org_id=org_id, prefer_platform=False)
     except Exception as _eg:
         print("[integration] ensure_request_grid:", type(_eg).__name__, _eg)
+    # ACCD: hydrate per-worker PSTM scope (name, role, dept, message box)
+    try:
+        if isinstance(pstm_context, dict) and pstm_context.get("hydrate_membership"):
+            from memory.pstm_scope import hydrate_worker_pstm, apply_pstm_scope
+            scope = hydrate_worker_pstm(
+                user=pstm_context.get("user"),
+                membership=pstm_context.get("membership"),
+                workspace_id=workspace_id,
+                org_phone=pstm_context.get("org_phone") or "",
+                room_kind=pstm_context.get("room_kind") or "",
+            )
+            pstm_context = {**(pstm_context or {}), **scope}
+            pstm = _STATE.get("pstm")
+            pid = scope.get("pstm_id") or user_id
+            apply_pstm_scope(pstm, workspace_id, pid, scope)
+    except Exception as _ps:
+        print("[integration] pstm_scope:", type(_ps).__name__, _ps)
+
+
 
 
     # MODE-AWARE: skip code verification entirely for chat/plan/research

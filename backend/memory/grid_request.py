@@ -1,8 +1,8 @@
 """
-Request-time grid bind: instance (org|user) for tenants; platform only when explicit.
+Request-time grid bind: phone UID owner keys.
 
-GSP placement S is never computed here.
-Token S remains tokenizer sum(uid_sequence).
+org:<org_phone_uid> | user:<user_phone_uid>
+Workers never get a worker grid — only org grid if membership active.
 """
 from __future__ import annotations
 from typing import Any, Optional, Callable
@@ -11,14 +11,11 @@ def bind_request_grid(
     *,
     user_id: Optional[str] = None,
     org_id: Optional[str] = None,
+    user_phone: Optional[str] = None,
+    org_phone: Optional[str] = None,
     is_active_member: Optional[Callable[..., bool]] = None,
     prefer_platform: bool = False,
 ) -> Any:
-    """
-    Returns MemoryGrid for this request or None.
-    Workers: pass org_id + membership check → org instance grid.
-    Regular user solo: user_id → user instance grid.
-    """
     if prefer_platform:
         try:
             from memory.platform_grid import load_platform_grid
@@ -27,40 +24,43 @@ def bind_request_grid(
             print("[grid_request] platform:", type(e).__name__, e)
             return None
 
-    owner = None
     try:
-        from memory.instance_grid import OwnerRef, grid_path, require_access, can_access
+        from memory.owner_identity import (
+            phone_uid, resolve_user_phone, resolve_org_phone,
+        )
+        from memory.instance_grid import OwnerRef, grid_path
     except Exception as e:
-        print("[grid_request] instance_grid missing:", e)
-        # soft: platform so app still runs
+        print("[grid_request] imports:", type(e).__name__, e)
         try:
             from memory.platform_grid import load_platform_grid
             return load_platform_grid(require_docs=False, allow_empty=True)
         except Exception:
             return None
 
-    if org_id and user_id:
-        owner = OwnerRef("org", str(org_id))
-        if is_active_member is None:
-            try:
-                from memory.membership_access import is_active_member as _iam
-                if not _iam(str(user_id), str(org_id)):
-                    print("[grid_request] not active member", user_id, org_id)
-                    return None
-            except Exception as e:
-                print("[grid_request] membership check:", type(e).__name__, e)
-        else:
-            try:
-                require_access(user_id=str(user_id), owner=owner, is_active_member=is_active_member)
-            except TypeError:
-                # some require_access signatures differ
-                if not is_active_member(str(user_id), owner):
-                    return None
-            except Exception as e:
-                print("[grid_request] access denied:", e)
-                return None
-    elif user_id:
-        owner = OwnerRef("user", str(user_id))
+    up = phone_uid(user_phone) if user_phone else resolve_user_phone(user_id=user_id)
+    op = phone_uid(org_phone) if org_phone else resolve_org_phone(org_id=org_id)
+
+    owner = None
+    if op:
+        # membership: prefer phone-aware check when possible
+        if user_id or up:
+            if is_active_member is None:
+                try:
+                    from memory.membership_access import is_active_member as _iam
+                    if org_id and user_id and not _iam(str(user_id), str(org_id)):
+                        print("[grid_request] not active member", user_id, org_id)
+                        return None
+                except Exception as e:
+                    print("[grid_request] membership:", type(e).__name__, e)
+            else:
+                try:
+                    if org_id and user_id and not is_active_member(str(user_id), str(org_id)):
+                        return None
+                except TypeError:
+                    pass
+        owner = OwnerRef("org", op)
+    elif up:
+        owner = OwnerRef("user", up)
     else:
         return None
 
@@ -81,9 +81,11 @@ def bind_request_grid(
     except Exception:
         try:
             from integration import get_state
-            get_state()["grid"] = grid
-            get_state()["grid_owner"] = owner.key
-            get_state()["grid_kind"] = "instance"
+            st = get_state()
+            st["grid"] = grid
+            st["grid_owner"] = owner.key
+            st["grid_kind"] = "instance"
+            st["owner_phone_uid"] = op or up
         except Exception:
             pass
     return grid

@@ -42,7 +42,7 @@ def platform_latest_key() -> str:
 def instance_grid_key(kind: str, owner_id: str) -> str:
     if kind not in ("org", "user"):
         raise ValueError("kind must be org|user")
-    return f"grids/instances/{kind}/{owner_id}/grid.pkl"
+    return f"grids/instances/{kind}/{owner_id}/grid.pkl"  # owner_id = normalized phone UID
 
 def instance_manifest_key(kind: str, owner_id: str) -> str:
     return f"grids/instances/{kind}/{owner_id}/manifest.json"

@@ -5920,3 +5920,192 @@ document.addEventListener("click", function (ev) {
   }
 })();
 
+// ACCD-STREAM-UNIFY-V2 — stream for org AND regular users; hard-suppress server AI; slide target
+(function () {
+  function ensureStreamBubble(targetMeta) {
+    var chatBox = document.getElementById("chatBox");
+    if (!chatBox) return null;
+    var div = document.createElement("div");
+    div.className = "message ai accd-stream-bubble";
+    if (targetMeta && targetMeta.id) {
+      div.setAttribute("data-replies-to", targetMeta.id);
+      var bar = document.createElement("div");
+      bar.className = "reply-bar-inline";
+      bar.style.cssText = "font-size:12px;opacity:0.75;margin-bottom:6px;border-left:2px solid var(--neon-blue,#4f8cff);padding-left:8px;";
+      bar.textContent = "↩ " + (targetMeta.author || "message") + ": " + String(targetMeta.preview || "").slice(0, 80);
+      div.appendChild(bar);
+    }
+    var tray = document.createElement("div");
+    tray.className = "status-tray";
+    div.appendChild(tray);
+    var body = document.createElement("div");
+    body.className = "accd-stream-body";
+    body.textContent = "";
+    div.appendChild(body);
+    chatBox.appendChild(div);
+    chatBox.scrollTop = chatBox.scrollHeight;
+    return { div: div, tray: tray, body: body };
+  }
+  function statusToTray(tray, ev) {
+    if (!tray || !ev) return;
+    var pill = document.createElement("div");
+    pill.className = "status-pill pending";
+    var stage = ev.stage || ev.kind || ev.event || "status";
+    var label = ev.label || ev.description || ev.msg || stage;
+    pill.innerHTML = '<span class="status-icon">•</span><span class="status-text">' +
+      String(stage) + (label ? " · " + String(label) : "") + "</span>";
+    tray.appendChild(pill);
+    if (ev.event === "complete" || stage === "done" || stage === "error") {
+      tray.querySelectorAll(".status-pill.pending").forEach(function (el) {
+        el.classList.remove("pending");
+        el.classList.add(stage === "error" ? "err" : "ok");
+      });
+    }
+  }
+  window.accdStreamAiReply = async function (promptText, opts) {
+    opts = opts || {};
+    if (typeof streamGenerate !== "function") {
+      console.warn("streamGenerate missing");
+      return;
+    }
+    var target = opts.slideTarget || (typeof _replyTo !== "undefined" ? _replyTo : null);
+    var bubble = ensureStreamBubble(target);
+    if (!bubble) return;
+    var streamPrompt = promptText;
+    if (target && target.id) {
+      streamPrompt =
+        "[SLIDE_REPLY target_id=" + target.id +
+        " author=" + (target.author || "") +
+        " preview=" + JSON.stringify(String(target.preview || "").slice(0, 120)) + "]\n" +
+        "Answer explicitly as a reply to that message.\n\n" + promptText;
+    }
+    await streamGenerate(
+      streamPrompt,
+      function (tok, full) {
+        bubble.body.textContent = full || tok || "";
+        var chatBox = document.getElementById("chatBox");
+        if (chatBox) chatBox.scrollTop = chatBox.scrollHeight;
+      },
+      function (full) {
+        bubble.body.textContent = full || bubble.body.textContent || "";
+        statusToTray(bubble.tray, { event: "complete", stage: "done", label: "complete" });
+      },
+      function (err) {
+        bubble.body.textContent = (bubble.body.textContent || "") + "\n[stream error] " + err;
+        statusToTray(bubble.tray, { event: "error", stage: "error", label: String(err) });
+      },
+      {
+        onStatus: function (ev) { statusToTray(bubble.tray, ev); },
+        org_id: (typeof activeOrgId !== "undefined" ? activeOrgId : null),
+        workspace_id: (typeof currentRoomId !== "undefined" ? currentRoomId : null),
+        room_id: (typeof currentRoomId !== "undefined" ? currentRoomId : null),
+        temperament: "sanguine",
+        max_len: 256,
+        ref_message_id: target && target.id ? target.id : null,
+      }
+    );
+  };
+
+  // Patch api POST for room messages to always send client_streams_ai when streaming available
+  if (typeof sendMessage === "function") {
+    var _smV2 = sendMessage;
+    sendMessage = async function (text, isFirst) {
+      var t = String(text || "");
+      var canStream = typeof streamGenerate === "function";
+      // Monkey-patch one shot: wrap api for this call is hard; pass via global flag
+      window.__accdClientStreamsAi = canStream;
+      var data;
+      try {
+        data = await _smV2(t, isFirst);
+      } finally {
+        window.__accdClientStreamsAi = false;
+      }
+      // Stream for BOTH org and regular users whenever stream is available and AI is expected
+      var wantStream = canStream;
+      // Always stream assistant path for interactive chat (user asked / room chat)
+      if (wantStream && t.trim()) {
+        try {
+          await window.accdStreamAiReply(t, {
+            slideTarget: (typeof _replyTo !== "undefined" ? _replyTo : null),
+          });
+        } catch (e) {
+          console.warn("stream ai", e);
+        }
+      }
+      if (typeof clearReplyTarget === "function") {
+        try { clearReplyTarget(); } catch (_) {}
+      } else if (typeof _replyTo !== "undefined") {
+        try { _replyTo = null; } catch (_) {}
+      }
+      return data;
+    };
+  }
+
+  // Ensure room message POSTs include client_streams_ai
+  if (typeof api === "function" && !api.__accdStreamFlag) {
+    var _api = api;
+    api = async function (path, method, body) {
+      if (
+        method === "POST" &&
+        body &&
+        typeof path === "string" &&
+        /\/rooms\/[^/]+\/messages$/.test(path) &&
+        window.__accdClientStreamsAi
+      ) {
+        body = Object.assign({}, body, { client_streams_ai: true });
+      }
+      return _api(path, method, body);
+    };
+    api.__accdStreamFlag = true;
+  }
+})();
+
+
+// ACCD-CALL-BTNS — workspace header voice/video call affordances
+(function () {
+  function wireCalls() {
+    var vc = document.getElementById("btnVoiceCall") || document.querySelector("[data-action=voice-call], .btn-voice-call");
+    var vd = document.getElementById("btnVideoCall") || document.querySelector("[data-action=video-call], .btn-video-call");
+    // also match fa-phone / fa-video parent buttons in room header
+    document.querySelectorAll("button, a").forEach(function (el) {
+      if (el.dataset.accdCallBound) return;
+      var ic = el.querySelector && el.querySelector(".fa-phone, .fa-video");
+      if (!ic) return;
+      el.dataset.accdCallBound = "1";
+      var isVideo = !!(ic.classList && (ic.classList.contains("fa-video") || ic.className.indexOf("fa-video") >= 0));
+      el.addEventListener("click", function (ev) {
+        ev.preventDefault();
+        var room = (typeof currentRoomId !== "undefined" && currentRoomId) ? currentRoomId : null;
+        if (!room) {
+          alert("Open a workspace (meeting / department / room) before starting a call.");
+          return;
+        }
+        var kind = isVideo ? "video" : "voice";
+        // Place a system line in chat; WebRTC signaling can attach later
+        if (typeof appendMessage === "function") {
+          appendMessage("ai", "📞 " + kind + " call requested in this workspace. Connecting… (signaling next).");
+        }
+        try {
+          if (typeof api === "function") {
+            api("/rooms/" + room + "/messages", "POST", {
+              content: "[call:" + kind + "] call started by user",
+              client_streams_ai: true,
+            });
+          }
+        } catch (_) {}
+        console.log("[ACCD] " + kind + "-call room=", room);
+      });
+    });
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", wireCalls);
+  else wireCalls();
+  // re-wire when rooms open
+  var _or = window.openRoom;
+  if (typeof _or === "function") {
+    window.openRoom = async function () {
+      var r = await _or.apply(this, arguments);
+      setTimeout(wireCalls, 50);
+      return r;
+    };
+  }
+})();

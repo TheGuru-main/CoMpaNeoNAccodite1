@@ -457,6 +457,7 @@ class GenerateRequest(BaseModel):
     org_id: Optional[str] = None
     workspace_id: Optional[str] = None
     room_id: Optional[str] = None
+    ref_message_id: Optional[str] = None  # slide/reply target
 
 class ResearchRequest(BaseModel):
     query: str

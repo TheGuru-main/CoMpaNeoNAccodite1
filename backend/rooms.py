@@ -93,7 +93,8 @@ class RenameRoomReq(BaseModel):
 class SendMessageReq(BaseModel):
     content: str = Field("", max_length=20000)
     attachment_id: Optional[str] = None
-    ref_message_id: Optional[str] = None               # STRICT-GATE: reply / highlight
+    ref_message_id: Optional[str] = None               # STRICT-GATE: reply / highlight / slide target
+    client_streams_ai: bool = False                   # frontend owns SSE — no server AI bubble
 
 
 class InviteMemberReq(BaseModel):
@@ -582,12 +583,18 @@ async def send_message_to_room(
                 print(f"[rooms] trigger parse failed: {type(e).__name__}: {e}")
                 should_invoke = False
 
+        # ACCD: hard-suppress server AI when client will stream (org + personal)
+        if getattr(req, "client_streams_ai", False):
+            should_invoke = False
+
         if not should_invoke:
             return {
                 "id": str(msg.id),
                 "content": msg.content,
                 "created_at": msg.created_at.isoformat() if msg.created_at else None,
                 "ai_invoked": False,
+                "client_streams_ai": bool(getattr(req, "client_streams_ai", False)),
+                "ref_message_id": req.ref_message_id,
                 "frames": [],
             }
 
@@ -636,8 +643,12 @@ async def send_message_to_room(
                 member_count=1 if is_private_brainstorm else 2,
                 generate_fn=_gen,
                 brain_uid=getattr(ws_row, "brain_uid", None),
-                ref_message_id=str(msg.id),     # PSTM-AUTO-SWIPE: always thread
-                pstm_context=_pstm_context,
+                ref_message_id=str(req.ref_message_id or msg.id),
+                pstm_context={**(_pstm_context or {}), **(_pstm_ctx if isinstance(_pstm_ctx, dict) else {}),
+                              'slide_target_id': req.ref_message_id,
+                              'trigger_message_id': str(msg.id),
+                              'query_prompt': content},
+
             )
             frames = out.get("frames") or []
             ai_text = out.get("raw") or ""

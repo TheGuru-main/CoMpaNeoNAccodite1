@@ -10,7 +10,8 @@ async function streamGenerate(prompt, onToken, onDone, onError, options) {
     temperament: options.temperament || "sanguine",
     org_id: options.org_id || (typeof activeOrgId !== "undefined" ? activeOrgId : null) || null,
     workspace_id: options.workspace_id || (typeof currentRoomId !== "undefined" ? currentRoomId : null) || null,
-    room_id: options.room_id || (typeof currentRoomId !== "undefined" ? currentRoomId : null) || null
+    room_id: options.room_id || (typeof currentRoomId !== "undefined" ? currentRoomId : null) || null,
+    ref_message_id: options.ref_message_id || null
   };
   let res;
   try {

@@ -801,4 +801,243 @@ def build_registry(
         except Exception as e:
             return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
+
+    # ---------------------------------------------------------------
+    # ACCD: schedule / alarm / flight / grid namespaces (owner instance)
+    # ---------------------------------------------------------------
+
+    @reg.tool(
+        name="grid.ns.place",
+        category="grid",
+        description="Place object on owner MemoryGrid namespace (dbase|sheets|collabsheet|presentations|codespace|schedule|workflow).",
+        mutating=True,
+    )
+    def grid_ns_place(
+        ns: str,
+        object_name: str,
+        description: str = "",
+        text: str = "",
+        org_id: str = "",
+        user_id: str = "",
+        user_phone: str = "",
+        org_phone: str = "",
+        workspace_id: str = "",
+    ) -> Dict[str, Any]:
+        from memory.grid_ns_api import place_ns_object
+        return place_ns_object(
+            ns=ns,
+            object_name=object_name,
+            text=text or description or object_name,
+            description=description,
+            user_id=user_id,
+            org_id=org_id,
+            user_phone=user_phone,
+            org_phone=org_phone,
+            workspace_id=workspace_id,
+        )
+
+    @reg.tool(
+        name="grid.ns.list",
+        category="grid",
+        description="List or monitor owner-grid namespaces (ns or all/monitor).",
+        mutating=False,
+    )
+    def grid_ns_list(
+        ns: str = "dbase",
+        org_id: str = "",
+        user_id: str = "",
+        user_phone: str = "",
+        org_phone: str = "",
+        workspace_id: str = "",
+    ) -> Dict[str, Any]:
+        from memory.grid_ns_api import list_ns
+        return list_ns(
+            ns=ns,
+            user_id=user_id,
+            org_id=org_id,
+            user_phone=user_phone,
+            org_phone=org_phone,
+            workspace_id=workspace_id,
+        )
+
+    @reg.tool(
+        name="schedule.add",
+        category="schedule",
+        description="Add a schedule/calendar entry onto ns:schedule on the owner grid.",
+        mutating=True,
+    )
+    def schedule_add(
+        title: str,
+        when: str = "",
+        note: str = "",
+        org_id: str = "",
+        user_id: str = "",
+        user_phone: str = "",
+        org_phone: str = "",
+        workspace_id: str = "",
+    ) -> Dict[str, Any]:
+        body = f"SCHEDULE\ntitle: {title}\nwhen: {when}\nnote: {note}".strip()
+        from memory.grid_ns_api import place_ns_object
+        # object names must start with a letter
+        safe = "".join(ch for ch in (title or "event") if ch.isalnum() or ch in " _-")[:48].strip() or "Event"
+        if safe[0].isdigit():
+            safe = "E" + safe
+        return place_ns_object(
+            ns="schedule",
+            object_name=safe.replace(" ", "_"),
+            text=body,
+            description=note or when or title,
+            user_id=user_id,
+            org_id=org_id,
+            user_phone=user_phone,
+            org_phone=org_phone,
+            workspace_id=workspace_id,
+        )
+
+    @reg.tool(
+        name="schedule.list",
+        category="schedule",
+        description="List schedule entries from ns:schedule on the owner grid.",
+        mutating=False,
+    )
+    def schedule_list(
+        org_id: str = "",
+        user_id: str = "",
+        user_phone: str = "",
+        org_phone: str = "",
+        workspace_id: str = "",
+    ) -> Dict[str, Any]:
+        from memory.grid_ns_api import list_ns
+        return list_ns(
+            ns="schedule",
+            user_id=user_id,
+            org_id=org_id,
+            user_phone=user_phone,
+            org_phone=org_phone,
+            workspace_id=workspace_id,
+        )
+
+    @reg.tool(
+        name="alarm.set",
+        category="schedule",
+        description="Record an alarm/reminder intent on ns:schedule (does not control device clocks).",
+        mutating=True,
+    )
+    def alarm_set(
+        time_spec: str,
+        label: str = "alarm",
+        org_id: str = "",
+        user_id: str = "",
+        user_phone: str = "",
+        org_phone: str = "",
+        workspace_id: str = "",
+    ) -> Dict[str, Any]:
+        body = f"ALARM\ntime: {time_spec}\nlabel: {label}\nstatus: recorded (device notification not attached yet)"
+        safe = "".join(ch for ch in (label or "alarm") if ch.isalnum() or ch in " _-")[:40].strip() or "Alarm"
+        if safe[0].isdigit():
+            safe = "A" + safe
+        from memory.grid_ns_api import place_ns_object
+        out = place_ns_object(
+            ns="schedule",
+            object_name=("Alarm_" + safe).replace(" ", "_"),
+            text=body,
+            description=f"{label} @ {time_spec}",
+            user_id=user_id,
+            org_id=org_id,
+            user_phone=user_phone,
+            org_phone=org_phone,
+            workspace_id=workspace_id,
+        )
+        if isinstance(out, dict):
+            out["device_alarm"] = False
+            out["note"] = "Stored on owner grid; phone OS alarm not triggered from server."
+        return out
+
+    @reg.tool(
+        name="flight.lookup",
+        category="travel",
+        description="Lookup flight by number/date when external API available; else request details.",
+        mutating=False,
+    )
+    def flight_lookup(
+        flight_number: str = "",
+        date: str = "",
+        origin: str = "",
+        destination: str = "",
+    ) -> Dict[str, Any]:
+        fn = (flight_number or "").strip().upper()
+        if not fn and not (origin and destination):
+            return {
+                "ok": False,
+                "need": ["flight_number or origin+destination", "date"],
+                "error": "Provide flight number and date (or route).",
+            }
+        # Optional external adapter — never invent gates
+        try:
+            from external.flights import lookup_flight  # type: ignore
+            return lookup_flight(flight_number=fn, date=date, origin=origin, destination=destination)
+        except Exception:
+            return {
+                "ok": False,
+                "flight_number": fn,
+                "date": date,
+                "origin": origin,
+                "destination": destination,
+                "error": "Flight provider not configured. Confirm number and date; live status unavailable.",
+                "hint": "Set external flight API or paste itinerary text for the agent to parse.",
+            }
+
+    @reg.tool(
+        name="dbase.place",
+        category="grid",
+        description="Create/update a DBase record (name + description) on ns:dbase.",
+        mutating=True,
+    )
+    def dbase_place(
+        object_name: str,
+        description: str = "",
+        text: str = "",
+        org_id: str = "",
+        user_id: str = "",
+        user_phone: str = "",
+        org_phone: str = "",
+        workspace_id: str = "",
+    ) -> Dict[str, Any]:
+        from memory.grid_ns_api import place_ns_object
+        return place_ns_object(
+            ns="dbase",
+            object_name=object_name,
+            text=text or description or object_name,
+            description=description,
+            user_id=user_id,
+            org_id=org_id,
+            user_phone=user_phone,
+            org_phone=org_phone,
+            workspace_id=workspace_id,
+        )
+
+    @reg.tool(
+        name="dbase.list",
+        category="grid",
+        description="List DBase records on owner grid ns:dbase.",
+        mutating=False,
+    )
+    def dbase_list(
+        org_id: str = "",
+        user_id: str = "",
+        user_phone: str = "",
+        org_phone: str = "",
+        workspace_id: str = "",
+    ) -> Dict[str, Any]:
+        from memory.grid_ns_api import list_ns
+        return list_ns(
+            ns="dbase",
+            user_id=user_id,
+            org_id=org_id,
+            user_phone=user_phone,
+            org_phone=org_phone,
+            workspace_id=workspace_id,
+        )
+
+
     return reg

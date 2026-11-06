@@ -906,6 +906,86 @@ class DocSnapshot(BaseModel):
     data: dict
 
 
+
+class DocsImportOfficeBody(BaseModel):
+    scope: str = "user"
+    parent_type: str = "repo"
+    parent_repo: str = ""
+    parent_id: str = ""
+    doc_name: str
+    description: str = ""
+    payload_b64: str = ""
+    payload_ref: str = ""
+    url: str = ""
+    filename: str = ""
+    kind: str = "sheets"
+
+
+@router.post("/docs/import_office")
+def docs_import_office(body: DocsImportOfficeBody, user: User = Depends(get_current_user)):
+    """Excel/CSV → Accodite SheetS cells + place on ns:sheets|dbase."""
+    import base64 as _b64
+    import json as _json
+    import re as _re
+    from memory.office_import import import_spreadsheet
+    from memory.grid_ns_api import place_ns_object
+    from memory.owner_identity import phone_uid
+
+    raw = _b64.b64decode(body.payload_b64) if body.payload_b64 else None
+    parsed = import_spreadsheet(
+        data=raw,
+        filename=body.filename or "",
+        url=body.url or "",
+        payload_ref=body.payload_ref or "",
+    )
+    name = (body.doc_name or "").strip()
+    if not _re.match(r"^[A-Za-z][A-Za-z0-9_-]{0,62}$", name):
+        raise HTTPException(400, "doc_name must start with a letter")
+
+    scope = body.scope or "user"
+    parent_repo = body.parent_repo or body.parent_id or "default"
+    root = _docs_dir(scope, parent_repo)
+    root.mkdir(parents=True, exist_ok=True)
+    doc_path = root / f"{name}.json"
+    payload = {
+        "doc_name": name,
+        "kind": "sheet" if body.kind in ("sheets", "sheet") else "xlsx",
+        "description": body.description,
+        "data": {
+            "cells": parsed.get("cells") or {},
+            "sheets": parsed.get("sheets") or {"Sheet1": {"cells": parsed.get("cells") or {}}},
+            "active_sheet": parsed.get("active_sheet") or "Sheet1",
+            "object_name": name,
+            "object_desc": body.description,
+            "n_rows": parsed.get("n_rows"),
+            "n_cols": parsed.get("n_cols"),
+            "source_format": parsed.get("format"),
+        },
+        "meta": {"filename": body.filename, "url": body.url},
+    }
+    doc_path.write_text(_json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    ns = "sheets" if body.kind in ("sheets", "sheet") else "dbase"
+    place = place_ns_object(
+        ns=ns,
+        object_name=name,
+        text=f"Imported {parsed.get('format')} {body.filename or body.url}",
+        description=body.description,
+        user_id=str(getattr(user, "id", "")),
+        user_phone=phone_uid(getattr(user, "phone", None)),
+        media_type="spreadsheet",
+        filename=body.filename or "",
+        payload_ref=body.payload_ref or body.url or "",
+    )
+    return {"ok": True, "doc_name": name, "parsed": {
+        "n_rows": parsed.get("n_rows"),
+        "n_cols": parsed.get("n_cols"),
+        "sheet_names": parsed.get("sheet_names"),
+        "format": parsed.get("format"),
+        "cell_count": len(parsed.get("cells") or {}),
+    }, "place": place}
+
+
 @router.post("/docs/snapshot")
 async def save_doc_snapshot(req: DocSnapshot, request: Request = None):
     """Persist full doc payload (cells, sheets, slides)."""

@@ -1124,4 +1124,43 @@ def build_registry(
         )
 
 
+    @reg.tool(
+        name="sheets.import_office",
+        category="doc",
+        description="Import Excel/CSV from url or payload_ref into Accodite SheetS.",
+        mutating=True,
+    )
+    def sheets_import_office(
+        doc_name: str,
+        url: str = "",
+        payload_ref: str = "",
+        description: str = "",
+        filename: str = "",
+        org_id: str = "",
+        user_id: str = "",
+        user_phone: str = "",
+        org_phone: str = "",
+        workspace_id: str = "",
+    ) -> Dict[str, Any]:
+        from memory.office_import import import_spreadsheet
+        from memory.grid_ns_api import place_ns_object
+        parsed = import_spreadsheet(url=url or "", payload_ref=payload_ref or "", filename=filename or "")
+        place = place_ns_object(
+            ns="sheets",
+            object_name=doc_name,
+            text=f"import {parsed.get('format')} cells={len(parsed.get('cells') or {})}",
+            description=description,
+            media_type="spreadsheet",
+            filename=filename,
+            payload_ref=payload_ref or url,
+            user_id=user_id,
+            org_id=org_id,
+            user_phone=user_phone,
+            org_phone=org_phone,
+            workspace_id=workspace_id,
+            extra={"n_rows": parsed.get("n_rows"), "n_cols": parsed.get("n_cols"), "sheet_names": parsed.get("sheet_names")},
+        )
+        return {"ok": True, "parsed": {"format": parsed.get("format"), "cell_count": len(parsed.get("cells") or {}), "sheet_names": parsed.get("sheet_names")}, "place": place}
+
+
     return reg

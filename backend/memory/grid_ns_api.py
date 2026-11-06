@@ -1,6 +1,38 @@
 """HTTP helpers for namespace place/list on the bound owner grid."""
 from __future__ import annotations
+import base64
+import os
+import uuid
+from pathlib import Path
 from typing import Any, Optional, Dict
+
+
+def _store_blob(
+    *,
+    raw: bytes,
+    filename: str,
+    mime: str,
+    owner_phone: str,
+) -> str:
+    """
+    Persist binary on Accodite storage — never on a third-party chat host.
+    Prefer B2; else local ACCD_UPLOAD_DIR. Returns payload_ref string.
+    """
+    safe_name = "".join(c for c in (filename or "blob") if c.isalnum() or c in "._-")[:80] or "blob"
+    key = f"placements/{owner_phone or 'anon'}/{uuid.uuid4().hex[:12]}_{safe_name}"
+    try:
+        from storage.b2 import b2_enabled, b2_put_bytes
+        if b2_enabled():
+            return b2_put_bytes(key, raw, content_type=mime or "application/octet-stream")
+    except Exception as e:
+        print("[place] B2 put failed:", type(e).__name__, e)
+    # local disk fallback (Render disk / uploads)
+    root = Path(os.environ.get("ACCD_UPLOAD_DIR") or os.environ.get("ACCD_SANDBOX_ROOT") or "/tmp/accd-uploads")
+    dest = root / "placements" / (owner_phone or "anon")
+    dest.mkdir(parents=True, exist_ok=True)
+    path = dest / f"{uuid.uuid4().hex[:12]}_{safe_name}"
+    path.write_bytes(raw)
+    return f"file://{path}"
 
 
 def place_ns_object(
@@ -22,9 +54,14 @@ def place_ns_object(
     extra: Optional[Dict[str, Any]] = None,
 ) -> dict:
     """
-    Place object (+ optional media) onto owner MemoryGrid namespace.
-    Lookup uses object_name, description, metadata (media_type, filename, mime).
-    Large binaries should pass payload_ref (B2/URL/path); small text/docs may use text/payload_b64.
+    Place object onto owner MemoryGrid namespace.
+
+    Storage model:
+      - Grid holds name, description, doc_uid, media meta, payload_ref (pointer).
+      - Binary lives on Accodite B2 or local upload dir — NOT inline in the grid,
+        NOT on any external AI host (Grok/OpenAI/etc.).
+      - payload_b64 is a *transport* option from the client only; we decode, store,
+        then drop b64 from permanent metadata.
     """
     from memory.grid_request import bind_request_grid
     from memory.grid_namespaces import place_in_owner_grid, assert_ns
@@ -45,14 +82,31 @@ def place_ns_object(
         fn = filename.lower()
         if fn.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp", ".heic")):
             media_type = "image"
-        elif fn.endswith((".mp3", ".wav", ".m4a", ".ogg", ".aac")):
+        elif fn.endswith((".mp3", ".wav", ".m4a", ".ogg", ".aac", ".webm")):
             media_type = "voice"
         elif fn.endswith((".mp4", ".webm", ".mov")):
             media_type = "video"
         elif fn.endswith((".pdf", ".doc", ".docx", ".txt", ".md")):
             media_type = "doc"
+        elif fn.endswith((".xlsx", ".xls", ".csv", ".ods")):
+            media_type = "spreadsheet"
         else:
             media_type = "file"
+
+    # Transport b64 → durable ref on Accodite storage
+    if payload_b64 and not payload_ref:
+        try:
+            raw = base64.b64decode(payload_b64)
+            if len(raw) > 25 * 1024 * 1024:
+                return {"ok": False, "error": "file too large (max 25MB)"}
+            payload_ref = _store_blob(
+                raw=raw,
+                filename=filename or "upload.bin",
+                mime=mime or "application/octet-stream",
+                owner_phone=owner_phone,
+            )
+        except Exception as e:
+            return {"ok": False, "error": f"store failed: {type(e).__name__}: {e}"}
 
     meta_extra = dict(extra or {})
     meta_extra.update({
@@ -60,17 +114,9 @@ def place_ns_object(
         "mime": mime or "",
         "filename": filename or "",
         "payload_ref": payload_ref or "",
-        "has_payload_b64": bool(payload_b64),
+        # never persist client b64
+        "has_payload": bool(payload_ref),
     })
-    # Keep b64 off metadata if huge — store short marker only
-    if payload_b64 and len(payload_b64) < 120_000:
-        meta_extra["payload_b64_len"] = len(payload_b64)
-        body_extra = f"\n[payload_b64_len={len(payload_b64)}]"
-    else:
-        body_extra = ""
-        if payload_b64:
-            meta_extra["payload_b64_len"] = len(payload_b64)
-            meta_extra["payload_inline"] = False
 
     body = (text or description or object_name or "").strip()
     about = [
@@ -80,7 +126,7 @@ def place_ns_object(
         f"file: {filename}" if filename else "",
         f"ref: {payload_ref}" if payload_ref else "",
     ]
-    body = body + "\n" + "\n".join(x for x in about if x) + body_extra
+    body = body + "\n" + "\n".join(x for x in about if x)
 
     doc_id = place_in_owner_grid(
         grid,

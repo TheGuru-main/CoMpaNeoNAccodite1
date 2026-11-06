@@ -185,6 +185,8 @@
       '<button type="button" class="acd-btn" id="gspPickVoice">Voice</button>' +
       '<button type="button" class="acd-btn" id="gspPickDoc">Doc</button>' +
       '<button type="button" class="acd-btn" id="gspPickVideo">Video</button>' +
+      '<button type="button" class="acd-btn primary" id="gspImportOffice">Excel/CSV</button>' +
+      '<button type="button" class="acd-btn" id="gspImportUrl">URL</button>' +
       '<input type="file" id="gspFileInput" style="display:none" />' +
       '<span id="gspMediaChip" style="color:#7dd3fc;font-size:12px"></span>' +
       '</div>' +
@@ -248,6 +250,76 @@
     if (bd) bd.onclick = function () { pick(".pdf,.doc,.docx,.txt,.md,application/pdf,text/*", "doc"); };
     var bvid = document.getElementById("gspPickVideo");
     if (bvid) bvid.onclick = function () { pick("video/*", "video"); };
+
+    var bo = document.getElementById("gspImportOffice");
+    if (bo) bo.onclick = function () {
+      if (!fin) return;
+      fin.accept = ".xlsx,.xlsm,.csv,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv";
+      fin.onchange = function () {
+        var f = fin.files && fin.files[0];
+        if (!f) return;
+        var reader = new FileReader();
+        reader.onload = async function () {
+          var dataUrl = String(reader.result || "");
+          var b64 = dataUrl.indexOf(",") >= 0 ? dataUrl.split(",")[1] : "";
+          var name = (document.getElementById("gspDocNameInput").value || "").trim();
+          if (!name) {
+            name = (f.name || "Import").replace(/\.[^.]+$/, "").replace(/[^A-Za-z0-9_-]/g, "");
+            if (!/^[A-Za-z]/.test(name)) name = "S" + name;
+            var ni = document.getElementById("gspDocNameInput");
+            if (ni) ni.value = name.slice(0, 62);
+          }
+          var desc = (document.getElementById("gspDocDescInput") && document.getElementById("gspDocDescInput").value) || "";
+          try {
+            var res = await api("/sandbox/docs/import_office", "POST", {
+              doc_name: name,
+              description: desc,
+              filename: f.name,
+              payload_b64: b64,
+              kind: state.kind === "dbase" ? "dbase" : "sheets",
+              parent_type: state.parentType === "room" ? "room" : "repo",
+              parent_id: state.parentId,
+              parent_repo: state.parentRepo || state.parentId,
+            });
+            alert("Imported " + ((res.parsed && res.parsed.format) || "") + " · cells " + ((res.parsed && res.parsed.cell_count) || 0));
+            state.docName = name;
+            await refreshList();
+            renderStage();
+          } catch (e) {
+            alert("Import failed: " + (e.message || e));
+          }
+        };
+        reader.readAsDataURL(f);
+        fin.value = "";
+      };
+      fin.click();
+    };
+    var bu = document.getElementById("gspImportUrl");
+    if (bu) bu.onclick = async function () {
+      var url = prompt("Spreadsheet URL (http/https .xlsx or .csv)");
+      if (!url) return;
+      var name = (document.getElementById("gspDocNameInput").value || "").trim() || "ImportedSheet";
+      var ni = document.getElementById("gspDocNameInput");
+      if (ni && !ni.value) ni.value = name;
+      var desc = (document.getElementById("gspDocDescInput") && document.getElementById("gspDocDescInput").value) || "";
+      try {
+        var res = await api("/sandbox/docs/import_office", "POST", {
+          doc_name: name,
+          description: desc,
+          url: url,
+          filename: url.split("/").pop() || "download.csv",
+          kind: state.kind === "dbase" ? "dbase" : "sheets",
+          parent_type: state.parentType === "room" ? "room" : "repo",
+          parent_id: state.parentId,
+          parent_repo: state.parentRepo || state.parentId,
+        });
+        alert("Imported from URL · cells " + ((res.parsed && res.parsed.cell_count) || 0));
+        await refreshList();
+      } catch (e) {
+        alert("URL import failed: " + (e.message || e));
+      }
+    };
+
 
 
     var bar = document.getElementById("gspKindBar");

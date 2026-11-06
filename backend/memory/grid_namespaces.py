@@ -158,7 +158,17 @@ def list_namespace(grid, ns: str, *, workspace_id: str = "") -> List[Dict[str, A
             "workspace_id": meta.get("workspace_id"),
             "owner_phone_uid": meta.get("owner_phone_uid"),
             "grid_ns": ns,
+            "media_type": meta.get("media_type") or "text",
+            "mime": meta.get("mime") or "",
+            "filename": meta.get("filename") or "",
+            "payload_ref": meta.get("payload_ref") or "",
             "text_preview": (doc.get("text") or "")[:200],
+            "meta": {
+                "media_type": meta.get("media_type"),
+                "mime": meta.get("mime"),
+                "filename": meta.get("filename"),
+                "description": meta.get("description"),
+            },
         })
     return out
 

@@ -68,6 +68,7 @@
     selected: null,
     sideOpen: true,
     lookup: "",
+    pendingMedia: null,
   };
 
   function token() {
@@ -178,6 +179,15 @@
       '<input class="acd-inp" id="gspDocDescInput" placeholder="Description / about" maxlength="240" style="flex:1;min-width:120px" />' +
       '<button type="button" class="acd-btn primary" id="gspDocCreate">Place</button>' +
       "</div>" +
+      '<div class="acd-top" id="gspMediaBar" style="background:#0a0f1a;flex-wrap:wrap;gap:6px">' +
+      '<span style="color:#94a3b8;font-size:12px">Attach</span>' +
+      '<button type="button" class="acd-btn" id="gspPickImage">Image</button>' +
+      '<button type="button" class="acd-btn" id="gspPickVoice">Voice</button>' +
+      '<button type="button" class="acd-btn" id="gspPickDoc">Doc</button>' +
+      '<button type="button" class="acd-btn" id="gspPickVideo">Video</button>' +
+      '<input type="file" id="gspFileInput" style="display:none" />' +
+      '<span id="gspMediaChip" style="color:#7dd3fc;font-size:12px"></span>' +
+      '</div>' +
       '<div class="acd-top" id="gspKindBar" style="background:#0b1220"></div>' +
       '<div class="acd-body">' +
       '<aside class="acd-side" id="gspSide"><div class="acd-side-inner" id="gspDocList"></div></aside>' +
@@ -196,6 +206,49 @@
     document.getElementById("gspDocCreate").onclick = function () {
       createDoc();
     };
+
+    function setPendingMedia(file, mediaType) {
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function () {
+        var dataUrl = String(reader.result || "");
+        var b64 = dataUrl.indexOf(",") >= 0 ? dataUrl.split(",")[1] : "";
+        state.pendingMedia = {
+          media_type: mediaType,
+          filename: file.name || "file",
+          mime: file.type || "",
+          size: file.size || 0,
+          payload_b64: b64.length < 90000 ? b64 : "",
+          payload_ref: "",
+          preview: dataUrl.slice(0, 80),
+        };
+        var chip = document.getElementById("gspMediaChip");
+        if (chip) {
+          chip.textContent = mediaType + ": " + (file.name || "") + " (" + Math.round((file.size || 0) / 1024) + " KB) — set name + description, then Place";
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+    var fin = document.getElementById("gspFileInput");
+    function pick(accept, mediaType) {
+      if (!fin) return;
+      fin.accept = accept;
+      fin.onchange = function () {
+        var f = fin.files && fin.files[0];
+        setPendingMedia(f, mediaType);
+        fin.value = "";
+      };
+      fin.click();
+    }
+    var bi = document.getElementById("gspPickImage");
+    if (bi) bi.onclick = function () { pick("image/*", "image"); };
+    var bv = document.getElementById("gspPickVoice");
+    if (bv) bv.onclick = function () { pick("audio/*", "voice"); };
+    var bd = document.getElementById("gspPickDoc");
+    if (bd) bd.onclick = function () { pick(".pdf,.doc,.docx,.txt,.md,application/pdf,text/*", "doc"); };
+    var bvid = document.getElementById("gspPickVideo");
+    if (bvid) bvid.onclick = function () { pick("video/*", "video"); };
+
 
     var bar = document.getElementById("gspKindBar");
     Object.keys(KINDS).forEach(function (k) {
@@ -361,7 +414,17 @@
       try {
         var nsMap = { dbase: "dbase", sheets: "sheets", collabsheet: "collabsheet", presentations: "pres" };
         if (typeof window.accdPlaceNs === "function") {
-          await window.accdPlaceNs(nsMap[state.kind] || "dbase", name, desc, desc || name);
+          var pm = state.pendingMedia || {};
+          await window.accdPlaceNs(nsMap[state.kind] || "dbase", name, desc, desc || name, {
+            media_type: pm.media_type || "text",
+            filename: pm.filename || "",
+            mime: pm.mime || "",
+            payload_ref: pm.payload_ref || "",
+            payload_b64: pm.payload_b64 || "",
+          });
+          state.pendingMedia = null;
+          var chip = document.getElementById("gspMediaChip");
+          if (chip) chip.textContent = "";
         }
       } catch (pe) {
         console.warn("grid ns place", pe);
@@ -866,15 +929,21 @@
 
 
 // ACCD-MARATHON: place DBase/sheet object onto owner MemoryGrid namespace
-window.accdPlaceNs = async function (ns, objectName, description, text) {
+window.accdPlaceNs = async function (ns, objectName, description, text, media) {
   try {
     var api = (typeof window.api === "function") ? window.api : null;
     if (!api) return { ok: false, error: "no api" };
+    media = media || {};
     return await api("/grid/ns/place", "POST", {
       ns: ns || "dbase",
       object_name: objectName,
       description: description || "",
       text: text || description || objectName,
+      media_type: media.media_type || "",
+      filename: media.filename || "",
+      mime: media.mime || "",
+      payload_ref: media.payload_ref || "",
+      payload_b64: media.payload_b64 || "",
       org_id: (typeof activeOrgId !== "undefined" ? activeOrgId : null),
       workspace_id: (typeof currentRoomId !== "undefined" ? currentRoomId : null),
     });
@@ -882,6 +951,7 @@ window.accdPlaceNs = async function (ns, objectName, description, text) {
     return { ok: false, error: String(e && e.message ? e.message : e) };
   }
 };
+
 window.accdListNs = async function (ns) {
   try {
     var q = "/grid/ns/list?ns=" + encodeURIComponent(ns || "dbase");

@@ -1063,4 +1063,65 @@ def build_registry(
         )
 
 
+    @reg.tool(
+        name="sheets.place",
+        category="doc",
+        description="Place a SheetS object (name+description+optional media meta) on ns:sheets.",
+        mutating=True,
+    )
+    def sheets_place(
+        object_name: str,
+        description: str = "",
+        text: str = "",
+        media_type: str = "",
+        filename: str = "",
+        payload_ref: str = "",
+        org_id: str = "",
+        user_id: str = "",
+        user_phone: str = "",
+        org_phone: str = "",
+        workspace_id: str = "",
+    ) -> Dict[str, Any]:
+        from memory.grid_ns_api import place_ns_object
+        return place_ns_object(
+            ns="sheets",
+            object_name=object_name,
+            text=text or description,
+            description=description,
+            media_type=media_type,
+            filename=filename,
+            payload_ref=payload_ref,
+            user_id=user_id,
+            org_id=org_id,
+            user_phone=user_phone,
+            org_phone=org_phone,
+            workspace_id=workspace_id,
+        )
+
+    @reg.tool(
+        name="sheets.list",
+        category="doc",
+        description="List/search SheetS objects on owner grid (lookup by name/description/media).",
+        mutating=False,
+    )
+    def sheets_list(
+        q: str = "",
+        org_id: str = "",
+        user_id: str = "",
+        user_phone: str = "",
+        org_phone: str = "",
+        workspace_id: str = "",
+    ) -> Dict[str, Any]:
+        from memory.grid_ns_api import list_ns
+        return list_ns(
+            ns="sheets",
+            q=q,
+            user_id=user_id,
+            org_id=org_id,
+            user_phone=user_phone,
+            org_phone=org_phone,
+            workspace_id=workspace_id,
+        )
+
+
     return reg

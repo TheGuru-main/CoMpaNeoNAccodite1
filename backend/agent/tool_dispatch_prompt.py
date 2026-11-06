@@ -15,8 +15,11 @@ if alarm / wake-up / reminder time:
 if "remember this" / follow-up / later / don't forget:
   → followup.remember (task, due, note); list with followup.list
 
-if DBase record create/list:
-  → dbase.place / dbase.list
+if DBase record create/list (incl. image/voice/doc meta):
+  → dbase.place / dbase.list (object_name, description, media_type, filename, payload_ref)
+
+if SheetS create/list:
+  → sheets.place / sheets.list
 
 if sheets / collab / presentations / codespace objects on memory grid:
   → grid.ns.place / grid.ns.list (ns=sheets|collabsheet|presentations|codespace|schedule|workflow)

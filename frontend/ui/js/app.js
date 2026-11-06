@@ -6006,23 +6006,39 @@ document.addEventListener("click", function (ev) {
     );
   };
 
-  // Patch api POST for room messages to always send client_streams_ai when streaming available
+  // ACCD-TRIGGER-GATE: stream AI only when server would invoke
+  function accdShouldInvokeAi(text) {
+    var raw = String(text || "");
+    if (/@(AI|Accodite)\b/i.test(raw)) return true;
+    if (!currentRoomId) return true;
+    var room = null;
+    if (typeof roomList !== "undefined" && roomList && roomList.length) {
+      for (var i = 0; i < roomList.length; i++) {
+        if (roomList[i] && roomList[i].id === currentRoomId) { room = roomList[i]; break; }
+      }
+    }
+    var wtype = (room && (room.workspace_type || room.type)) || "";
+    var members = 1;
+    if (room) {
+      members = room.member_count || room.members_count || (room.members && room.members.length) || 1;
+    }
+    if ((wtype === "personal_brainstorm" || wtype === "personal") && members <= 1) return true;
+    return false;
+  }
+
   if (typeof sendMessage === "function") {
     var _smV2 = sendMessage;
     sendMessage = async function (text, isFirst) {
       var t = String(text || "");
       var canStream = typeof streamGenerate === "function";
-      // Monkey-patch one shot: wrap api for this call is hard; pass via global flag
-      window.__accdClientStreamsAi = canStream;
+      var wantStream = canStream && accdShouldInvokeAi(t);
+      window.__accdClientStreamsAi = wantStream;
       var data;
       try {
         data = await _smV2(t, isFirst);
       } finally {
         window.__accdClientStreamsAi = false;
       }
-      // Stream for BOTH org and regular users whenever stream is available and AI is expected
-      var wantStream = canStream;
-      // Always stream assistant path for interactive chat (user asked / room chat)
       if (wantStream && t.trim()) {
         try {
           await window.accdStreamAiReply(t, {

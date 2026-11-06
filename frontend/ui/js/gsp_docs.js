@@ -174,8 +174,9 @@
       '<strong id="gspDocTitle">DBase</strong>' +
       '<span id="gspDocScope" style="color:#94a3b8;font-size:12px"></span>' +
       '<span style="flex:1"></span>' +
-      '<input class="acd-inp" id="gspDocNameInput" placeholder="Object / doc name" maxlength="64" style="width:140px" />' +
-      '<button type="button" class="acd-btn primary" id="gspDocCreate">Create</button>' +
+      '<input class="acd-inp" id="gspDocNameInput" placeholder="Object name (letter start)" maxlength="64" style="width:130px" />' +
+      '<input class="acd-inp" id="gspDocDescInput" placeholder="Description / about" maxlength="240" style="flex:1;min-width:120px" />' +
+      '<button type="button" class="acd-btn primary" id="gspDocCreate">Place</button>' +
       "</div>" +
       '<div class="acd-top" id="gspKindBar" style="background:#0b1220"></div>' +
       '<div class="acd-body">' +
@@ -306,14 +307,21 @@
 
   async function createDoc() {
     var name = (document.getElementById("gspDocNameInput").value || "").trim();
+    var descEl = document.getElementById("gspDocDescInput");
+    var desc = (descEl && descEl.value ? descEl.value : "").trim();
     if (!/^[A-Za-z][A-Za-z0-9_-]{0,62}$/.test(name)) {
-      alert("Name must start with a letter (A–Z)");
+      alert("Name must start with a letter (A–Z). UID letter-chain is built from this name.");
       return;
     }
     var par = resolveParent();
     state.parentType = par.parentType;
     state.parentId = par.parentId;
     state.parentRepo = par.parentRepo || par.parentId;
+    // Scope parent to room when inside a workspace
+    if (typeof currentRoomId !== "undefined" && currentRoomId) {
+      state.parentType = "room";
+      state.parentId = currentRoomId;
+    }
     try {
       var res = await api("/sandbox/docs", "POST", {
         scope: "user",
@@ -322,28 +330,53 @@
         parent_id: state.parentId,
         doc_name: name,
         kind: apiKind(state.kind),
-        n_rows: state.nRows,
-        n_cols: state.nCols,
+        n_rows: state.kind === "dbase" ? state.nRows : 64,
+        n_cols: state.kind === "dbase" ? state.nCols : 54,
+        description: desc,
       });
       state.docName = name;
-      state.docUid = res.doc_uid || "";
+      state.docUid = res.doc_uid || res.uid || "";
+      var placeMeta = res.placement || res.gsp || {};
+      state.placement = {
+        start_row: placeMeta.start_row || res.start_row || null,
+        start_col: placeMeta.start_col || res.start_col || null,
+        doc_uid: state.docUid,
+      };
       if (state.kind === "presentations") {
-        state.data = { slides: [{ id: "s0", title: name, body: "", gradient: "g00" }] };
+        state.data = { slides: [{ id: "s0", title: name, body: desc || "", gradient: "g00" }] };
       } else if (state.kind === "dbase") {
         state.data = {
           sheets: { Sheet1: { cells: {} } },
           active_sheet: "Sheet1",
           object_name: name,
-          object_desc: "",
+          object_desc: desc,
           cells: {},
+          n_rows: state.nRows,
+          n_cols: state.nCols,
         };
       } else {
-        state.data = { cells: {}, object_name: name, object_desc: "" };
+        state.data = { cells: {}, object_name: name, object_desc: desc };
+      }
+      // Also stamp owner MemoryGrid namespace (phone-scoped instance)
+      try {
+        var nsMap = { dbase: "dbase", sheets: "sheets", collabsheet: "collabsheet", presentations: "pres" };
+        if (typeof window.accdPlaceNs === "function") {
+          await window.accdPlaceNs(nsMap[state.kind] || "dbase", name, desc, desc || name);
+        }
+      } catch (pe) {
+        console.warn("grid ns place", pe);
+      }
+      var sc = document.getElementById("gspDocScope");
+      if (sc) {
+        sc.textContent =
+          (state.docUid ? "uid " + String(state.docUid).slice(0, 24) : "") +
+          (state.placement.start_row != null ? " · row " + state.placement.start_row : "") +
+          (state.parentType === "room" ? " · room" : " · repo");
       }
       await refreshList();
       renderStage();
     } catch (e) {
-      alert("Create failed: " + e.message);
+      alert("Place failed: " + (e.message || e));
     }
   }
 
@@ -733,7 +766,7 @@
   }
 
   function injectButtons() {
-    /* Phase 0: docs ONLY on home hub — never room header */
+    /* Home strip + workspace-scoped strip; never loose unstyled header clones */
     ensureCss();
     var specs = [
       { id: "btnSheetS", label: "SheetS", icon: "fa-table-cells", fn: "acdOpenSheetS" },
@@ -741,14 +774,19 @@
       { id: "btnCollabSheet", label: "CollabSheet", icon: "fa-people-arrows", fn: "acdOpenCollabSheet" },
       { id: "btnPresentations", label: "Presentations", icon: "fa-display", fn: "acdOpenPresentations" },
     ];
+    // Remove stray unstyled / duplicate buttons in global header/nav
     document.querySelectorAll(
-      "#roomDocsStrip, .acd-room-docs, #wsbtnSheetS, #wsbtnDBase, #wsbtnCollabSheet, #wsbtnPresentations, [id^=wsbtn]"
-    ).forEach(function (n) { try { n.remove(); } catch (e) {} });
-    document.querySelectorAll(
-      "#mainNav [id*=btnDBase], #mainNav [id*=btnSheetS], .top-bar [id^=homebtn], .top-bar [id^=wsbtn], header [id^=wsbtn]"
-    ).forEach(function (n) { try { n.remove(); } catch (e) {} });
+      "#mainNav [id*=btnDBase], #mainNav [id*=btnSheetS], #mainNav [id*=Collab], #mainNav [id*=Present]," +
+      ".top-bar [id^=homebtn], .top-bar [id^=wsbtn], header > button[id^=wsbtn], header > button[id^=homebtn]," +
+      "#appHeader [id^=wsbtn], #appHeader [id^=homebtn], .header-actions [id^=wsbtn]"
+    ).forEach(function (n) {
+      try {
+        if (n.closest && (n.closest("#homeDocsStrip") || n.closest("#roomDocsStrip"))) return;
+        n.remove();
+      } catch (e) {}
+    });
 
-    var hub = document.getElementById("homeHub") || document.getElementById("homeActions");
+    var hub = document.getElementById("homeHub") || document.getElementById("homeActions") || document.getElementById("homeBody");
     var homeHost = document.getElementById("homeDocsStrip");
     if (!homeHost && hub) {
       homeHost = document.createElement("div");
@@ -759,6 +797,26 @@
     if (homeHost) {
       specs.forEach(function (s) {
         if (!document.getElementById("home" + s.id)) homeHost.appendChild(mkBtn(s, "home"));
+      });
+    }
+
+    // Workspace-scoped strip (meeting / dept / room) — not on codespace
+    var roomBar =
+      document.getElementById("activeRoomBar") ||
+      document.getElementById("roomHeader") ||
+      document.getElementById("workspaceHeader") ||
+      document.querySelector(".room-top, .workspace-top, #chatHeader");
+    var roomHost = document.getElementById("roomDocsStrip");
+    if (!roomHost && roomBar) {
+      roomHost = document.createElement("div");
+      roomHost.id = "roomDocsStrip";
+      roomHost.className = "acd-room-docs";
+      roomHost.style.cssText = "display:none;flex-wrap:wrap;gap:6px;padding:6px 8px;width:100%";
+      roomBar.appendChild(roomHost);
+    }
+    if (roomHost) {
+      specs.forEach(function (s) {
+        if (!document.getElementById("ws" + s.id)) roomHost.appendChild(mkBtn(s, "ws"));
       });
     }
   }
@@ -803,7 +861,7 @@
   else boot();
   setTimeout(boot, 600);
   setTimeout(boot, 1600);
-  console.log("[acd] docs Phase0 — home-only docs strip; no room header buttons");
+  console.log("[acd] docs: home + workspace strips; place name+desc → uid/grid");
 })();
 
 

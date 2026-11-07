@@ -180,25 +180,58 @@ def _verify_repo_key(rdir: Path, repo: str, repo_uid: str) -> dict:
 
 
 def _scaffold_conventional(rdir: Path, name: str) -> None:
+    """
+    One GSP-placed repo = one project root.
+    Fixed top-level roots (no duplicate names). Existing paths are never overwritten.
+    """
+    roots = (
+        "backend",
+        "frontend",
+        "frontend/js",
+        "frontend/css",
+        "public",
+        "public/js",
+        "public/css",
+        "xml",
+        "tests",
+        "scripts",
+        "docs",
+    )
+    for rel in roots:
+        d = rdir / rel
+        if not d.exists():
+            d.mkdir(parents=True, exist_ok=True)
+        elif d.is_file():
+            raise HTTPException(409, f"path conflict: {rel} is a file, expected directory root")
+
     files = {
-        "backend/main.py": f'# {name}\nprint("Hello from {name}")\n',
         "backend/__init__.py": "",
+        "backend/main.py": f'# {name} — backend entry\nprint("Hello from {name}")\n',
         "frontend/index.html": (
-            f"<!DOCTYPE html>\n<html><head><title>{name}</title></head>"
-            f"<body><h1>{name}</h1></body></html>\n"
+            f"<!DOCTYPE html>\n<html><head><meta charset='utf-8'><title>{name}</title>"
+            f"<link rel='stylesheet' href='css/style.css'></head>"
+            f"<body><h1>{name}</h1><script src='js/app.js'></script></body></html>\n"
         ),
-        "frontend/js/app.js": f"// {name}\nconsole.log('ok');\n",
-        "frontend/css/style.css": "body { margin: 0; }\n",
-        "public/index.html": f"<!DOCTYPE html>\n<html><body><h1>{name}</h1></body></html>\n",
+        "frontend/js/app.js": f"// {name} frontend\nconsole.log({name!r});\n",
+        "frontend/css/style.css": "body { margin: 0; font-family: system-ui, sans-serif; }\n",
+        "public/index.html": f"<!DOCTYPE html>\n<html><body><h1>{name} public</h1></body></html>\n",
         "public/js/main.js": "console.log('public');\n",
         "public/css/main.css": "body { margin: 0; }\n",
-        "README.md": f"# {name}\n\nGSP start_row rooted Codespace repo.\n",
+        "xml/manifest.xml": f'<?xml version="1.0"?><project name="{name}"/>\n',
+        "tests/test_smoke.py": f'def test_smoke():\n    assert True  # {name}\n',
+        "scripts/run.sh": f"#!/usr/bin/env bash\ncd \"$(dirname \"$0\")/..\"\npython3 backend/main.py\n",
+        "README.md": (
+            f"# {name}\n\nGSP-placed Codespace repo. Roots: backend/, frontend/, public/, xml/, tests/, scripts/.\n"
+            f"Do not create a second folder with the same root name inside this repo.\n"
+        ),
     }
     for rel, body in files.items():
         p = rdir / rel
         p.parent.mkdir(parents=True, exist_ok=True)
-        if not p.exists():
-            p.write_text(body, encoding="utf-8")
+        if p.exists():
+            continue  # never overwrite
+        p.write_text(body, encoding="utf-8")
+
 
 
 class RunRequest(BaseModel):
@@ -490,6 +523,7 @@ class FsWrite(BaseModel):
     repo: str = Field(..., min_length=1, max_length=64)
     path: str = Field(..., min_length=1, max_length=512)
     content: str = ""
+    create_only: bool = False
 
 
 class FsMkdir(BaseModel):
@@ -548,7 +582,15 @@ async def fs_write(req: FsWrite):
     if not rel:
         raise HTTPException(400, "path required")
     target = rdir / rel
+    create_only = bool(getattr(req, "create_only", False))
+    if create_only and target.exists():
+        raise HTTPException(409, f"path already exists: {rel}")
+    if target.exists() and target.is_dir():
+        raise HTTPException(409, f"path is a directory: {rel}")
+    # refuse name collision with existing dir of same path component under repo root
     target.parent.mkdir(parents=True, exist_ok=True)
+    if target.parent.exists() and target.parent.is_file():
+        raise HTTPException(409, "parent path is a file")
     target.write_text(req.content or "", encoding="utf-8")
     return {"ok": True, "path": rel, "size": target.stat().st_size}
 
@@ -561,7 +603,15 @@ async def fs_mkdir(req: FsMkdir):
     rel = _safe_rel(req.path)
     if not rel:
         raise HTTPException(400, "path required")
-    (rdir / rel).mkdir(parents=True, exist_ok=True)
+    # Disallow shadowing reserved top-level roots with a file-named twin
+    target = rdir / rel
+    if target.exists():
+        raise HTTPException(409, f"path already exists: {rel}")
+    # If parent path is a file, fail
+    parent = target.parent
+    if parent != rdir and parent.exists() and parent.is_file():
+        raise HTTPException(409, f"parent is a file: {parent.relative_to(rdir)}")
+    target.mkdir(parents=True, exist_ok=False)
     return {"ok": True, "path": rel}
 
 

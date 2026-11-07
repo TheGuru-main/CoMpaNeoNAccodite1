@@ -169,6 +169,24 @@
       if (e.ctrlKey && e.shiftKey && (e.key === "C" || e.key === "c")) {
         e.preventDefault(); beginEofStream(""); return;
       }
+      if (window.__termCtrl && e.key.length === 1 && !e.metaKey) {
+        e.preventDefault();
+        var ch = e.key.toLowerCase();
+        writeLog("^" + ch + "\n");
+        // common: Ctrl+C cancel eof/stream, Ctrl+L clear
+        if (ch === "c") {
+          if (eofMode) { eofMode = false; eofLines = []; eofTargetPath = ""; writeLog("[eof] cancelled\n"); }
+          window.__termCtrl = false; termCtrlOn = false;
+          cmdBuf = ""; inp.value = ""; paintTerm(); return;
+        }
+        if (ch === "l") {
+          logLines = []; window.__termCtrl = false; termCtrlOn = false;
+          cmdBuf = ""; inp.value = ""; paintTerm(); return;
+        }
+        window.__termCtrl = false; termCtrlOn = false;
+        paintTerm();
+        return;
+      }
       if (e.key === "Enter") {
         e.preventDefault();
         var line = cmdBuf;
@@ -703,7 +721,8 @@
 
   function printHelp() {
     writeLog(
-      "pwd ls cd cat run clear help mkdir touch status sector eof\n" +
+      "pwd ls cd cat run clear help mkdir touch clone status sector eof\n" +
+      "clone <url> [RepoName]  shallow into GSP repo (default depth 1)\n" +
       "key <uid>  push|commit [msg]\n" +
       "git|pip|npm|curl via network exec\n" +
       "hotkeys (term focus): Ctrl+Shift+S status · Ctrl+Shift+H help\n" +
@@ -814,23 +833,22 @@
     }
     if (cmd === "ls") {
       if (!requireRepo()) return;
-      var listPath = arg ? resolvePath(arg) : (cwd || "");
       try {
+        var listPath = arg ? resolvePath(arg) : (cwd || "");
         var data = await api(
           "/sandbox/fs/list?scope=" + encodeURIComponent(scope) +
           "&repo=" + encodeURIComponent(repo) +
           "&path=" + encodeURIComponent(listPath)
         );
-        var names = (data.entries || []).filter(function (e) {
-          return e.name !== ".git";
-        }).map(function (e) {
+        var names = (data.entries || []).map(function (e) {
           return e.type === "dir" ? e.name + "/" : e.name;
         });
         writeLog((names.join("  ") || "(empty)") + "\n");
-      } catch (e) { writeLog(errText(e) + "\n"); }
+        writeLog("[repo " + repo + " · cwd /" + (listPath || "") + "]\n");
+      } catch (e) { writeLog("ls: " + errText(e) + "\n"); }
       return;
     }
-    if (cmd === "cd") {
+    if (cmd === "cd")if (cmd === "cd") {
       if (!requireRepo()) return;
       if (!arg || arg === "/" || arg === "\~") {
         setCwd("");
@@ -862,6 +880,53 @@
     }
     
     
+    if (cmd === "clone") {
+      // clone <url> [as RepoName]  — depth 1 into active or named GSP repo
+      if (!parts[1]) { writeLog("usage: clone <git-url> [RepoName]\\n"); return; }
+      var url = parts[1];
+      var asName = parts[2] || "";
+      if (asName === "as" && parts[3]) asName = parts[3];
+      if (asName) {
+        try {
+          // create repo if missing
+          var list = await api("/sandbox/repos?scope=" + encodeURIComponent(scope));
+          var names = (list.repos || []).map(function (r) { return r.name; });
+          if (names.indexOf(asName) < 0) {
+            var created = await api("/sandbox/repos", "POST", { name: asName, scope: scope });
+            if (created.repo_uid) saveRepoUid(asName, created.repo_uid);
+            writeLog("created GSP repo " + asName + (created.start_row != null ? " · r" + created.start_row : "") + "\\n");
+          }
+          await switchRepo(asName);
+        } catch (e) {
+          writeLog("clone/repo: " + errText(e) + "\\n");
+          return;
+        }
+      }
+      if (!requireRepo()) return;
+      var depth = "1";
+      for (var i = 1; i < parts.length; i++) {
+        if (parts[i] === "--depth" && parts[i + 1]) depth = parts[i + 1];
+      }
+      var dest = ".";
+      // clone into current repo working tree via temp then merge is complex;
+      // use git remote fetch into active repo dir
+      var gline = "git init 2>/dev/null; git remote remove origin 2>/dev/null; git remote add origin " + url +
+        " && git fetch --depth " + depth + " origin main 2>/dev/null || git fetch --depth " + depth + " origin master; " +
+        "git checkout -f -B main FETCH_HEAD 2>/dev/null || git checkout -f -B master FETCH_HEAD";
+      writeLog("clone → repo " + repo + " (depth " + depth + ")\\n");
+      try {
+        if (typeof window.acdNetworkTermCommand === "function") {
+          await window.acdNetworkTermCommand("git", gline.split(/\\s+/), {
+            repo: repo, scope: scope, api: api, writeLog: writeLog, errText: errText,
+            line: gline, refreshTree: loadTree
+          });
+        } else {
+          writeLog("network terminal unavailable\\n");
+        }
+        await loadTree();
+      } catch (e) { writeLog("clone: " + errText(e) + "\\n"); }
+      return;
+    }
     if (cmd === "gitimport" || cmd === "pullgh") {
       if (!requireRepo()) return;
       var url = arg || "https://github.com/TheGuru-main/CoMpaNeoNAccodite1.git";
@@ -932,6 +997,7 @@ if (cmd === "cat" && arg) {
       var mp = resolvePath(arg);
       try {
         await api("/sandbox/fs/mkdir", "POST", { scope: scope, repo: repo, path: mp });
+        writeLog("mkdir " + mp + "\n");
         await api("/sandbox/fs/write", "POST", { scope: scope, repo: repo, path: mp + "/.keep", content: "" });
         await loadTree();
       } catch (e) { writeLog(errText(e) + "\n"); }
@@ -1028,16 +1094,24 @@ if (cmd === "cat" && arg) {
         try {
           var g = await api("/sandbox/repos/" + encodeURIComponent(repo) + "/rootcheck?scope=" + encodeURIComponent(scope) + "&cwd=" + encodeURIComponent(cwd || ""));
           writeLog(
-            "rootcheck " + (g.ok ? "OK" : "FAIL") + "\n" +
-            "  repo=" + repo + " on_disk=" + g.on_disk + "\n" +
-            "  start_row=" + (g.start_row || "?") + " expected=" + (g.expected_start_row || "?") + "\n" +
-            "  repo_uid=" + (g.repo_uid || "?") + "\n" +
-            "  cwd=" + (g.cwd || "/") + " cwd_ok=" + g.cwd_ok + "\n" +
-            "  files=" + (g.files || 0) + " manifest=" + g.manifest_listed + "\n" +
-            (g.issues && g.issues.length ? ("  issues: " + g.issues.join("; ") + "\n") : "")
+            "rootcheck " + (g.ok ? "OK" : "FAIL") + "
+" +
+            "  repo=" + repo + " on_disk=" + g.on_disk + "
+" +
+            "  start_row=" + (g.start_row || "?") + " expected=" + (g.expected_start_row || "?") + "
+" +
+            "  repo_uid=" + (g.repo_uid || "?") + "
+" +
+            "  cwd=" + (g.cwd || "/") + " cwd_ok=" + g.cwd_ok + "
+" +
+            "  files=" + (g.files || 0) + " manifest=" + g.manifest_listed + "
+" +
+            (g.issues && g.issues.length ? ("  issues: " + g.issues.join("; ") + "
+") : "")
           );
         } catch (e) {
-          writeLog("rootcheck FAIL: " + errText(e) + "\n");
+          writeLog("rootcheck FAIL: " + errText(e) + "
+");
         }
         return;
       }
@@ -1160,7 +1234,7 @@ if (cmd === "cat" && arg) {
         if (id === "btnSaveFile") return saveFile();
         if (id === "btnPushRepo") return pushRepo();
         if (id === "btnToggleSidebar") return setSidebar(!sidebarOpen);
-        if (id === "btnCodeExplorerClose") return setSidebar(false);
+        if (id === "btnCloseSidebar") return setSidebar(false);
         if (id === "btnToggleTerm") return setTermCollapsed(!termCollapsed);
       } catch (err) {
         console.error("[codespace]", id, err);
@@ -1250,9 +1324,11 @@ if (cmd === "cat" && arg) {
         await openFirstInActiveRepo();
       }
     } catch (e) {
-      writeLog("boot: " + errText(e) + "\n");
+      writeLog("boot: " + errText(e) + "
+");
     }
-    writeLog("Codespace ready · type help\n");
+    writeLog("Codespace ready · type help
+");
     paintTerm();
     setTimeout(function () {
       try { layoutEditor(); } catch (e) {}
@@ -1281,7 +1357,7 @@ if (cmd === "cat" && arg) {
     wireBtn("btnSaveFile", saveFile);
     wireBtn("btnPushRepo", pushRepo);
     wireBtn("btnToggleSidebar", function () { setSidebar(!sidebarOpen); });
-    wireBtn("btnCodeExplorerClose", function () { setSidebar(false); });
+    wireBtn("btnCloseSidebar", function () { setSidebar(false); });
     wireBtn("btnToggleTerm", function () { setTermCollapsed(!termCollapsed); });
     // hub open is owned by app.js acdOpenCodespace — do not steal btnHomeCode here
   }

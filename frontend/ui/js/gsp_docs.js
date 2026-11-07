@@ -158,7 +158,10 @@
       ".acd-doc-item{display:block;width:100%;text-align:left;margin:0 0 6px;padding:10px 12px;border-radius:12px;border:1px solid #1e293b;background:#111827;color:#e2e8f0;cursor:pointer}" +
       ".acd-doc-item:hover,.acd-doc-item.on{border-color:#22d3ee}" +
       ".acd-face{min-height:360px;border-radius:18px;padding:32px;color:#fff;margin:12px}" +
-      ".acd-empty{text-align:center;padding:48px 20px;color:#94a3b8}";
+      ".acd-empty{text-align:center;padding:48px 20px;color:#94a3b8}" +
+      ".acd-cell.placed{outline:2px solid #22d3ee;box-shadow:0 0 0 1px #22d3ee inset}" +
+      ".acd-grid-wrap{overflow:auto;max-height:calc(100vh - 220px);-webkit-overflow-scrolling:touch}" +
+      ".acd-grid{display:grid;gap:1px;background:#1e293b;min-width:100%}";
     document.head.appendChild(s);
   }
 
@@ -487,13 +490,21 @@
         var nsMap = { dbase: "dbase", sheets: "sheets", collabsheet: "collabsheet", presentations: "pres" };
         if (typeof window.accdPlaceNs === "function") {
           var pm = state.pendingMedia || {};
-          await window.accdPlaceNs(nsMap[state.kind] || "dbase", name, desc, desc || name, {
+          var placeRes = await window.accdPlaceNs(nsMap[state.kind] || "dbase", name, desc, desc || name, {
             media_type: pm.media_type || "text",
             filename: pm.filename || "",
             mime: pm.mime || "",
             payload_ref: pm.payload_ref || "",
             payload_b64: pm.payload_b64 || "",
           });
+          if (placeRes && (placeRes.placement || placeRes.start_row)) {
+            state.placement = placeRes.placement || {
+              start_row: placeRes.start_row,
+              start_col: placeRes.start_col,
+              doc_uid: placeRes.doc_uid,
+            };
+            state.docUid = (state.placement && state.placement.doc_uid) || state.docUid;
+          }
           state.pendingMedia = null;
           var chip = document.getElementById("gspMediaChip");
           if (chip) chip.textContent = "";
@@ -642,7 +653,21 @@
     var objName = state.data.object_name || state.docName || "";
     var objDesc = state.data.object_desc || "";
 
-    var html =
+    var place = state.placement || {};
+    var html = "";
+    if (state.kind === "dbase") {
+      html +=
+        '<div class="acd-entry" style="align-items:center">' +
+        '<div><label>Grid rows</label><input class="acd-inp" id="cfgRows" type="number" min="8" max="128" value="' +
+        rows +
+        '" style="width:72px" /></div>' +
+        '<div><label>Grid cols</label><input class="acd-inp" id="cfgCols" type="number" min="8" max="54" value="' +
+        cols +
+        '" style="width:72px" /></div>' +
+        '<button type="button" class="acd-btn primary" id="cfgApply">Apply grid size</button>' +
+        '<span style="color:#94a3b8;font-size:12px">DBase size is configurable · SheetS stays 54×64</span></div>';
+    }
+    html +=
       '<div class="acd-entry">' +
       '<div><label>Object name</label><input class="acd-inp" id="objName" style="width:100%" value="' +
       escapeHtml(objName) +
@@ -650,7 +675,15 @@
       '<div><label>Description</label><input class="acd-inp" id="objDesc" style="width:100%" value="' +
       escapeHtml(objDesc) +
       '" placeholder="What this base holds" /></div>' +
-      '<button type="button" class="acd-btn primary" id="objSave">Save meta</button></div>';
+      '<button type="button" class="acd-btn primary" id="objSave">Save meta</button>' +
+      (place.start_row
+        ? '<span style="color:#7dd3fc;font-size:12px">GSP row ' +
+          place.start_row +
+          (place.start_col != null ? " · col " + place.start_col : "") +
+          (place.doc_uid ? " · uid " + String(place.doc_uid).slice(0, 20) : "") +
+          "</span>"
+        : "") +
+      "</div>";
 
     html +=
       '<div class="acd-lookup">' +
@@ -901,7 +934,6 @@
   }
 
   function injectButtons() {
-    /* Home strip + workspace-scoped strip; never loose unstyled header clones */
     ensureCss();
     var specs = [
       { id: "btnSheetS", label: "SheetS", icon: "fa-table-cells", fn: "acdOpenSheetS" },
@@ -909,18 +941,17 @@
       { id: "btnCollabSheet", label: "CollabSheet", icon: "fa-people-arrows", fn: "acdOpenCollabSheet" },
       { id: "btnPresentations", label: "Presentations", icon: "fa-display", fn: "acdOpenPresentations" },
     ];
-    // Remove stray unstyled / duplicate buttons in global header/nav
-    document.querySelectorAll(
-      "#mainNav [id*=btnDBase], #mainNav [id*=btnSheetS], #mainNav [id*=Collab], #mainNav [id*=Present]," +
-      ".top-bar [id^=homebtn], .top-bar [id^=wsbtn], header > button[id^=wsbtn], header > button[id^=homebtn]," +
-      "#appHeader [id^=wsbtn], #appHeader [id^=homebtn], .header-actions [id^=wsbtn]"
-    ).forEach(function (n) {
+    document.querySelectorAll("button").forEach(function (n) {
       try {
-        if (n.closest && (n.closest("#homeDocsStrip") || n.closest("#roomDocsStrip"))) return;
-        n.remove();
+        if (n.closest("#homeDocsStrip") || n.closest("#roomDocsStrip") || n.closest("#gspDocsPanel")) return;
+        var lab = ((n.textContent || "") + " " + (n.id || "")).toLowerCase();
+        if (!/sheets|dbase|collab|presentation|excel/.test(lab)) return;
+        if (n.closest("header") || n.closest(".top-bar") || n.closest("#mainNav") || n.closest(".app-header") || n.parentElement && n.parentElement.id === "homeActions") {
+          // keep only if inside homeDocsStrip
+          if (!n.closest("#homeDocsStrip")) n.remove();
+        }
       } catch (e) {}
     });
-
     var hub = document.getElementById("homeHub") || document.getElementById("homeActions") || document.getElementById("homeBody");
     var homeHost = document.getElementById("homeDocsStrip");
     if (!homeHost && hub) {
@@ -934,8 +965,6 @@
         if (!document.getElementById("home" + s.id)) homeHost.appendChild(mkBtn(s, "home"));
       });
     }
-
-    // Workspace-scoped strip (meeting / dept / room) — not on codespace
     var roomBar =
       document.getElementById("activeRoomBar") ||
       document.getElementById("roomHeader") ||

@@ -128,7 +128,7 @@ def place_ns_object(
     ]
     body = body + "\n" + "\n".join(x for x in about if x)
 
-    doc_id = place_in_owner_grid(
+    placed = place_in_owner_grid(
         grid,
         ns=ns,
         object_name=object_name,
@@ -138,9 +138,28 @@ def place_ns_object(
         workspace_id=workspace_id,
         extra=meta_extra,
     )
+    if isinstance(placed, dict):
+        return {
+            "ok": True,
+            "doc_id": placed.get("doc_id"),
+            "doc_uid": placed.get("doc_uid"),
+            "start_row": placed.get("start_row"),
+            "start_col": placed.get("start_col"),
+            "ns": ns,
+            "object_name": object_name,
+            "description": description,
+            "media_type": media_type or "text",
+            "filename": filename or "",
+            "payload_ref": payload_ref or "",
+            "placement": {
+                "start_row": placed.get("start_row"),
+                "start_col": placed.get("start_col"),
+                "doc_uid": placed.get("doc_uid"),
+            },
+        }
     return {
         "ok": True,
-        "doc_id": doc_id,
+        "doc_id": placed,
         "ns": ns,
         "object_name": object_name,
         "description": description,

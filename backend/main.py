@@ -577,7 +577,7 @@ class OrgJoinRequest(BaseModel):
     password: str = Field(..., min_length=6, max_length=200)
     worker_credential: str = Field(..., min_length=3, max_length=255)
     department: str = Field(..., min_length=1, max_length=100)
-    role: str = "member"
+    role: str = "member"  # must be in org live_roles enabled keys
     title: Optional[str] = None
     language: str = "en"
 
@@ -732,6 +732,73 @@ async def org_create(req: OrgCreateRequest):
             raise HTTPException(400, f"database conflict: {msg[:200]}") from e
         print(f"[ACCD-ORG] create failed: {type(e).__name__}: {e}")
         raise HTTPException(500, f"org create failed: {type(e).__name__}") from e
+    finally:
+        db.close()
+
+
+
+
+# ACCD-LIVE-ROLES: admin configures; workers pick at signup
+@app.get("/orgs/{org_id}/roles")
+async def org_list_roles(org_id: str, user=Depends(get_current_user)):
+    from db_models import Organization
+    from org.live_roles import get_org_roles
+    db = SessionLocal()
+    try:
+        org = db.query(Organization).filter(Organization.id == org_id).first()
+        if not org:
+            raise HTTPException(404, "org not found")
+        return {"ok": True, "roles": get_org_roles(org)}
+    finally:
+        db.close()
+
+
+@app.put("/orgs/{org_id}/roles")
+async def org_set_roles(org_id: str, body: dict, user=Depends(get_current_user)):
+    from db_models import Organization, OrganizationMembership
+    from org.live_roles import set_org_roles, get_org_roles
+    from org.roles import ROLE_CEO, ROLE_OWNER, can_write_ltm
+    db = SessionLocal()
+    try:
+        org = db.query(Organization).filter(Organization.id == org_id).first()
+        if not org:
+            raise HTTPException(404, "org not found")
+        mem = db.query(OrganizationMembership).filter(
+            OrganizationMembership.organization_id == org.id,
+            OrganizationMembership.user_id == user.id,
+            OrganizationMembership.credential_active == True,
+        ).first()
+        role = getattr(mem, "role", None) if mem else None
+        if role not in (ROLE_CEO, ROLE_OWNER, "ceo", "owner", "admin") and not (role and can_write_ltm(role)):
+            raise HTTPException(403, "only org admin/ceo can edit live roles")
+        set_org_roles(org, body.get("roles") or [])
+        db.add(org)
+        db.commit()
+        return {"ok": True, "roles": get_org_roles(org)}
+    finally:
+        db.close()
+
+
+@app.get("/auth/org/roles_by_credential")
+async def roles_by_credential(worker_credential: str):
+    """Public-ish: worker signup UI lists enabled roles for an org credential."""
+    from db_models import Organization
+    from org.live_roles import get_org_roles
+    db = SessionLocal()
+    try:
+        # credential format orgname:orgphone:workerid — match phone segment
+        parts = (worker_credential or "").split(":")
+        org = None
+        if len(parts) >= 2:
+            phone = parts[1].strip()
+            org = db.query(Organization).filter(Organization.phone == phone).first()
+        if not org and len(parts) >= 1:
+            # fallback name
+            org = db.query(Organization).filter(Organization.name == parts[0].strip()).first()
+        if not org:
+            return {"ok": True, "roles": [r for r in __import__("org.live_roles", fromlist=["default_role_catalog"]).default_role_catalog() if r.get("enabled")]}
+        roles = [r for r in get_org_roles(org) if r.get("enabled")]
+        return {"ok": True, "org_id": str(org.id), "org_name": org.name, "roles": roles}
     finally:
         db.close()
 

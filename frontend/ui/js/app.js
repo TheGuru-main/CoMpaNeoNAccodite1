@@ -5907,14 +5907,8 @@ document.addEventListener("click", function (ev) {
       var t = String(text || "");
       var data = await _smMarathon(t, isFirst);
       // Prefer live SSE bubble when stream exists; skip duplicate one-shot AI if we stream
-      var wantStream = typeof streamGenerate === "function" && (
-        /@AI\b/i.test(t) || !currentRoomId || (typeof roomList !== "undefined" && roomList.some(function (r) {
-          return r.id === currentRoomId && (r.workspace_type === "personal_brainstorm" || r.type === "personal_brainstorm");
-        }))
-      );
-      if (wantStream) {
-        try { await window.accdStreamAiReply(t); } catch (e) { console.warn("stream ai", e); }
-      }
+      // delegated to ACCD-TRIGGER-GATE (V2); skip double stream here
+      if (false) { try { await window.accdStreamAiReply(t); } catch (e) {} }
       return data;
     };
   }
@@ -6007,10 +6001,12 @@ document.addEventListener("click", function (ev) {
   };
 
   // ACCD-TRIGGER-GATE: stream AI only when server would invoke
+  // - personal_brainstorm solo (or no room / home chat): auto
+  // - group / org / dept / meeting / team: only @AI or @Accodite (or explicit slide-to-AI)
   function accdShouldInvokeAi(text) {
     var raw = String(text || "");
     if (/@(AI|Accodite)\b/i.test(raw)) return true;
-    if (!currentRoomId) return true;
+    if (!currentRoomId) return true; // home / no room → personal agent
     var room = null;
     if (typeof roomList !== "undefined" && roomList && roomList.length) {
       for (var i = 0; i < roomList.length; i++) {
@@ -6022,7 +6018,9 @@ document.addEventListener("click", function (ev) {
     if (room) {
       members = room.member_count || room.members_count || (room.members && room.members.length) || 1;
     }
+    // Solo personal brainstorm only
     if ((wtype === "personal_brainstorm" || wtype === "personal") && members <= 1) return true;
+    // Org / group / meeting / department / team: require trigger
     return false;
   }
 
@@ -6032,6 +6030,7 @@ document.addEventListener("click", function (ev) {
       var t = String(text || "");
       var canStream = typeof streamGenerate === "function";
       var wantStream = canStream && accdShouldInvokeAi(t);
+      // Only suppress server AI when *this client* will stream the same turn
       window.__accdClientStreamsAi = wantStream;
       var data;
       try {
@@ -6040,12 +6039,16 @@ document.addEventListener("click", function (ev) {
         window.__accdClientStreamsAi = false;
       }
       if (wantStream && t.trim()) {
+        if (window.__accdAiStreamBusy) return data;
+        window.__accdAiStreamBusy = true;
         try {
           await window.accdStreamAiReply(t, {
             slideTarget: (typeof _replyTo !== "undefined" ? _replyTo : null),
           });
         } catch (e) {
           console.warn("stream ai", e);
+        } finally {
+          window.__accdAiStreamBusy = false;
         }
       }
       if (typeof clearReplyTarget === "function") {
@@ -6056,6 +6059,34 @@ document.addEventListener("click", function (ev) {
       return data;
     };
   }
+
+  // ACCD-AI-DEDUP
+  (function () {
+    if (window.__accdAiDedup) return;
+    window.__accdAiDedup = true;
+    var lastPrompt = "";
+    var orig = window.accdStreamAiReply;
+    if (typeof orig === "function") {
+      window.accdStreamAiReply = async function (promptText, opts) {
+        lastPrompt = String(promptText || "").slice(0, 240);
+        window.__accdLastStreamAt = Date.now();
+        return orig(promptText, opts);
+      };
+    }
+    var append = window.appendMessage;
+    if (typeof append === "function") {
+      window.appendMessage = function (msg) {
+        try {
+          if (msg && (msg.role === "ai" || msg.type === "ai_message")) {
+            if (window.__accdLastStreamAt && Date.now() - window.__accdLastStreamAt < 20000) {
+              return null;
+            }
+          }
+        } catch (e) {}
+        return append.apply(this, arguments);
+      };
+    }
+  })();
 
   // Ensure room message POSTs include client_streams_ai
   if (typeof api === "function" && !api.__accdStreamFlag) {

@@ -88,32 +88,36 @@ def place_in_owner_grid(
 ) -> Any:
     """
     Write a namespace object into the owner instance MemoryGrid.
-    Uses tokenizer letter-chain for doc_uid when available.
+    Placement: GSP start_row from object name letter-chain (L+S), not token S.
     """
     if grid is None:
         raise RuntimeError("owner grid required")
     ns = assert_ns(ns)
-    doc_uid = ""
     start_row = None
+    start_col = None
+    doc_uid = ""
     try:
-        from tokenizer.tokenizer import uid_for_token, lexical_S, lexical_L, first_letter_index
-        doc_uid = uid_for_token(object_name, lang)
-        # placement coords for the object name (placement uses name+rules callers may override)
-        L = lexical_L(object_name, lang)
-        S = lexical_S(object_name, lang)  # token-chain sum for name identity in grid meta
-        # Note: GSP user placement S remains phone digit sum elsewhere
-        c = first_letter_index(object_name, lang) or 0
-        start_row = ((L + S - 1) % 64) + 1
-    except Exception:
+        from gsp_chain import start_row_for_name, uid_from_name, letter_chain
+        place = start_row_for_name(object_name, lang=lang)
+        start_row = int(place.get("start_row") or 0) or None
+        doc_uid = str(place.get("uid") or uid_from_name(object_name, lang=lang) or "")
+        chain = place.get("chain")
+        if chain is None:
+            try:
+                chain = letter_chain(object_name, lang=lang)
+            except Exception:
+                chain = []
+        if chain:
+            start_col = int(chain[0]) % 54
+    except Exception as e:
+        print("[ns] gsp place:", type(e).__name__, e)
         try:
-            from gsp_chain import uid_from_name, start_row_for_name
-            doc_uid = uid_from_name(object_name)
-            info = start_row_for_name(object_name)
-            start_row = info.get("start_row")
+            from gsp_chain import uid_from_name
+            doc_uid = uid_from_name(object_name, lang=lang)
         except Exception:
             doc_uid = object_name
 
-    body = text if text else f"{object_name}\n{description}".strip()
+    body = text or description or object_name
     meta = build_metadata(
         ns=ns,
         object_name=object_name,
@@ -122,12 +126,21 @@ def place_in_owner_grid(
         owner_phone_uid=owner_phone_uid,
         workspace_id=workspace_id,
         start_row=start_row,
+        start_col=start_col,
         extra=extra,
     )
     meta["source_marker"] = MARKER_PREFIX[ns]
     if hasattr(grid, "add_document"):
-        return grid.add_document(body, lang=lang, source=MARKER_PREFIX[ns], metadata=meta)
+        return {
+            "doc_id": grid.add_document(body, lang=lang, source=MARKER_PREFIX[ns], metadata=meta),
+            "doc_uid": doc_uid,
+            "start_row": start_row,
+            "start_col": start_col,
+            "object_name": object_name,
+            "ns": ns,
+        }
     raise RuntimeError("grid has no add_document")
+
 
 
 def list_namespace(grid, ns: str, *, workspace_id: str = "") -> List[Dict[str, Any]]:

@@ -2322,6 +2322,25 @@ except Exception as _accd_generate_rebind_error:
 #   stream_text   -> cumulative response
 # ============================================================================
 
+@app.post("/rooms/{room_id}/messages/ai")
+async def persist_room_ai_message(room_id: str, body: dict, user: User = Depends(get_current_user)):
+    """Client fallback: persist a completed stream AI bubble into the room + B2."""
+    from agent.stream_persist import persist_stream_ai_reply
+    text = (body.get("content") or body.get("text") or "").strip()
+    if not text:
+        raise HTTPException(400, "content required")
+    out = persist_stream_ai_reply(
+        user=user,
+        text=text,
+        workspace_id=room_id,
+        room_id=room_id,
+        org_id=body.get("org_id"),
+        ref_message_id=body.get("ref_message_id") or body.get("replies_to"),
+        prompt=body.get("prompt") or "",
+    )
+    return out
+
+
 try:
     from fastapi.responses import StreamingResponse
     from agent.response_stream import ResponseStream
@@ -2446,17 +2465,56 @@ try:
                     piece = w if i == 0 else (" " + w)
                     acc += piece
                     yield "data: " + json.dumps({"event": "token", "text": piece, "stream_text": acc}, ensure_ascii=False) + "\n\n"
-                yield "data: " + json.dumps({"event": "complete", "stream_text": acc, "text": acc}, ensure_ascii=False) + "\n\n"
+                # ACCD-STREAM-PERSIST
+                try:
+                    from agent.stream_persist import persist_stream_ai_reply
+                    pers = persist_stream_ai_reply(
+                        user=user, text=acc,
+                        workspace_id=getattr(req, "workspace_id", None),
+                        room_id=getattr(req, "room_id", None),
+                        org_id=getattr(req, "org_id", None),
+                        ref_message_id=getattr(req, "ref_message_id", None),
+                        prompt=query,
+                    )
+                except Exception as _pe:
+                    pers = {"ok": False, "error": str(_pe)}
+                    print("[ACCD-STREAM] persist tool:", _pe)
+                yield "data: " + json.dumps({"event": "complete", "stream_text": acc, "text": acc, "persist": pers}, ensure_ascii=False) + "\n\n"
                 return
 
             streamer = ResponseStream(model=model, vocab=tokenizer_vocab or {},
                 reverse=reverse_vocab or {}, model_version="1.0.0.1idr", device=device)
             context = streamer.create_context(language="en")
+            _final_acc = ""
             async for event in streamer.generate(
                 prompt=prompt, context=context,
                 max_len=min(max(int(req.max_len), 1), 2048),
                 temperature=max(float(req.temperature), 0.05), stream_delay=0.0):
+                try:
+                    if isinstance(event, dict):
+                        if event.get("stream_text"):
+                            _final_acc = str(event.get("stream_text") or "")
+                        if event.get("event") in ("complete", "done") and event.get("text"):
+                            _final_acc = str(event.get("text") or _final_acc)
+                except Exception:
+                    pass
                 yield "data: " + json.dumps(event, ensure_ascii=False) + "\n\n"
+            # After model stream ends without explicit complete event, still persist
+            if _final_acc.strip():
+                try:
+                    from agent.stream_persist import persist_stream_ai_reply
+                    pers = persist_stream_ai_reply(
+                        user=user, text=_final_acc,
+                        workspace_id=getattr(req, "workspace_id", None),
+                        room_id=getattr(req, "room_id", None),
+                        org_id=getattr(req, "org_id", None),
+                        ref_message_id=getattr(req, "ref_message_id", None),
+                        prompt=query,
+                    )
+                    yield "data: " + json.dumps({"event": "complete", "stream_text": _final_acc, "text": _final_acc, "persist": pers}, ensure_ascii=False) + "\n\n"
+                except Exception as _pe2:
+                    print("[ACCD-STREAM] persist model:", _pe2)
+                    yield "data: " + json.dumps({"event": "complete", "stream_text": _final_acc, "text": _final_acc}, ensure_ascii=False) + "\n\n"
 
         return StreamingResponse(event_generator(), media_type="text/event-stream", headers={
             "Cache-Control": "no-cache, no-transform", "Connection": "keep-alive",

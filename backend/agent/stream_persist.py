@@ -1,0 +1,123 @@
+"""
+Persist streamed AI replies after /generate/stream completes.
+
+- Always try DB Message(role=ai) when workspace_id/room_id is present
+- Snapshot text to B2 (or local) under owner phone + workspace scope
+"""
+from __future__ import annotations
+import json
+import os
+import time
+import uuid
+from typing import Any, Optional
+
+
+def _phone_uid(user) -> str:
+    try:
+        from memory.owner_identity import phone_uid
+        return phone_uid(getattr(user, "phone", None)) or str(getattr(user, "id", ""))
+    except Exception:
+        return str(getattr(user, "id", "") or "anon")
+
+
+def _org_phone(org_id: Optional[str]) -> str:
+    if not org_id:
+        return ""
+    try:
+        from memory.owner_identity import resolve_org_phone
+        return resolve_org_phone(org_id=org_id) or ""
+    except Exception:
+        return ""
+
+
+def persist_stream_ai_reply(
+    *,
+    user,
+    text: str,
+    workspace_id: Optional[str] = None,
+    room_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+    ref_message_id: Optional[str] = None,
+    prompt: str = "",
+) -> dict:
+    text = (text or "").strip()
+    if not text:
+        return {"ok": False, "error": "empty"}
+
+    ws = (workspace_id or room_id or "").strip()
+    msg_id = None
+    b2_key = None
+    owner = _org_phone(org_id) or _phone_uid(user)
+    kind = "org" if org_id else "user"
+
+    # --- DB message ---
+    if ws:
+        try:
+            from database import SessionLocal
+            from db_models import Message
+            import uuid as _uuid
+
+            db = SessionLocal()
+            try:
+                ref = None
+                if ref_message_id:
+                    try:
+                        ref = _uuid.UUID(str(ref_message_id))
+                    except Exception:
+                        ref = None
+                row = Message(
+                    id=_uuid.uuid4(),
+                    workspace_id=_uuid.UUID(str(ws)),
+                    user_id=user.id,
+                    role="ai",
+                    content=text[:50000],
+                    replies_to=ref,
+                    detected_domain="general",
+                    keywords=[],
+                    grid_cv={},
+                    temporal_context={"source": "stream", "prompt_preview": (prompt or "")[:200]},
+                )
+                db.add(row)
+                db.commit()
+                db.refresh(row)
+                msg_id = str(row.id)
+            finally:
+                db.close()
+        except Exception as e:
+            print("[stream_persist] db:", type(e).__name__, e)
+
+    # --- B2 / local snapshot ---
+    payload = {
+        "role": "ai",
+        "text": text[:50000],
+        "workspace_id": ws,
+        "org_id": org_id or "",
+        "owner": owner,
+        "kind": kind,
+        "ref_message_id": ref_message_id or "",
+        "prompt_preview": (prompt or "")[:300],
+        "message_id": msg_id,
+        "ts": int(time.time()),
+    }
+    key = f"streams/{kind}/{owner or 'anon'}/{ws or 'home'}/{int(time.time())}_{uuid.uuid4().hex[:10]}.json"
+    raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    try:
+        from storage.b2 import b2_enabled, b2_put_bytes
+        if b2_enabled() and os.environ.get("ACCD_B2_ENABLED", "1") not in ("0", "false", "False"):
+            b2_key = b2_put_bytes(key, raw, content_type="application/json; charset=utf-8")
+        else:
+            raise RuntimeError("b2 off")
+    except Exception as e:
+        print("[stream_persist] b2:", type(e).__name__, e)
+        try:
+            from pathlib import Path
+            root_dir = Path(os.environ.get("ACCD_UPLOAD_DIR") or "/tmp/accd-uploads")
+            dest = root_dir / "streams" / kind / (owner or "anon") / (ws or "home")
+            dest.mkdir(parents=True, exist_ok=True)
+            path = dest / f"{int(time.time())}_{uuid.uuid4().hex[:10]}.json"
+            path.write_bytes(raw)
+            b2_key = f"file://{path}"
+        except Exception as e2:
+            print("[stream_persist] local:", type(e2).__name__, e2)
+
+    return {"ok": True, "message_id": msg_id, "snapshot": b2_key, "owner": owner, "kind": kind}

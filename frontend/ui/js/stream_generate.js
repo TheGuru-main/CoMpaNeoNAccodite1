@@ -63,7 +63,13 @@ async function streamGenerate(prompt, onToken, onDone, onError, options) {
     if (ev.stream_text != null) latestText = String(ev.stream_text);
     if (ev.event === "complete" || ev.event === "done" || ev.done === true) {
       finished = true;
-      if (onDone) onDone(ev.stream_text != null ? String(ev.stream_text) : (ev.text != null ? String(ev.text) : latestText));
+      var finalTxt = ev.stream_text != null ? String(ev.stream_text) : (ev.text != null ? String(ev.text) : latestText);
+      if (onDone) onDone(finalTxt, ev);
+      try {
+        if (typeof window.accdPersistStreamAi === "function") {
+          window.accdPersistStreamAi(finalTxt, ev && ev.persist, options);
+        }
+      } catch (_) {}
       try { reader.cancel(); } catch (_) {} return;
     }
     if (ev.event === "cancelled") {

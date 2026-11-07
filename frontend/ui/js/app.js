@@ -6156,3 +6156,24 @@ document.addEventListener("click", function (ev) {
     };
   }
 })();
+
+
+// ACCD-STREAM-PERSIST-CLIENT: ensure AI bubble survives room re-entry
+window.accdPersistStreamAi = async function (text, serverPersist, options) {
+  try {
+    if (serverPersist && serverPersist.ok && serverPersist.message_id) return serverPersist;
+    var room = (typeof currentRoomId !== "undefined" && currentRoomId) ? currentRoomId : (options && options.room_id);
+    if (!room || !text) return;
+    var api = (typeof window.api === "function") ? window.api : null;
+    if (!api) return;
+    var body = {
+      content: String(text).slice(0, 50000),
+      org_id: (typeof activeOrgId !== "undefined" ? activeOrgId : null),
+      ref_message_id: (options && options.ref_message_id) || null,
+      prompt: (options && options.prompt) || "",
+    };
+    return await api("/rooms/" + encodeURIComponent(room) + "/messages/ai", "POST", body);
+  } catch (e) {
+    console.warn("persist stream ai", e);
+  }
+};

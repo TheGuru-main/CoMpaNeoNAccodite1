@@ -3090,7 +3090,12 @@ openRoom = async function(id) {
             appendMessage('ai', 'Workspace ready. Say something to begin.');
         } else {
             const meId = currentUser && currentUser.id;
-            msgs.forEach(m => renderMessageItem(m, { mine: meId && m.user_id === meId }));
+            let aiN = 0;
+            msgs.forEach(m => {
+              if (m && (m.role === 'ai' || m.role === 'assistant')) aiN++;
+              renderMessageItem(m, { mine: meId && m.user_id === meId });
+            });
+            console.log('[ACCD] room messages', msgs.length, 'ai', aiN);
         }
     } catch (e) {
         appendMessage('ai', `Could not load room: ${e.message}`);
@@ -6060,33 +6065,25 @@ document.addEventListener("click", function (ev) {
     };
   }
 
-  // ACCD-AI-DEDUP
+  // ACCD-AI-DEDUP — only suppress websocket echo while stream is live
   (function () {
     if (window.__accdAiDedup) return;
     window.__accdAiDedup = true;
-    var lastPrompt = "";
     var orig = window.accdStreamAiReply;
     if (typeof orig === "function") {
       window.accdStreamAiReply = async function (promptText, opts) {
-        lastPrompt = String(promptText || "").slice(0, 240);
         window.__accdLastStreamAt = Date.now();
-        return orig(promptText, opts);
-      };
-    }
-    var append = window.appendMessage;
-    if (typeof append === "function") {
-      window.appendMessage = function (msg) {
+        window.__accdStreamLive = true;
         try {
-          if (msg && (msg.role === "ai" || msg.type === "ai_message")) {
-            if (window.__accdLastStreamAt && Date.now() - window.__accdLastStreamAt < 20000) {
-              return null;
-            }
-          }
-        } catch (e) {}
-        return append.apply(this, arguments);
+          return await orig(promptText, opts);
+        } finally {
+          window.__accdStreamLive = false;
+          window.__accdLastStreamAt = Date.now();
+        }
       };
     }
   })();
+
 
   // Ensure room message POSTs include client_streams_ai
   if (typeof api === "function" && !api.__accdStreamFlag) {
@@ -6161,19 +6158,31 @@ document.addEventListener("click", function (ev) {
 // ACCD-STREAM-PERSIST-CLIENT: ensure AI bubble survives room re-entry
 window.accdPersistStreamAi = async function (text, serverPersist, options) {
   try {
-    if (serverPersist && serverPersist.ok && serverPersist.message_id) return serverPersist;
-    var room = (typeof currentRoomId !== "undefined" && currentRoomId) ? currentRoomId : (options && options.room_id);
-    if (!room || !text) return;
+    text = String(text || "").trim();
+    if (!text) return;
+    if (serverPersist && serverPersist.message_id) {
+      console.log("[ACCD] stream AI saved", serverPersist.message_id);
+      return serverPersist;
+    }
+    var room = (options && (options.room_id || options.workspace_id))
+      || (typeof currentRoomId !== "undefined" ? currentRoomId : null);
+    if (!room) {
+      console.warn("[ACCD] persist skip: no room_id");
+      return;
+    }
     var api = (typeof window.api === "function") ? window.api : null;
     if (!api) return;
     var body = {
-      content: String(text).slice(0, 50000),
+      content: text.slice(0, 50000),
       org_id: (typeof activeOrgId !== "undefined" ? activeOrgId : null),
       ref_message_id: (options && options.ref_message_id) || null,
       prompt: (options && options.prompt) || "",
     };
-    return await api("/rooms/" + encodeURIComponent(room) + "/messages/ai", "POST", body);
+    var res = await api("/rooms/" + encodeURIComponent(room) + "/messages/ai", "POST", body);
+    console.log("[ACCD] client persist AI", res);
+    return res;
   } catch (e) {
     console.warn("persist stream ai", e);
   }
 };
+

@@ -1,8 +1,6 @@
 """
 Persist streamed AI replies after /generate/stream completes.
-
-- Always try DB Message(role=ai) when workspace_id/room_id is present
-- Snapshot text to B2 (or local) under owner phone + workspace scope
+DB Message(role=ai) + B2/local snapshot under owner phone + workspace.
 """
 from __future__ import annotations
 import json
@@ -30,6 +28,15 @@ def _org_phone(org_id: Optional[str]) -> str:
         return ""
 
 
+def _parse_uuid(val):
+    if not val:
+        return None
+    try:
+        return uuid.UUID(str(val))
+    except Exception:
+        return None
+
+
 def persist_stream_ai_reply(
     *,
     user,
@@ -49,44 +56,53 @@ def persist_stream_ai_reply(
     b2_key = None
     owner = _org_phone(org_id) or _phone_uid(user)
     kind = "org" if org_id else "user"
+    db_error = None
 
-    # --- DB message ---
     if ws:
         try:
             from database import SessionLocal
-            from db_models import Message
-            import uuid as _uuid
-
-            db = SessionLocal()
+            # prefer same import path as rooms.py
             try:
-                ref = None
-                if ref_message_id:
-                    try:
-                        ref = _uuid.UUID(str(ref_message_id))
-                    except Exception:
-                        ref = None
-                row = Message(
-                    id=_uuid.uuid4(),
-                    workspace_id=_uuid.UUID(str(ws)),
-                    user_id=user.id,
-                    role="ai",
-                    content=text[:50000],
-                    replies_to=ref,
-                    detected_domain="general",
-                    keywords=[],
-                    grid_cv={},
-                    temporal_context={"source": "stream", "prompt_preview": (prompt or "")[:200]},
-                )
-                db.add(row)
-                db.commit()
-                db.refresh(row)
-                msg_id = str(row.id)
-            finally:
-                db.close()
-        except Exception as e:
-            print("[stream_persist] db:", type(e).__name__, e)
+                from db_models import Message, Workspace
+            except Exception:
+                from db.db_models import Message, Workspace
 
-    # --- B2 / local snapshot ---
+            ws_uuid = _parse_uuid(ws)
+            if ws_uuid is None:
+                db_error = f"bad workspace_id {ws!r}"
+            else:
+                db = SessionLocal()
+                try:
+                    exists = db.query(Workspace).filter(Workspace.id == ws_uuid).first()
+                    if not exists:
+                        db_error = "workspace not found"
+                    else:
+                        ref = _parse_uuid(ref_message_id)
+                        row = Message(
+                            id=uuid.uuid4(),
+                            workspace_id=ws_uuid,
+                            user_id=user.id,
+                            role="ai",
+                            content=text[:50000],
+                            replies_to=ref,
+                            detected_domain="general",
+                            keywords=[],
+                            grid_cv={"source": "stream"},
+                            temporal_context={
+                                "source": "stream",
+                                "prompt_preview": (prompt or "")[:200],
+                            },
+                        )
+                        db.add(row)
+                        db.commit()
+                        db.refresh(row)
+                        msg_id = str(row.id)
+                finally:
+                    db.close()
+        except Exception as e:
+            db_error = f"{type(e).__name__}: {e}"
+            print("[stream_persist] db:", db_error)
+
     payload = {
         "role": "ai",
         "text": text[:50000],
@@ -120,4 +136,13 @@ def persist_stream_ai_reply(
         except Exception as e2:
             print("[stream_persist] local:", type(e2).__name__, e2)
 
-    return {"ok": True, "message_id": msg_id, "snapshot": b2_key, "owner": owner, "kind": kind}
+    ok = bool(msg_id) or bool(b2_key)
+    return {
+        "ok": ok,
+        "message_id": msg_id,
+        "snapshot": b2_key,
+        "owner": owner,
+        "kind": kind,
+        "db_error": db_error,
+        "workspace_id": ws,
+    }

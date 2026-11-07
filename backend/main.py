@@ -2486,6 +2486,7 @@ try:
                 reverse=reverse_vocab or {}, model_version="1.0.0.1idr", device=device)
             context = streamer.create_context(language="en")
             _final_acc = ""
+            _persisted = False
             async for event in streamer.generate(
                 prompt=prompt, context=context,
                 max_len=min(max(int(req.max_len), 1), 2048),
@@ -2494,13 +2495,29 @@ try:
                     if isinstance(event, dict):
                         if event.get("stream_text"):
                             _final_acc = str(event.get("stream_text") or "")
-                        if event.get("event") in ("complete", "done") and event.get("text"):
-                            _final_acc = str(event.get("text") or _final_acc)
+                        if event.get("event") in ("complete", "done"):
+                            _final_acc = str(event.get("stream_text") or event.get("text") or _final_acc)
+                            if _final_acc.strip() and not _persisted:
+                                try:
+                                    from agent.stream_persist import persist_stream_ai_reply
+                                    pers = persist_stream_ai_reply(
+                                        user=user, text=_final_acc,
+                                        workspace_id=getattr(req, "workspace_id", None),
+                                        room_id=getattr(req, "room_id", None),
+                                        org_id=getattr(req, "org_id", None),
+                                        ref_message_id=getattr(req, "ref_message_id", None),
+                                        prompt=query,
+                                    )
+                                    _persisted = True
+                                    event = dict(event)
+                                    event["persist"] = pers
+                                    print("[ACCD-STREAM] persisted", pers)
+                                except Exception as _pe_in:
+                                    print("[ACCD-STREAM] persist in-loop:", type(_pe_in).__name__, _pe_in)
                 except Exception:
                     pass
                 yield "data: " + json.dumps(event, ensure_ascii=False) + "\n\n"
-            # After model stream ends without explicit complete event, still persist
-            if _final_acc.strip():
+            if _final_acc.strip() and not _persisted:
                 try:
                     from agent.stream_persist import persist_stream_ai_reply
                     pers = persist_stream_ai_reply(
@@ -2511,9 +2528,10 @@ try:
                         ref_message_id=getattr(req, "ref_message_id", None),
                         prompt=query,
                     )
+                    print("[ACCD-STREAM] persisted after-loop", pers)
                     yield "data: " + json.dumps({"event": "complete", "stream_text": _final_acc, "text": _final_acc, "persist": pers}, ensure_ascii=False) + "\n\n"
                 except Exception as _pe2:
-                    print("[ACCD-STREAM] persist model:", _pe2)
+                    print("[ACCD-STREAM] persist model:", type(_pe2).__name__, _pe2)
                     yield "data: " + json.dumps({"event": "complete", "stream_text": _final_acc, "text": _final_acc}, ensure_ascii=False) + "\n\n"
 
         return StreamingResponse(event_generator(), media_type="text/event-stream", headers={

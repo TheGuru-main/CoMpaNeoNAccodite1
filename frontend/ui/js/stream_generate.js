@@ -67,7 +67,9 @@ async function streamGenerate(prompt, onToken, onDone, onError, options) {
       if (onDone) onDone(finalTxt, ev);
       try {
         if (typeof window.accdPersistStreamAi === "function") {
-          window.accdPersistStreamAi(finalTxt, ev && ev.persist, options);
+          Promise.resolve(window.accdPersistStreamAi(finalTxt, ev && ev.persist, options)).catch(function (e) {
+            console.warn("persist", e);
+          });
         }
       } catch (_) {}
       try { reader.cancel(); } catch (_) {} return;
@@ -90,6 +92,11 @@ async function streamGenerate(prompt, onToken, onDone, onError, options) {
     buffer += decoder.decode();
     if (!finished && buffer.trim()) dispatch(buffer);
     if (!finished && onDone) onDone(latestText);
+    if (!finished && latestText && typeof window.accdPersistStreamAi === "function") {
+      try {
+        Promise.resolve(window.accdPersistStreamAi(latestText, null, options)).catch(function () {});
+      } catch (_) {}
+    }
   } catch (err) {
     if (!finished && onError) onError(String(err && err.message ? err.message : err));
   } finally { try { reader.releaseLock(); } catch (_) {} }

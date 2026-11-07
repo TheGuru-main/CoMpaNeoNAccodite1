@@ -1223,7 +1223,6 @@ if (cmd === "cat" && arg) {
       var id = btn.id || "";
       if (!id) return;
       ev.preventDefault();
-      ev.stopPropagation();
       try {
         if (id === "btnCodeBack" || id === "btnCloseCode") return goHome();
         if (id === "btnRunCode") return runEditor();
@@ -1258,31 +1257,25 @@ if (cmd === "cat" && arg) {
     }
     document.body.classList.add("codespace-active");
     document.body.classList.remove("home-active");
-    // Full-screen overlay above docs (docs uses z-index 11000)
-    panel.style.cssText = [
-      "display:flex",
-      "flex-direction:column",
-      "position:fixed",
-      "inset:0",
-      "width:100%",
-      "height:100%",
-      "max-height:100dvh",
-      "background:#0b1120",
-      "z-index:12000",
-      "visibility:visible",
-      "opacity:1",
-      "pointer-events:auto"
-    ].join(";") + " !important".replace(" !important", "");
-    // setProperty for display important (inline cssText may drop important on some engines)
+    // Reliable overlay — always clickable above docs (z 11000)
     panel.style.setProperty("display", "flex", "important");
+    panel.style.setProperty("flex-direction", "column", "important");
+    panel.style.setProperty("position", "fixed", "important");
+    panel.style.setProperty("inset", "0", "important");
+    panel.style.setProperty("width", "100%", "important");
+    panel.style.setProperty("height", "100%", "important");
+    panel.style.setProperty("max-height", "100dvh", "important");
+    panel.style.setProperty("background", "#0b1120", "important");
     panel.style.setProperty("z-index", "12000", "important");
     panel.style.setProperty("visibility", "visible", "important");
     panel.style.setProperty("opacity", "1", "important");
-    panel.style.flexDirection = "column";
-    panel.style.position = "fixed";
-    panel.style.inset = "0";
-    panel.style.background = "#0b1120";
+    panel.style.setProperty("pointer-events", "auto", "important");
     panel.classList.add("active");
+    // Ensure toolbar buttons are never covered / non-interactive
+    panel.querySelectorAll("button").forEach(function (b) {
+      b.style.setProperty("pointer-events", "auto", "important");
+      b.style.cursor = "pointer";
+    });
 
     var body = $("codeBody");
     if (body) {
@@ -1312,7 +1305,9 @@ if (cmd === "cat" && arg) {
       if (docs) { docs.style.display = "none"; docs.classList.remove("acd-open"); }
     } catch (e) {}
 
+    bindToolbarDelegate();
     bindToolbar();
+    try { document.dispatchEvent(new CustomEvent("acd-codespace-open")); } catch (e) {}
     ensureGhostInput();
     setSidebar(true);
     setTermCollapsed(false);
@@ -1577,19 +1572,24 @@ if (cmd === "cat" && arg) {
 })();
 
 
-// ACCD-OPEN-CODE-RESCUE
+// ACCD-OPEN-CODE-RESCUE — always delegate to real showPanel (full bind)
 (function () {
   var _open = window.openCodePanel;
   window.openCodePanel = function () {
     document.body.classList.add("codespace-active");
     var input = document.getElementById("inputArea");
-    if (input) input.setAttribute("hidden", "");
-    if (typeof _open === "function") { try { _open(); } catch (e) {} }
-    var panel = document.getElementById("codePanel");
-    if (panel) {
-      panel.style.setProperty("display", "flex", "important");
-      panel.style.flexDirection = "column";
-      panel.classList.add("active");
+    if (input) {
+      input.setAttribute("hidden", "");
+      input.style.setProperty("display", "none", "important");
+    }
+    if (typeof _open === "function") {
+      try {
+        var r = _open();
+        if (r && typeof r.then === "function") return r;
+        return r;
+      } catch (e) {
+        console.error("[codespace] open", e);
+      }
     }
   };
 })();

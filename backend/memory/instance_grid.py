@@ -68,38 +68,54 @@ def create_instance_grid(
     platform_version: int = 1,
     *,
     base: Optional[str] = None,
+    allow_empty_if_no_platform: bool = True,
 ) -> Path:
-    """Copy platform snapshot into owner instance path. Once per owner."""
+    """
+    Copy platform snapshot into owner instance path. Once per owner.
+    Phone UID is the owner id (org:<phone> / user:<phone>).
+    If platform snapshot is missing, seed an empty MemoryGrid pickle so signup never blocks.
+    """
+    if not isinstance(owner, OwnerRef):
+        raise InstanceGridError("owner must be OwnerRef")
+    if not owner.id or not str(owner.id).strip():
+        raise InstanceGridError("owner id (phone UID) required")
+
     grid = grid_path(owner, base)
     if grid.exists():
-        raise InstanceGridError(f"{owner.key} already has a grid")
+        return grid  # idempotent — already provisioned
+
     src = platform_cache_path(platform_version, base)
     d = grid.parent
     d.mkdir(parents=True, exist_ok=True)
+    tmp = grid.with_name(GRID_NAME + ".tmp")
+    sha = None
+
     if src.is_file():
-        tmp = grid.with_name(GRID_NAME + ".tmp")
-        shutil.copyfile(src, tmp)
+        sha = sha256_file(src)
+        with open(src, "rb") as fin, open(tmp, "wb") as fout:
+            fout.write(fin.read())
         os.replace(tmp, grid)
-        sha = None
-        try:
-            import hashlib
-            sha = hashlib.sha256(src.read_bytes()).hexdigest()
-        except Exception:
-            pass
-    else:
-        # bootstrap empty pickle if platform missing — caller may seed later
+    elif allow_empty_if_no_platform:
         try:
             import pickle
             from memory.memory_grid import MemoryGrid
-            g = MemoryGrid()
-            tmp = grid.with_name(GRID_NAME + ".tmp")
-            with open(tmp, "wb") as f:
-                pickle.dump(g, f)
+            empty = MemoryGrid()
+            with open(tmp, "wb") as fout:
+                pickle.dump(empty, fout, protocol=pickle.HIGHEST_PROTOCOL)
             os.replace(tmp, grid)
-            sha = None
             print(f"[instance_grid] platform snapshot missing; empty grid for {owner.key}")
         except Exception as e:
-            raise InstanceGridError(f"platform snapshot not cached and empty create failed: {e}") from e
+            if tmp.exists():
+                try:
+                    tmp.unlink()
+                except Exception:
+                    pass
+            raise InstanceGridError(
+                f"platform snapshot not cached and empty create failed: {e}"
+            ) from e
+    else:
+        raise InstanceGridError("platform snapshot not cached; fetch it before signup completes")
+
     _write_manifest(d, {
         "owner": owner.key,
         "created_at": int(time.time()),
@@ -108,6 +124,7 @@ def create_instance_grid(
         "last_snapshot": None,
     })
     return grid
+
 
 
 def require_access(*, user_id: str, owner: OwnerRef, is_active_member) -> None:

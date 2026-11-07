@@ -542,18 +542,35 @@ async def signup(req: SignupRequest):
         db.add(new_user)
         db.commit()
         db.refresh(new_user)
-        # ACCD-CLEAN: personal instance grid keyed by phone UID
+        # ACCD: personal instance grid keyed by phone UID (not DB UUID)
+        grid_info = {"ok": False, "path": None, "error": None}
         try:
-            from memory.instance_grid import OwnerRef, create_instance_grid
+            from memory.instance_grid import OwnerRef, create_instance_grid, grid_path
             from memory.owner_identity import phone_uid
-            create_instance_grid(
-                OwnerRef("user", phone_uid(new_user.phone)),
+            _pu = phone_uid(new_user.phone)
+            if not _pu:
+                raise RuntimeError("phone_uid empty after normalize")
+            owner = OwnerRef("user", _pu)
+            gp = create_instance_grid(
+                owner,
                 platform_version=int(os.environ.get("ACCD_PLATFORM_GRID_VERSION") or "1"),
             )
+            grid_info = {"ok": True, "path": str(gp), "owner": owner.key}
+            print(f"[ACCD-SIGNUP] instance grid ready {owner.key} -> {gp}")
         except Exception as _ug:
-            print(f"[ACCD-SIGNUP] user instance grid: {type(_ug).__name__}: {_ug}")
+            grid_info["error"] = f"{type(_ug).__name__}: {_ug}"
+            print(f"[ACCD-SIGNUP] user instance grid: {grid_info['error']}")
         token = create_access_token(str(new_user.id))
-        return {"access_token": token, "user": {"id": str(new_user.id), "full_name": new_user.full_name, "start_row": start_row, "phone": new_user.phone}}
+        return {
+            "access_token": token,
+            "user": {
+                "id": str(new_user.id),
+                "full_name": new_user.full_name,
+                "start_row": start_row,
+                "phone": new_user.phone,
+            },
+            "instance_grid": grid_info,
+        }
     finally:
         db.close()
 
@@ -688,9 +705,11 @@ async def org_create(req: OrgCreateRequest):
             _org_phone = phone_uid(getattr(org, "phone", None) or req.phone)
             owner = OwnerRef("org", _org_phone)
             try:
-                create_instance_grid(owner, platform_version=int(os.environ.get("ACCD_PLATFORM_GRID_VERSION") or "1"))
+                gp = create_instance_grid(owner, platform_version=int(os.environ.get("ACCD_PLATFORM_GRID_VERSION") or "1"))
+                print(f"[ACCD-ORG] instance grid ready {owner.key} -> {gp}")
             except TypeError:
-                create_instance_grid(owner, platform_version=1)
+                gp = create_instance_grid(owner, platform_version=1)
+                print(f"[ACCD-ORG] instance grid ready {owner.key} -> {gp}")
             except Exception as _cg:
                 print(f"[ACCD-ORG] create_instance_grid: {type(_cg).__name__}: {_cg}")
             try:
@@ -849,6 +868,7 @@ async def org_join(req: OrgJoinRequest):
             start_row=start_row,
             start_col=start_col,
             account_type="worker",
+            # Workers do not own an instance grid — org grid only when credential_active
             personal_ai_uid=f"user-{_uuid.uuid4().hex[:12]}",
         )
         db.add(worker_user)
@@ -906,6 +926,7 @@ async def login(req: LoginRequest):
                 return {
                     "pending": True,
                     "message": "Your signup is awaiting admin approval.",
+                    "note": "Worker uses org instance grid after approval; no personal grid",
                     "user": {"id": str(user.id), "full_name": user.full_name},
                 }
         except Exception:

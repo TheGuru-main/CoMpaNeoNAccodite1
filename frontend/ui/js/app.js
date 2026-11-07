@@ -1399,11 +1399,11 @@ async function openProfile() {
             const status = o.brain_status || (o.ai_uid ? 'active' : 'pending');
             const brainLine = status === 'active'
                 ? `<div class="profile-org-meta" style="opacity:.6; word-break:break-all;">
-                       <span class="k" style="font-size:0.68rem; text-transform:uppercase; letter-spacing:0.05em; opacity:.6;">org brain</span>
+                       <span class="k" style="font-size:0.68rem; text-transform:uppercase; letter-spacing:0.05em; opacity:.6;">Org brain UID</span>
                        <div style="font-family:var(--font-mono); font-size:0.78rem; margin-top:0.15rem;">${escapeHtml(o.ai_uid || '—')}</div>
                    </div>`
                 : `<div class="profile-org-meta" style="opacity:.55; font-style:italic;">
-                       org brain: not yet generated — create it in the dashboard
+                       Org brain UID: not yet generated — create it in the dashboard
                    </div>`;
             return `
                 <div class="profile-org">
@@ -1429,7 +1429,7 @@ async function openProfile() {
                 <div class="profile-kv"><span class="k">Account type</span><span class="v">${escapeHtml(p.account_type || 'regular')}</span></div>
                 <div class="profile-kv"><span class="k">Start row</span><span class="v">${escapeHtml(String(p.start_row ?? '—'))}</span></div>
                 <div class="profile-kv"><span class="k">Start col</span><span class="v">${escapeHtml(String(p.start_col ?? '—'))}</span></div>
-                <div class="profile-kv"><span class="k">Brain UID</span><span class="v">${escapeHtml(p.personal_ai_uid || '—')}</span></div>
+                <div class="profile-kv"><span class="k">Personal brain UID</span><span class="v">${escapeHtml(p.personal_ai_uid || '—')}</span></div>
                 <div class="profile-kv"><span class="k">Joined</span><span class="v">${p.created_at ? new Date(p.created_at).toLocaleString() : '—'}</span></div>
             </div>
             <h4 style="margin-top:1rem;"><i class="fa-solid fa-sitemap"></i> Organizations</h4>
@@ -1913,7 +1913,7 @@ async function renderOrgCredential(body) {
         body.innerHTML = `
             <p style="font-size:0.85rem; opacity:0.72; padding:0.5rem 0 0.75rem;">
                 No worker credential has been created yet. Generate one to
-                become the org brain uID and give your workers an entry point.
+                become the Org brain UID uID and give your workers an entry point.
             </p>
             <button id="btnGenerateOrgCred" class="primary-btn">
                 <i class="fa-solid fa-key"></i> Generate worker credential
@@ -3175,10 +3175,10 @@ openProfile = async function() {
             const status = o.brain_status || (o.ai_uid && !String(o.ai_uid).startsWith('org-pending-') ? 'active' : 'pending');
             const brainLine = status === 'active'
                 ? `<div class="profile-org-meta" style="opacity:.62; word-break:break-all;">
-                       <span style="font-size:0.66rem; text-transform:uppercase; letter-spacing:0.06em; opacity:.6;">org brain</span>
+                       <span style="font-size:0.66rem; text-transform:uppercase; letter-spacing:0.06em; opacity:.6;">Org brain UID</span>
                        <div style="font-family:var(--font-mono); font-size:0.78rem; margin-top:0.15rem;">${escapeHtml(o.ai_uid || '—')}</div>
                    </div>`
-                : `<div class="profile-org-meta" style="opacity:.55; font-style:italic;">org brain: not yet generated — create it in the dashboard</div>`;
+                : `<div class="profile-org-meta" style="opacity:.55; font-style:italic;">Org brain UID: not yet generated — create it in the dashboard</div>`;
             return `
                 <div class="profile-org">
                     <div class="profile-org-name">${escapeHtml(o.org_name || '')}</div>
@@ -3207,7 +3207,7 @@ openProfile = async function() {
                 <div class="profile-kv"><span class="k">Account type</span><span class="v">${escapeHtml(p.account_type || 'regular')}</span></div>
                 <div class="profile-kv"><span class="k">Start row</span><span class="v">${escapeHtml(String(p.start_row ?? '—'))}</span></div>
                 <div class="profile-kv"><span class="k">Start col</span><span class="v">${escapeHtml(String(p.start_col ?? '—'))}</span></div>
-                <div class="profile-kv"><span class="k">Brain UID</span><span class="v">${escapeHtml(p.personal_ai_uid || '—')}</span></div>
+                <div class="profile-kv"><span class="k">Personal brain UID</span><span class="v">${escapeHtml(p.personal_ai_uid || '—')}</span></div>
                 <div class="profile-kv"><span class="k">Joined</span><span class="v">${p.created_at ? new Date(p.created_at).toLocaleString() : '—'}</span></div>
             </div>
             <h4 style="margin-top:1rem;"><i class="fa-solid fa-sitemap"></i> Organizations</h4>
@@ -5452,29 +5452,7 @@ document.addEventListener("click", function (ev) {
 
   // home tools + room codespace + workspace head docs
   function inject() {
-    var nav = document.querySelector("#mainScreen .top-nav") || document.getElementById("mainNav");
-    if (nav && !document.getElementById("btnRoomCodespace")) {
-      var b = document.createElement("button");
-      b.type = "button"; b.id = "btnRoomCodespace"; b.className = "btn"; b.textContent = "Codespace";
-      b.onclick = function (ev) {
-        ev.preventDefault();
-        if (window.acdOpenCodespace) window.acdOpenCodespace(ev);
-        else if (window.openCodePanel) window.openCodePanel();
-      };
-      nav.appendChild(b);
-      ["Excel","Sheet","Workspace"].forEach(function (label) {
-        if (document.getElementById("btnWs"+label)) return;
-        var x = document.createElement("button");
-        x.type = "button"; x.id = "btnWs"+label; x.className = "btn"; x.textContent = label;
-        x.onclick = function (ev) {
-          ev.preventDefault();
-          if (label==="Excel" && window.acdOpenExcel) window.acdOpenExcel();
-          if (label==="Sheet" && window.acdOpenSheet) window.acdOpenSheet();
-          if (label==="Workspace" && window.acdOpenWorkspaceGrid) window.acdOpenWorkspaceGrid();
-        };
-        nav.appendChild(x);
-      });
-    }
+    // ACCD: no Codespace/Sheet/Workspace on header/nav — home hub + room docs only
     var hub = document.getElementById("homeActions") || document.getElementById("homeHub");
     if (hub && !document.getElementById("homeToolsMenu")) {
       var wrap = document.createElement("div");
@@ -6185,4 +6163,129 @@ window.accdPersistStreamAi = async function (text, serverPersist, options) {
     console.warn("persist stream ai", e);
   }
 };
+
+// ACCD-UI-MARATHON-V1 — header strip + org tabs by role + brain labels
+(function () {
+  "use strict";
+
+  var ADMIN_ROLES = { owner: 1, ceo: 1, admin: 1, hr: 1, founder: 1 };
+
+  function stripHeaderJunk() {
+    var roots = [
+      document.querySelector("#mainScreen .top-header"),
+      document.querySelector("#mainScreen .top-nav"),
+      document.getElementById("mainNav"),
+      document.querySelector("header.top-header"),
+    ];
+    var killIds = {
+      btnRoomCodespace: 1,
+      btnWsExcel: 1,
+      btnWsSheet: 1,
+      btnWsWorkspace: 1,
+      homebtnSheetS: 1,
+      homebtnCodespace: 1,
+    };
+    var killText = /^(codespace|sheet|sheets|workspace|excel|dbase|collabsheet)$/i;
+    roots.forEach(function (root) {
+      if (!root) return;
+      Array.prototype.slice.call(root.querySelectorAll("button, a, .btn, .nav-link")).forEach(function (el) {
+        var id = el.id || "";
+        var t = (el.textContent || "").replace(/\s+/g, " ").trim();
+        if (killIds[id] || killText.test(t)) {
+          // never remove Home / settings / org / profile chrome
+          if (/home|settings|org|profile|logout|theme|invite|sidebar|call/i.test(id)) return;
+          if (el.closest && el.closest("#homeHub, #homeDocsStrip, #roomDocsStrip, #homeToolsMenu")) return;
+          try { el.remove(); } catch (e) {}
+        }
+      });
+    });
+  }
+
+  function orgRoleIsAdmin() {
+    if (typeof isAdmin !== "undefined" && isAdmin) return true;
+    var u = (typeof currentUser !== "undefined" && currentUser) ? currentUser : null;
+    if (!u) return false;
+    var role = String(u.role || u.primary_role || "").toLowerCase();
+    if (ADMIN_ROLES[role]) return true;
+    var orgs = u.orgs || [];
+    for (var i = 0; i < orgs.length; i++) {
+      var r = String(orgs[i].role || "").toLowerCase();
+      if (ADMIN_ROLES[r]) return true;
+    }
+    return false;
+  }
+
+  function applyOrgTabsForRole() {
+    var admin = orgRoleIsAdmin();
+    var tabs = document.querySelectorAll("#orgTabs .org-tab, .org-tabs .org-tab");
+    var firstVisible = null;
+    tabs.forEach(function (t) {
+      var onlyAdmin = t.getAttribute("data-admin-only") === "1" ||
+        ["pending", "credential", "boards"].indexOf(t.getAttribute("data-otab") || "") >= 0;
+      if (!admin && onlyAdmin) {
+        t.style.display = "none";
+        t.classList.remove("active");
+      } else {
+        t.style.display = "";
+        if (!firstVisible) firstVisible = t;
+      }
+    });
+    // worker default: members (not pending)
+    if (!admin) {
+      var mem = document.querySelector('.org-tab[data-otab="members"]');
+      if (mem && typeof renderOrgTab === "function") {
+        try { renderOrgTab("members"); } catch (e) {}
+      }
+    }
+  }
+
+  function patchOpenOrg() {
+    if (typeof window.openOrgScreen !== "function" && typeof openOrgScreen !== "function") return;
+    var fn = window.openOrgScreen || openOrgScreen;
+    if (fn._acdOrgRole) return;
+    var wrapped = async function () {
+      var r = await fn.apply(this, arguments);
+      applyOrgTabsForRole();
+      return r;
+    };
+    wrapped._acdOrgRole = true;
+    window.openOrgScreen = wrapped;
+    try { openOrgScreen = wrapped; } catch (e) {}
+  }
+
+  function relabelProfileBrain(html) {
+    return String(html || "")
+      .replace(/>Brain UID</g, ">Personal brain UID<")
+      .replace(/>brain uid</gi, ">Personal brain UID<");
+  }
+
+  // Soft-wrap profile paint if present
+  if (typeof window.renderProfileModal === "function" && !window.renderProfileModal._acdBrain) {
+    var rp = window.renderProfileModal;
+    window.renderProfileModal = function () {
+      var out = rp.apply(this, arguments);
+      try {
+        var modal = document.getElementById("profileModal") || document.querySelector(".profile-modal, #profileCard");
+        if (modal) {
+          modal.innerHTML = relabelProfileBrain(modal.innerHTML);
+          // Org brain label
+          modal.querySelectorAll && modal.querySelectorAll(".org-card, .profile-org, [data-org-brain]").forEach(function () {});
+        }
+      } catch (e) {}
+      return out;
+    };
+    window.renderProfileModal._acdBrain = true;
+  }
+
+  function boot() {
+    stripHeaderJunk();
+    patchOpenOrg();
+    applyOrgTabsForRole();
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+  else boot();
+  setTimeout(stripHeaderJunk, 400);
+  setTimeout(stripHeaderJunk, 1200);
+  setTimeout(patchOpenOrg, 600);
+})();
 

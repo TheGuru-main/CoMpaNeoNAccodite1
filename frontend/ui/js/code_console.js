@@ -863,7 +863,7 @@
       } catch (e) { writeLog("ls: " + errText(e) + "\n"); }
       return;
     }
-    if (cmd === "cd")if (cmd === "cd") {
+    if (cmd === "cd") {
       if (!requireRepo()) return;
       if (!arg || arg === "/" || arg === "\~") {
         setCwd("");
@@ -1227,18 +1227,21 @@ if (cmd === "cat" && arg) {
 
 
 
-  // ACCD-TOOLBAR-DELEGATE
+  // ACCD-TOOLBAR-DELEGATE — fallback ONLY if button has no onclick (wireBtn is primary)
   function bindToolbarDelegate() {
     var panel = $("codePanel");
-    if (!panel || panel.dataset.acdToolbar === "1") return;
-    panel.dataset.acdToolbar = "1";
+    if (!panel || panel.dataset.acdToolbarBound === "1") return;
+    panel.dataset.acdToolbarBound = "1";
     panel.addEventListener("click", function (ev) {
-      var btn = ev.target && ev.target.closest && ev.target.closest("button");
+      if (ev.defaultPrevented) return;
+      var t = ev.target;
+      if (!t || !t.closest) return;
+      var btn = t.closest("button[id^='btn']");
       if (!btn || !panel.contains(btn)) return;
+      // Primary path is wireBtn onclick + stopPropagation — do not double-fire
+      if (typeof btn.onclick === "function") return;
       var id = btn.id || "";
       if (!id) return;
-      // wireBtn already handles these via onclick + stopPropagation; skip if stopped
-      if (ev.defaultPrevented) return;
       ev.preventDefault();
       try {
         if (id === "btnCodeBack" || id === "btnCloseCode") return goHome();
@@ -1253,10 +1256,10 @@ if (cmd === "cat" && arg) {
         if (id === "btnCloseSidebar") return setSidebar(false);
         if (id === "btnToggleTerm") return setTermCollapsed(!termCollapsed);
       } catch (err) {
-        console.error("[codespace]", id, err);
-        try { writeLog("ui:" + id + " " + (err && err.message) + "\\n"); } catch (e) {}
+        console.warn("[codespace toolbar]", id, err);
+        try { writeLog("btn " + id + ": " + errText(err) + "\n"); } catch (e) {}
       }
-    }, false);
+    });
   }
 
   function goHome() {
@@ -1322,8 +1325,9 @@ if (cmd === "cat" && arg) {
       if (docs) { docs.style.display = "none"; docs.classList.remove("acd-open"); }
     } catch (e) {}
 
-    bindToolbarDelegate();
+    // Single bind path — wireBtn primary; delegate fallback if no onclick
     bindToolbar();
+    bindToolbarDelegate();
     try { document.dispatchEvent(new CustomEvent("acd-codespace-open")); } catch (e) {}
     ensureGhostInput();
     setSidebar(true);

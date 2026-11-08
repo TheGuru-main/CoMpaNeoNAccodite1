@@ -73,16 +73,28 @@ def validate_phone(phone: str, country_code: str = "NG") -> bool:
 
 def compute_user_cell(full_name: str, phone: str):
     """
-    Compute the user's message box start row and column.
-    L = name length, S = digit sum of phone UID, c = first letter index.
-    start_row = ((L+S-1) % 64) + 1, start_col = c % 26.
+    User message-box placement (signup / rooms).
+
+    Distinct from *object/doc* placement (DBase uses tokenizer letter-chain S):
+      L = letters-only name length
+      S = digit sum of phone UID  (placement S — not token-chain S)
+      c = first letter index (a=0 … z=25; non-latin falls back 0)
+      start_row = ((L + S - 1) % 64) + 1     # rows 1..64
+      start_col = c % 54                      # cols 0..53 (same grid as DBase/SheetS)
+
+    Grid is always 54×64. Workers do not own a start_row; they use org phone placement.
     """
-    clean_name = re.sub(r'[^a-zA-Z]', '', full_name)
-    L = len(clean_name)
-    S = sum(int(d) for d in phone if d.isdigit())
-    c = ord(clean_name[0].lower()) - 97 if clean_name else 0
+    clean_name = re.sub(r"[^a-zA-Z]", "", full_name or "")
+    L = max(len(clean_name), 1)
+    S = sum(int(d) for d in (phone or "") if d.isdigit())
+    if clean_name:
+        c = ord(clean_name[0].lower()) - 97
+        if c < 0 or c > 25:
+            c = 0
+    else:
+        c = 0
     start_row = ((L + S - 1) % 64) + 1
-    start_col = c % 26
+    start_col = c % 54
     return start_row, start_col
 
 def get_current_user(authorization: str = Header(None), db: Session = Depends(get_db)) -> User:

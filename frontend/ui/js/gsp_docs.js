@@ -80,23 +80,29 @@
   }
 
   async function api(path, method, body) {
-    var h = { Accept: "application/json" };
-    var t = token();
-    if (t) h.Authorization = "Bearer " + t;
-    if (body != null) h["Content-Type"] = "application/json";
-    var res = await fetch(path, {
-      method: method || "GET",
-      headers: h,
-      body: body != null ? JSON.stringify(body) : undefined,
-    });
+    var h = { "Content-Type": "application/json" };
+    var tok = token();
+    if (tok) h.Authorization = "Bearer " + tok;
+    var opt = { method: method || "GET", headers: h };
+    if (body != null && method && method !== "GET") opt.body = JSON.stringify(body);
+    var res = await fetch(path, opt);
     var text = await res.text();
-    var data = null;
-    try {
-      data = text ? JSON.parse(text) : null;
-    } catch (e) {
-      data = { raw: text };
-    }
-    if (!res.ok) throw new Error((data && (data.detail || data.error)) || text || res.status);
+    var data;
+    try { data = text ? JSON.parse(text) : null; } catch (e) { data = { raw: text }; }
+    if (!res.ok) throw new Error((data && (data.detail || data.error || data.message)) || text || ("HTTP " + res.status));
+    return data;
+  }
+
+  async function apiUpload(path, formData) {
+    var h = {};
+    var tok = token();
+    if (tok) h.Authorization = "Bearer " + tok;
+    // do NOT set Content-Type — browser sets multipart boundary
+    var res = await fetch(path, { method: "POST", headers: h, body: formData });
+    var text = await res.text();
+    var data;
+    try { data = text ? JSON.parse(text) : null; } catch (e) { data = { raw: text }; }
+    if (!res.ok) throw new Error((data && (data.detail || data.error || data.message)) || text || ("HTTP " + res.status));
     return data;
   }
 
@@ -214,25 +220,33 @@
 
     function setPendingMedia(file, mediaType) {
       if (!file) return;
-      var reader = new FileReader();
-      reader.onload = function () {
-        var dataUrl = String(reader.result || "");
-        var b64 = dataUrl.indexOf(",") >= 0 ? dataUrl.split(",")[1] : "";
-        state.pendingMedia = {
-          media_type: mediaType,
-          filename: file.name || "file",
-          mime: file.type || "",
-          size: file.size || 0,
-          payload_b64: b64.length < 90000 ? b64 : "",
-          payload_ref: "",
-          preview: dataUrl.slice(0, 80),
-        };
-        var chip = document.getElementById("gspMediaChip");
-        if (chip) {
-          chip.textContent = mediaType + ": " + (file.name || "") + " (" + Math.round((file.size || 0) / 1024) + " KB) — set name + description, then Place";
-        }
+      // Keep real File for multipart upload — not only bytecode/b64
+      state.pendingMedia = {
+        media_type: mediaType,
+        filename: file.name || "file",
+        mime: file.type || "",
+        size: file.size || 0,
+        payload_b64: "",
+        payload_ref: "",
+        _file: file,
+        preview_url: "",
       };
-      reader.readAsDataURL(file);
+      var chip = document.getElementById("gspMediaChip");
+      if (chip) {
+        chip.textContent = mediaType + ": " + (file.name || "") + " (" + Math.round((file.size || 0) / 1024) + " KB) — Place to store file + GSP cell";
+      }
+      // Optional small preview for images only
+      if (mediaType === "image" && file.size < 400000) {
+        var reader = new FileReader();
+        reader.onload = function () {
+          var dataUrl = String(reader.result || "");
+          if (state.pendingMedia) {
+            state.pendingMedia.preview_url = dataUrl;
+            state.pendingMedia.payload_b64 = dataUrl.indexOf(",") >= 0 ? dataUrl.split(",")[1] : "";
+          }
+        };
+        reader.readAsDataURL(file);
+      }
     }
     var fin = document.getElementById("gspFileInput");
     function pick(accept, mediaType) {
@@ -444,19 +458,68 @@
     }
   }
 
+  function readNameDesc() {
+    var topName = document.getElementById("gspDocNameInput");
+    var topDesc = document.getElementById("gspDocDescInput");
+    var objName = document.getElementById("objName");
+    var objDesc = document.getElementById("objDesc");
+    var name = ((objName && objName.value) || (topName && topName.value) || "").trim();
+    var desc = ((objDesc && objDesc.value) || (topDesc && topDesc.value) || "").trim();
+    return { name: name, desc: desc };
+  }
+
+  async function uploadPendingMedia(objectName, description) {
+    var pm = state.pendingMedia;
+    if (!pm || !pm._file) {
+      // only b64 pending
+      return pm || null;
+    }
+    var fd = new FormData();
+    fd.append("ns", ({ dbase: "dbase", sheets: "sheets", collabsheet: "collabsheet", presentations: "pres" }[state.kind] || "dbase"));
+    fd.append("object_name", objectName);
+    fd.append("description", description || "");
+    if (state.parentType === "room" && state.parentId) fd.append("workspace_id", state.parentId);
+    if (typeof activeOrgId !== "undefined" && activeOrgId) fd.append("org_id", activeOrgId);
+    fd.append("file", pm._file, pm.filename || "upload.bin");
+    try {
+      var up = await apiUpload("/grid/ns/upload", fd);
+      pm.payload_ref = (up && (up.payload_ref || (up.result && up.result.payload_ref))) || pm.payload_ref || "";
+      pm.payload_b64 = ""; // stored as real blob on server
+      pm.uploaded = true;
+      var chip = document.getElementById("gspMediaChip");
+      if (chip) chip.textContent = (pm.media_type || "file") + " stored · " + (pm.filename || "") + (pm.payload_ref ? " · ref ok" : "");
+      return pm;
+    } catch (e) {
+      console.warn("upload media", e);
+      // fallback small b64 if present
+      return pm;
+    }
+  }
+
   async function createDoc() {
-    var name = (document.getElementById("gspDocNameInput").value || "").trim();
-    var descEl = document.getElementById("gspDocDescInput");
-    var desc = (descEl && descEl.value ? descEl.value : "").trim();
-    if (!/^[A-Za-z][A-Za-z0-9_-]{0,62}$/.test(name)) {
-      alert("Name must start with a letter (A–Z). UID letter-chain is built from this name.");
+    var nd = readNameDesc();
+    var name = nd.name;
+    var desc = nd.desc;
+    if (!name) {
+      alert("Enter an object name (must start with a letter).");
       return;
+    }
+    if (!/^[A-Za-z\u00C0-\u024F\u0400-\u04FF\u0600-\u06FF]/.test(name[0])) {
+      alert("Name must start with a letter. GSP start_row/col are computed from this name.");
+      return;
+    }
+    // keep ascii-safe for sandbox resource names when possible
+    var safeName = name;
+    if (!/^[A-Za-z][A-Za-z0-9_-]{0,62}$/.test(name)) {
+      // allow unicode for display but API may require latin — strip for path
+      safeName = name.replace(/[^\w\-]/g, "_");
+      if (!/^[A-Za-z]/.test(safeName)) safeName = "Obj_" + safeName;
+      safeName = safeName.slice(0, 63);
     }
     var par = resolveParent();
     state.parentType = par.parentType;
     state.parentId = par.parentId;
     state.parentRepo = par.parentRepo || par.parentId;
-    // Scope parent to room when inside a workspace
     if (typeof currentRoomId !== "undefined" && currentRoomId) {
       state.parentType = "room";
       state.parentId = currentRoomId;
@@ -465,27 +528,56 @@
       var res = await api("/sandbox/docs", "POST", {
         scope: "user",
         parent_type: state.parentType === "room" ? "room" : "repo",
-        parent_repo: state.parentRepo || state.parentId,
-        parent_id: state.parentId,
-        doc_name: name,
+        parent_repo: state.parentRepo || state.parentId || "HomeDocs",
+        parent_id: state.parentId || "HomeDocs",
+        doc_name: safeName,
         kind: apiKind(state.kind),
-        n_rows: state.kind === "dbase" ? state.nRows : 64,
-        n_cols: state.kind === "dbase" ? state.nCols : 54,
+        n_rows: state.kind === "dbase" ? (state.nRows || 64) : 64,
+        n_cols: state.kind === "dbase" ? (state.nCols || 26) : 54,
         description: desc,
       });
-      state.docName = name;
+      state.docName = safeName;
       state.docUid = res.doc_uid || res.uid || "";
-      var placeMeta = res.placement || res.gsp || {};
+      var placeMeta = res.placement || res.gsp || res || {};
       state.placement = {
         start_row: placeMeta.start_row || res.start_row || null,
-        start_col: placeMeta.start_col || res.start_col || placeMeta.c || null,
+        start_col: placeMeta.start_col != null ? placeMeta.start_col : (placeMeta.c != null ? placeMeta.c : res.start_col),
         target_cell: placeMeta.target_cell || res.target_cell || null,
         doc_uid: state.docUid,
         owner_uid: res.owner_uid || placeMeta.owner_uid || null,
         L: placeMeta.L || res.L,
         S: placeMeta.S || res.S,
-        c: placeMeta.c || placeMeta.start_col || res.start_col,
+        c: placeMeta.c != null ? placeMeta.c : placeMeta.start_col,
+        C: placeMeta.C || res.C,
+        lang: placeMeta.lang || res.lang,
       };
+      var sr = state.placement.start_row || 1;
+      var sc = state.placement.start_col != null ? state.placement.start_col : 0;
+      var cellKey = sr + ":" + sc;
+      var seed = {
+        value: name,
+        meta: desc || ("placed " + cellKey),
+        row: sr,
+        col: sc,
+        placed: true,
+        doc_uid: state.docUid,
+        payload_ref: "",
+        media_type: "",
+        filename: "",
+      };
+
+      // Upload real media file if pending
+      if (state.pendingMedia) {
+        var media = await uploadPendingMedia(safeName, desc);
+        if (media) {
+          seed.payload_ref = media.payload_ref || "";
+          seed.media_type = media.media_type || "";
+          seed.filename = media.filename || "";
+          seed.mime = media.mime || "";
+          if (media.payload_b64 && !seed.payload_ref) seed.preview_b64 = media.payload_b64.slice(0, 64);
+        }
+      }
+
       if (state.kind === "presentations") {
         state.data = { slides: [{ id: "s0", title: name, body: desc || "", gradient: "g00" }] };
       } else if (state.kind === "dbase") {
@@ -495,54 +587,73 @@
           object_name: name,
           object_desc: desc,
           cells: {},
-          n_rows: state.nRows,
-          n_cols: state.nCols,
+          n_rows: state.nRows || 64,
+          n_cols: state.nCols || 26,
         };
+        state.data.sheets.Sheet1.cells[cellKey] = seed;
+        state.data.cells[cellKey] = seed;
       } else {
-        state.data = { cells: {}, object_name: name, object_desc: desc };
+        state.data = {
+          cells: {},
+          object_name: name,
+          object_desc: desc,
+          n_rows: 64,
+          n_cols: 54,
+        };
+        state.data.cells[cellKey] = seed;
       }
-      // Also stamp owner MemoryGrid namespace (phone-scoped instance)
+
+      // MemoryGrid ns stamp (best-effort)
       try {
         var nsMap = { dbase: "dbase", sheets: "sheets", collabsheet: "collabsheet", presentations: "pres" };
         if (typeof window.accdPlaceNs === "function") {
-          var pm = state.pendingMedia || {};
-          var placeRes = await window.accdPlaceNs(nsMap[state.kind] || "dbase", name, desc, desc || name, {
-            media_type: pm.media_type || "text",
-            filename: pm.filename || "",
-            mime: pm.mime || "",
-            payload_ref: pm.payload_ref || "",
-            payload_b64: pm.payload_b64 || "",
+          await window.accdPlaceNs(nsMap[state.kind] || "dbase", safeName, desc, desc || name, {
+            media_type: (state.pendingMedia && state.pendingMedia.media_type) || "",
+            filename: (state.pendingMedia && state.pendingMedia.filename) || "",
+            mime: (state.pendingMedia && state.pendingMedia.mime) || "",
+            payload_ref: seed.payload_ref || "",
+            payload_b64: (!seed.payload_ref && state.pendingMedia && state.pendingMedia.payload_b64) || "",
           });
-          if (placeRes && (placeRes.placement || placeRes.start_row)) {
-            state.placement = placeRes.placement || {
-              start_row: placeRes.start_row,
-              start_col: placeRes.start_col,
-              doc_uid: placeRes.doc_uid,
-            };
-            state.docUid = (state.placement && state.placement.doc_uid) || state.docUid;
-          }
-          state.pendingMedia = null;
-          var chip = document.getElementById("gspMediaChip");
-          if (chip) chip.textContent = "";
         }
-      } catch (pe) {
-        console.warn("grid ns place", pe);
+      } catch (e2) {
+        console.warn("ns place", e2);
       }
-      var sc = document.getElementById("gspDocScope");
-      if (sc) {
-        sc.textContent =
-          (state.docUid ? "uid " + String(state.docUid).slice(0, 24) : "") +
-          (state.placement.start_row != null ? " · row " + state.placement.start_row : "") +
-          (state.parentType === "room" ? " · room" : " · repo");
+
+      // Persist cell + snapshot
+      try {
+        await writeCell(sr, sc, seed.value, seed.meta);
+      } catch (e3) {
+        console.warn("writeCell after place", e3);
       }
-      await refreshList();
-      renderStage();
+      await snapshotSave();
+
+      // Sync top inputs
+      var ti = document.getElementById("gspDocNameInput");
+      if (ti) ti.value = name;
+      var td = document.getElementById("gspDocDescInput");
+      if (td) td.value = desc;
+
+      state.pendingMedia = null;
+      renderSheet();
+      refreshList();
+      alert(
+        "Placed " +
+          name +
+          " at " +
+          (state.placement.target_cell || cellKey) +
+          " · row " +
+          sr +
+          " col " +
+          sc +
+          (state.placement.lang ? " · lang " + state.placement.lang : "")
+      );
     } catch (e) {
+      console.error("Place failed", e);
       alert("Place failed: " + (e.message || e));
     }
   }
 
-  async function refreshList() {
+  async function refreshListasync function refreshList() {
     var list = document.getElementById("gspDocList");
     if (!list) return;
     list.innerHTML = '<div style="color:#94a3b8;font-size:12px;margin-bottom:8px">Paths / objects</div>';
@@ -663,32 +774,32 @@
 
   function bindCfgApply() {
     var btn = document.getElementById("cfgApply");
-    if (!btn || btn.dataset.bound === "1") return;
-    btn.dataset.bound = "1";
-    btn.addEventListener("click", function () {
+    if (!btn) return;
+    btn.onclick = function (ev) {
+      if (ev) { ev.preventDefault(); ev.stopPropagation(); }
       var rowsEl = document.getElementById("cfgRows");
       var colsEl = document.getElementById("cfgCols");
       var nr = rowsEl ? parseInt(rowsEl.value, 10) : state.nRows;
       var nc = colsEl ? parseInt(colsEl.value, 10) : state.nCols;
-      if (!(nr >= 1 && nr <= 512)) { alert("Rows must be 1–512"); return; }
-      if (!(nc >= 1 && nc <= 128)) { alert("Cols must be 1–128"); return; }
-      // GSP sheet/collab stay on protocol grid for placement overlay
+      if (!(nr >= 1 && nr <= 128)) { alert("Rows must be 1–128"); return; }
+      if (!(nc >= 1 && nc <= 54)) { alert("Cols must be 1–54"); return; }
       if (state.kind === "sheets" || state.kind === "collabsheet") {
         nr = 64; nc = 54;
+        alert("SheetS / CollabSheet stay on GSP 54×64");
       }
       state.nRows = nr;
       state.nCols = nc;
-      saveGridConfig(state.kind);
+      try { saveGridConfig(state.kind); } catch (e) {}
       if (!state.data) state.data = { cells: {}, sheets: { Sheet1: { cells: {} } }, active_sheet: "Sheet1" };
       state.data.n_rows = nr;
       state.data.n_cols = nc;
       renderSheet();
-    });
+    };
   }
   function renderSheet() {
     var stage = document.getElementById("gspDocStage");
-    var rows = Math.min(state.nRows || 64, 64);
-    var cols = Math.min(state.nCols || 54, state.kind === "dbase" ? 40 : 54);
+    var rows = Math.max(1, Math.min(state.nRows || 64, state.kind === "dbase" ? 128 : 64));
+    var cols = Math.max(1, Math.min(state.nCols || (state.kind === "dbase" ? 26 : 54), state.kind === "dbase" ? 54 : 54));
     var cells = activeCells();
     state.data = state.data || {};
     var objName = state.data.object_name || state.docName || "";
@@ -783,14 +894,49 @@
     var lh = document.getElementById("lookupHits");
     if (lh) lh.textContent = q ? hits + " hits" : "";
 
-    document.getElementById("objSave").onclick = function () {
-      state.data.object_name = document.getElementById("objName").value;
-      state.data.object_desc = document.getElementById("objDesc").value;
-      snapshotSave();
-    };
-    document.getElementById("gridLookupGo").onclick = function () {
-      state.lookup = document.getElementById("gridLookup").value || "";
+    document.getElementById("objSave").onclick = async function () {
+      var nd = readNameDesc();
+      if (!state.data) state.data = { cells: {}, sheets: { Sheet1: { cells: {} } }, active_sheet: "Sheet1" };
+      state.data.object_name = nd.name;
+      state.data.object_desc = nd.desc;
+      var topN = document.getElementById("gspDocNameInput");
+      var topD = document.getElementById("gspDocDescInput");
+      if (topN) topN.value = nd.name;
+      if (topD) topD.value = nd.desc;
+      if (!state.docName || !state.placement || !state.placement.start_row) {
+        // No placement yet — Place computes GSP start_row/col
+        await createDoc();
+        return;
+      }
+      var sr = state.placement.start_row;
+      var sc = state.placement.start_col != null ? state.placement.start_col : 0;
+      try {
+        await writeCell(sr, sc, nd.name || state.docName, nd.desc || "");
+        await snapshotSave();
+        alert("Meta saved at r" + sr + ":c" + sc);
+      } catch (e) {
+        alert("Save meta failed: " + (e.message || e));
+      }
       renderSheet();
+    };
+    document.getElementById("gridLookupGo").onclick = async function () {
+      state.lookup = document.getElementById("gridLookup").value || "";
+      // Client grid filter
+      renderSheet();
+      // Also search server list by name when possible
+      try {
+        await refreshList();
+        var q = (state.lookup || "").toLowerCase();
+        if (q) {
+          var list = document.getElementById("gspDocList");
+          if (list) {
+            list.querySelectorAll(".acd-doc-item").forEach(function (el) {
+              var show = (el.textContent || "").toLowerCase().indexOf(q) >= 0;
+              el.style.display = show ? "" : "none";
+            });
+          }
+        }
+      } catch (e) {}
     };
     document.getElementById("gridLookup").onkeydown = function (ev) {
       if (ev.key === "Enter") {

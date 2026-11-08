@@ -75,27 +75,46 @@ def compute_user_cell(full_name: str, phone: str):
     """
     User message-box placement (signup / rooms).
 
-    Distinct from *object/doc* placement (DBase uses tokenizer letter-chain S):
-      L = letters-only name length
-      S = digit sum of phone UID  (placement S — not token-chain S)
-      c = first letter index (a=0 … z=25; non-latin falls back 0)
-      start_row = ((L + S - 1) % 64) + 1     # rows 1..64
-      start_col = c % 54                      # cols 0..53 (same grid as DBase/SheetS)
-
-    Grid is always 54×64. Workers do not own a start_row; they use org phone placement.
+    S = digit sum of phone UID (placement S).
+    lang = detect(full_name); C = language alphabet length (26 for en;
+          only 54 when alphabet reaches 54).
+    start_col = first_letter_index(lang) % C
+    start_row = ((L + S - 1) % 64) + 1
     """
-    clean_name = re.sub(r"[^a-zA-Z]", "", full_name or "")
-    L = max(len(clean_name), 1)
-    S = sum(int(d) for d in (phone or "") if d.isdigit())
-    if clean_name:
-        c = ord(clean_name[0].lower()) - 97
+    try:
+        from gsp_chain import (
+            detect_placement_lang,
+            col_for_name,
+            effective_col_modulus,
+        )
+        lang = detect_placement_lang(full_name or "", "auto")
+        letters = [ch for ch in (full_name or "") if ch.isalpha()]
+        L = max(len(letters), 1)
+        S = sum(int(d) for d in (phone or "") if d.isdigit())
+        col_info = col_for_name(full_name or "", lang)
+        start_row = ((L + S - 1) % 64) + 1
+        start_col = int(col_info["start_col"])
+        return start_row, start_col
+    except Exception:
+        clean_name = re.sub(r"[^a-zA-Z]", "", full_name or "")
+        L = max(len(clean_name), 1)
+        S = sum(int(d) for d in (phone or "") if d.isdigit())
+        c = ord(clean_name[0].lower()) - 97 if clean_name else 0
         if c < 0 or c > 25:
             c = 0
-    else:
-        c = 0
-    start_row = ((L + S - 1) % 64) + 1
-    start_col = c % 54
-    return start_row, start_col
+        start_row = ((L + S - 1) % 64) + 1
+        start_col = c % 26  # English fallback band
+        return start_row, start_col
+    except Exception:
+        clean_name = re.sub(r"[^a-zA-Z]", "", full_name or "")
+        L = max(len(clean_name), 1)
+        S = sum(int(d) for d in (phone or "") if d.isdigit())
+        c = ord(clean_name[0].lower()) - 97 if clean_name else 0
+        if c < 0 or c > 25:
+            c = 0
+        start_row = ((L + S - 1) % 64) + 1
+        start_col = c % 54
+        return start_row, start_col
 
 def get_current_user(authorization: str = Header(None), db: Session = Depends(get_db)) -> User:
     if not authorization or not authorization.startswith("Bearer "):

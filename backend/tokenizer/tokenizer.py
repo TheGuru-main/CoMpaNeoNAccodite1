@@ -795,6 +795,68 @@ def normalize_lang(lang: str | None) -> str:
     return LANG_ALIASES.get(code, code)
 
 
+
+def detect_lang(text: str | None, fallback: str = "en") -> str:
+    """
+    Detect language for GSP placement / tokenization.
+
+    Order:
+      1) Script heuristics (Arabic, Cyrillic, CJK, Hangul, Hebrew, Thai, Devanagari, Bengali, Kana)
+      2) langdetect when available and text is long enough
+      3) fallback (default en)
+
+    Result is always passed through normalize_lang / LANG_ALIASES.
+    """
+    s = (text or "").strip()
+    if not s:
+        return normalize_lang(fallback)
+
+    # Script-first (short names / labels often too short for langdetect)
+    for ch in s:
+        o = ord(ch)
+        if 0x0600 <= o <= 0x06FF or 0x0750 <= o <= 0x077F:
+            return normalize_lang("ar")
+        if 0x0400 <= o <= 0x04FF:
+            return normalize_lang("ru")
+        if 0x4E00 <= o <= 0x9FFF:
+            return normalize_lang("zh")
+        if 0x3040 <= o <= 0x30FF:
+            return normalize_lang("ja")
+        if 0xAC00 <= o <= 0xD7AF:
+            return normalize_lang("ko")
+        if 0x0590 <= o <= 0x05FF:
+            return normalize_lang("he")
+        if 0x0E00 <= o <= 0x0E7F:
+            return normalize_lang("th")
+        if 0x0900 <= o <= 0x097F:
+            return normalize_lang("hi")
+        if 0x0980 <= o <= 0x09FF:
+            return normalize_lang("bn")
+        if 0x0370 <= o <= 0x03FF:
+            return normalize_lang("el")
+
+    # Latin extended hints (Yoruba / French diacritics common in Accodite)
+    low = s.lower()
+    if any(ch in low for ch in "ẹọṣń"):
+        return normalize_lang("yo")
+    if any(ch in low for ch in "àâäæçéèêëïîôœùûüÿ") and len(s) >= 3:
+        # Prefer fr when French-heavy diacritics dominate
+        fr_marks = sum(1 for ch in low if ch in "àâäæçéèêëïîôœùûüÿ")
+        if fr_marks >= 1:
+            return normalize_lang("fr")
+
+    try:
+        from langdetect import detect as _ld_detect
+        from langdetect.lang_detect_exception import LangDetectException
+        sample = s if len(s) >= 12 else (s + " " + s)  # pad short labels slightly
+        code = _ld_detect(sample)
+        return normalize_lang(code)
+    except Exception:
+        pass
+
+    return normalize_lang(fallback)
+
+
 def alphabet_for(lang: str | None) -> str:
     """
     Return the known alphabet for a language.

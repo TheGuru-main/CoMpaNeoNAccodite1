@@ -77,6 +77,26 @@ def place_ns_object(
         return {"ok": False, "error": "owner grid unavailable"}
 
     owner_phone = org_phone or user_phone or ""
+
+    ownership = None
+    try:
+        from memory.ownership_scope import resolve_ownership
+        # surface from ns
+        surface = {"dbase": "dbase", "sheets": "sheets", "collabsheet": "collabsheet",
+                   "pres": "presentations", "presentations": "presentations"}.get(ns, ns)
+        # user object minimal
+        class _U:
+            pass
+        u = _U()
+        u.id = user_id
+        u.phone = user_phone
+        u.account_type = "regular"
+        ownership = resolve_ownership(
+            user=u, surface=surface, room_id=workspace_id, org_id=org_id, require=False,
+        )
+    except Exception as _oe:
+        print("[ns] ownership:", type(_oe).__name__, _oe)
+
     media_type = (media_type or "").strip().lower()
     if not media_type and filename:
         fn = filename.lower()

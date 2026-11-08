@@ -2633,6 +2633,74 @@ try:
         )
 
     print("[ACCD] grid ns routes /grid/ns/place /grid/ns/list")
+
+# ACCD: large attachment upload (multipart) → B2/local + GSP place by object name
+try:
+    from fastapi import File, Form, UploadFile
+
+    @app.post("/grid/ns/upload")
+    async def grid_ns_upload(
+        ns: str = Form("dbase"),
+        object_name: str = Form(...),
+        description: str = Form(""),
+        workspace_id: Optional[str] = Form(None),
+        org_id: Optional[str] = Form(None),
+        file: UploadFile = File(...),
+        user: User = Depends(get_current_user),
+    ):
+        from memory.ownership_scope import resolve_ownership, ScopeError
+        from memory.grid_ns_api import place_ns_object, _store_blob
+        from memory.owner_identity import phone_uid, resolve_org_phone
+        try:
+            scope = resolve_ownership(
+                user=user,
+                surface=ns if ns != "pres" else "presentations",
+                room_id=workspace_id,
+                org_id=org_id,
+            )
+        except ScopeError as se:
+            raise HTTPException(403, str(se))
+        raw = await file.read()
+        if len(raw) > 200 * 1024 * 1024:
+            raise HTTPException(413, "file too large (max 200MB)")
+        ref = _store_blob(
+            raw=raw,
+            filename=file.filename or "upload.bin",
+            mime=file.content_type or "application/octet-stream",
+            owner_phone=scope.phone_uid or phone_uid(getattr(user, "phone", None)),
+        )
+        # Prefer ownership-prefixed key when B2 available
+        try:
+            from storage.b2 import b2_enabled, b2_put_bytes
+            if b2_enabled() and scope.b2_prefix:
+                from gsp_chain import uid_from_name
+                uid = uid_from_name(object_name)
+                key = f"{scope.b2_prefix.strip('/')}/{uid}/{(file.filename or 'bin')[:80]}"
+                ref = b2_put_bytes(key, raw, content_type=file.content_type or "application/octet-stream")
+        except Exception as e:
+            print("[upload] ownership b2:", e)
+        result = place_ns_object(
+            ns=ns,
+            object_name=object_name,
+            text=description or object_name,
+            description=description,
+            user_id=str(user.id),
+            org_id=scope.org_id or org_id,
+            user_phone=scope.phone_uid,
+            org_phone=resolve_org_phone(org_id=scope.org_id) if scope.org_id else None,
+            workspace_id=workspace_id or scope.room_id,
+            filename=file.filename or "",
+            mime=file.content_type or "",
+            payload_ref=ref,
+        )
+        result["ownership"] = scope.as_dict()
+        result["payload_ref"] = ref
+        return result
+
+    print("[ACCD] /grid/ns/upload multipart mounted")
+except Exception as _up:
+    print("[ACCD] upload route skip:", _up)
+
 except Exception as _nsr:
     print("[ACCD] grid ns routes skipped:", type(_nsr).__name__, _nsr)
 

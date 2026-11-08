@@ -420,17 +420,28 @@
   }
 
   function paintEmpty() {
-    var stage = document.getElementById("gspDocStage");
-    if (!stage) return;
-    var k = KINDS[state.kind];
-    stage.innerHTML =
-      '<div class="acd-empty"><div style="font-size:40px;margin-bottom:10px"><i class="fa-solid ' +
-      k.icon +
-      '"></i></div><h2 style="color:#e2e8f0;margin:0 0 8px">' +
-      k.label +
-      "</h2><p>" +
-      k.blurb +
-      "</p><p>Create an object name above, or open a path from the sidebar.</p></div>";
+    // Always show a working grid shell — never a dead welcome-only stage
+    try {
+      if (!state.data) {
+        state.data = {
+          cells: {},
+          sheets: { Sheet1: { cells: {} } },
+          active_sheet: "Sheet1",
+          n_rows: state.nRows || 64,
+          n_cols: state.nCols || 54,
+          slides: state.kind === "presentations" ? [{ id: "s0", title: "", body: "", gradient: "g00" }] : undefined,
+        };
+      }
+      renderSheet();
+    } catch (e) {
+      console.warn("paintEmpty grid", e);
+      var stage = document.getElementById("gspDocStage");
+      if (!stage) return;
+      var k = KINDS[state.kind] || { label: "Grid", icon: "fa-table", blurb: "" };
+      stage.innerHTML =
+        '<div class="acd-empty"><h2 style="color:#e2e8f0">' + k.label +
+        "</h2><p>" + (k.blurb || "") + "</p><p>Grid ready — enter an object name to place.</p></div>";
+    }
   }
 
   async function createDoc() {
@@ -644,6 +655,31 @@
     return "";
   }
 
+
+  function bindCfgApply() {
+    var btn = document.getElementById("cfgApply");
+    if (!btn || btn.dataset.bound === "1") return;
+    btn.dataset.bound = "1";
+    btn.addEventListener("click", function () {
+      var rowsEl = document.getElementById("cfgRows");
+      var colsEl = document.getElementById("cfgCols");
+      var nr = rowsEl ? parseInt(rowsEl.value, 10) : state.nRows;
+      var nc = colsEl ? parseInt(colsEl.value, 10) : state.nCols;
+      if (!(nr >= 1 && nr <= 512)) { alert("Rows must be 1–512"); return; }
+      if (!(nc >= 1 && nc <= 128)) { alert("Cols must be 1–128"); return; }
+      // GSP sheet/collab stay on protocol grid for placement overlay
+      if (state.kind === "sheets" || state.kind === "collabsheet") {
+        nr = 64; nc = 54;
+      }
+      state.nRows = nr;
+      state.nCols = nc;
+      saveGridConfig(state.kind);
+      if (!state.data) state.data = { cells: {}, sheets: { Sheet1: { cells: {} } }, active_sheet: "Sheet1" };
+      state.data.n_rows = nr;
+      state.data.n_cols = nc;
+      renderSheet();
+    });
+  }
   function renderSheet() {
     var stage = document.getElementById("gspDocStage");
     var rows = Math.min(state.nRows || 64, 64);
@@ -827,6 +863,7 @@
     }
   }
 
+    try { bindCfgApply(); } catch (e) {}
   function renderPresentation() {
     var stage = document.getElementById("gspDocStage");
     var slides = (state.data && state.data.slides) || [{ id: "s0", title: state.docName || "Slide", body: "", gradient: "g00" }];

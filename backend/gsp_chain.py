@@ -80,6 +80,7 @@ def start_row_for_name(name: str, lang: str = "en") -> Dict[str, Any]:
         "chain": chain,
         "uid_str": uid,
         "uid_compact": uid,
+        "uid": uid,  # canonical alias for callers
         "start_row": start_row,
         "root_key": f"r{start_row:02d}",
         "grid_rows": R_ROWS,

@@ -562,7 +562,9 @@
     sel.value = repo;
   }
 
+  var _creatingRepo = false;
   async function createRepo() {
+    if (_creatingRepo) return;
     var name = prompt("Repo name (start with a letter):", "app");
     if (!name || !name.trim()) return;
     name = name.trim().replace(/\s+/g, "-");
@@ -570,24 +572,37 @@
       writeLog("repo: name must start with a letter; only letters, digits, _ or -\n");
       return;
     }
+    _creatingRepo = true;
+    writeLog("creating repo " + name + " …\n");
     try {
-      var created = await api("/sandbox/repos", "POST", { name: name, scope: scope });
+      var created = await api("/sandbox/repos", "POST", { name: name, scope: scope || "user" });
       repo = name;
-      var chainUid = (window.acdUidFromName && window.acdUidFromName(name)) || created.repo_uid;
-      if (chainUid) {
-        saveRepoUid(name, chainUid);
-        writeLog("repo_uid (save): " + created.repo_uid + " · start_row=" + created.start_row + "\n");
+      cwd = "";
+      var chainUid = (window.acdUidFromName && window.acdUidFromName(name)) || (created && created.repo_uid);
+      if (chainUid) saveRepoUid(name, chainUid);
+      if (created && created.existed) {
+        writeLog("repo " + name + " already on disk · start_row=" + (created.start_row || "?") + "\n");
+      } else {
+        writeLog("repo " + name + " created · start_row=" + (created && created.start_row) + " · uid saved\n");
       }
-      if (typeof window.acdOnRepoCreated === "function") window.acdOnRepoCreated(created);
+      if (typeof window.acdOnRepoCreated === "function") {
+        try { window.acdOnRepoCreated(created); } catch (e) {}
+      }
       await refreshRepos();
-      await loadTree();
-      await openFirstInActiveRepo();
+      if (typeof switchRepo === "function") {
+        try { await switchRepo(name); } catch (e) { await loadTree(); }
+      } else {
+        await loadTree();
+        try { await openFirstInActiveRepo(); } catch (e) {}
+      }
     } catch (e) {
-      writeLog("repo: " + errText(e) + "\n");
+      writeLog("repo create failed: " + errText(e) + "\n");
+    } finally {
+      _creatingRepo = false;
     }
   }
 
-  async function saveFile() {
+  async function saveFileasync function saveFile() {
     if (!repo || !monacoEditor || !currentFile) return;
     try {
       await api("/sandbox/fs/write", "POST", {
@@ -1094,16 +1109,24 @@ if (cmd === "cat" && arg) {
         try {
           var g = await api("/sandbox/repos/" + encodeURIComponent(repo) + "/rootcheck?scope=" + encodeURIComponent(scope) + "&cwd=" + encodeURIComponent(cwd || ""));
           writeLog(
-            "rootcheck " + (g.ok ? "OK" : "FAIL") + "\n" +
-            "  repo=" + repo + " on_disk=" + g.on_disk + "\n" +
-            "  start_row=" + (g.start_row || "?") + " expected=" + (g.expected_start_row || "?") + "\n" +
-            "  repo_uid=" + (g.repo_uid || "?") + "\n" +
-            "  cwd=" + (g.cwd || "/") + " cwd_ok=" + g.cwd_ok + "\n" +
-            "  files=" + (g.files || 0) + " manifest=" + g.manifest_listed + "\n" +
-            (g.issues && g.issues.length ? ("  issues: " + g.issues.join("; ") + "\n") : "")
+            "rootcheck " + (g.ok ? "OK" : "FAIL") + "
+" +
+            "  repo=" + repo + " on_disk=" + g.on_disk + "
+" +
+            "  start_row=" + (g.start_row || "?") + " expected=" + (g.expected_start_row || "?") + "
+" +
+            "  repo_uid=" + (g.repo_uid || "?") + "
+" +
+            "  cwd=" + (g.cwd || "/") + " cwd_ok=" + g.cwd_ok + "
+" +
+            "  files=" + (g.files || 0) + " manifest=" + g.manifest_listed + "
+" +
+            (g.issues && g.issues.length ? ("  issues: " + g.issues.join("; ") + "
+") : "")
           );
         } catch (e) {
-          writeLog("rootcheck FAIL: " + errText(e) + "\n");
+          writeLog("rootcheck FAIL: " + errText(e) + "
+");
         }
         return;
       }
@@ -1214,6 +1237,8 @@ if (cmd === "cat" && arg) {
       if (!btn || !panel.contains(btn)) return;
       var id = btn.id || "";
       if (!id) return;
+      // wireBtn already handles these via onclick + stopPropagation; skip if stopped
+      if (ev.defaultPrevented) return;
       ev.preventDefault();
       try {
         if (id === "btnCodeBack" || id === "btnCloseCode") return goHome();
@@ -1311,9 +1336,11 @@ if (cmd === "cat" && arg) {
         await openFirstInActiveRepo();
       }
     } catch (e) {
-      writeLog("boot: " + errText(e) + "\n");
+      writeLog("boot: " + errText(e) + "
+");
     }
-    writeLog("Codespace ready · type help\n");
+    writeLog("Codespace ready · type help
+");
     paintTerm();
     setTimeout(function () {
       try { layoutEditor(); } catch (e) {}
@@ -1327,7 +1354,18 @@ if (cmd === "cat" && arg) {
     el.onclick = function (e) {
       e.preventDefault();
       e.stopPropagation();
-      try { fn(); } catch (err) { console.warn("[codespace]", id, err); }
+      try {
+        var r = fn();
+        if (r && typeof r.then === "function") {
+          r.catch(function (err) {
+            console.warn("[codespace]", id, err);
+            try { writeLog(id + ": " + errText(err) + "\n"); } catch (x) {}
+          });
+        }
+      } catch (err) {
+        console.warn("[codespace]", id, err);
+        try { writeLog(id + ": " + errText(err) + "\n"); } catch (x) {}
+      }
     };
   }
 

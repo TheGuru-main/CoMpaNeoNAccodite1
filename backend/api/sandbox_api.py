@@ -472,39 +472,86 @@ async def list_repos(scope: str = "user"):
 
 @router.post("/repos")
 async def create_repo(req: RepoCreate):
+    """Create GSP-rooted repo. Idempotent: existing name returns current meta (ok=true, existed=true)."""
     try:
         req.name = validate_resource_name(req.name, what="repo name")
     except ValueError as e:
         raise HTTPException(400, str(e))
-    d = _repo_dir(req.scope, req.name)
-    if d.exists():
-        raise HTTPException(409, "repo already exists")
-    d.mkdir(parents=True, exist_ok=True)
 
-    repo_uid = _repo_uid_from_name(req.name)
-    gsp = compute_start_row(req.name, repo_uid)
+    d = _repo_dir(req.scope, req.name)
+    existed = d.exists()
+    if not existed:
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            raise HTTPException(500, f"cannot create repo dir: {type(e).__name__}: {e}") from e
+
+    # GSP identity — soft-fail so disk create is never blocked by tokenizer glitch
+    try:
+        repo_uid = _repo_uid_from_name(req.name)
+        gsp = compute_start_row(req.name, repo_uid)
+    except Exception as e:
+        print("[sandbox] gsp on create:", type(e).__name__, e)
+        repo_uid = str(req.name)
+        gsp = {
+            "L": len(req.name),
+            "S": 0,
+            "start_row": ((len(req.name) - 1) % 64) + 1,
+            "root_key": f"r{((len(req.name) - 1) % 64) + 1:02d}",
+            "repo": req.name,
+            "repo_uid": repo_uid,
+            "chain": [],
+            "grid_rows": 64,
+            "grid_cols": 54,
+        }
+
     meta = {
         **gsp,
         "repo_uid": repo_uid,
-        "created_at": time.time(),
+        "created_at": time.time() if not existed else ( (_read_meta(d) or {}).get("created_at") or time.time() ),
         "scope": req.scope,
+        "repo": req.name,
     }
-    _write_meta(d, meta)
-    _scaffold_conventional(d, req.name)
+    # Prefer existing meta if present
+    old = _read_meta(d) if existed else None
+    if old and old.get("repo_uid"):
+        meta = {**meta, **old, "scope": req.scope, "repo": req.name}
+        repo_uid = meta.get("repo_uid") or repo_uid
+
+    try:
+        _write_meta(d, meta)
+    except Exception as e:
+        raise HTTPException(500, f"cannot write .gsp.json: {e}") from e
+
+    try:
+        _scaffold_conventional(d, req.name)
+    except HTTPException:
+        raise
+    except Exception as e:
+        print("[sandbox] scaffold:", type(e).__name__, e)
+
     try:
         _manifest_upsert(req.scope, req.name, meta)
     except Exception as e:
         print("[sandbox] manifest upsert:", e)
 
+    chain = meta.get("chain") or []
+    try:
+        if not chain:
+            chain = letter_chain(req.name)
+    except Exception:
+        chain = []
+
     return {
         "ok": True,
+        "existed": existed,
         "name": req.name,
         "scope": req.scope,
-        "start_row": gsp["start_row"],
-        "root_key": gsp["root_key"],
+        "start_row": meta.get("start_row") or gsp.get("start_row"),
+        "root_key": meta.get("root_key") or gsp.get("root_key"),
         "repo_uid": repo_uid,
-        "note": "repo_uid is tokenizer letter-chain of name (same as training). Required with name for push/commit.",
-        "chain": letter_chain(req.name),
+        "note": "repo_uid is tokenizer letter-chain of name. Required with name for push/commit.",
+        "chain": chain,
     }
 
 

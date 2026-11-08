@@ -2633,6 +2633,9 @@ try:
         )
 
     print("[ACCD] grid ns routes /grid/ns/place /grid/ns/list")
+except Exception as _nsr:
+    print("[ACCD] grid ns routes skipped:", type(_nsr).__name__, _nsr)
+
 
 # ACCD: large attachment upload (multipart) → B2/local + GSP place by object name
 try:
@@ -2669,7 +2672,6 @@ try:
             mime=file.content_type or "application/octet-stream",
             owner_phone=scope.phone_uid or phone_uid(getattr(user, "phone", None)),
         )
-        # Prefer ownership-prefixed key when B2 available
         try:
             from storage.b2 import b2_enabled, b2_put_bytes
             if b2_enabled() and scope.b2_prefix:
@@ -2693,16 +2695,15 @@ try:
             mime=file.content_type or "",
             payload_ref=ref,
         )
-        result["ownership"] = scope.as_dict()
-        result["payload_ref"] = ref
+        if isinstance(result, dict):
+            result = dict(result)
+            result["ownership"] = scope.as_dict()
+            result["payload_ref"] = ref
         return result
 
     print("[ACCD] /grid/ns/upload multipart mounted")
 except Exception as _up:
-    print("[ACCD] upload route skip:", _up)
-
-except Exception as _nsr:
-    print("[ACCD] grid ns routes skipped:", type(_nsr).__name__, _nsr)
+    print("[ACCD] upload route skip:", type(_up).__name__, _up)
 
 
 # ============================================================

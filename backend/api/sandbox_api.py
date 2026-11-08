@@ -25,6 +25,23 @@ from typing import Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Request, Depends
 from pydantic import BaseModel, Field
 
+try:
+    from auth import get_current_user
+except Exception:
+    try:
+        from auth.auth import get_current_user
+    except Exception:
+        get_current_user = None  # type: ignore
+
+try:
+    from db_models import User
+except Exception:
+    try:
+        from database import User
+    except Exception:
+        User = None  # type: ignore
+
+
 from sandbox.runner import SandboxRunner
 try:
     from access_control import require_parent_access, AccessDenied
@@ -40,6 +57,53 @@ from gsp_chain import (
 )
 
 router = APIRouter(prefix="/sandbox", tags=["sandbox"])
+
+def place_coords_for_name(name: str, lang: str = "en") -> dict:
+    """
+    Explicit GSP cell for object name:
+      L = len(name)
+      chain = letter-index of name (0-based)
+      S = sum(chain)
+      start_row = ((L + S - 1) % 64) + 1
+      start_col = chain[0] % 54   # first letter index → column
+    Lookup key remains object name; owner_uid is separate ownership partition.
+    """
+    info = start_row_for_name(name or "", lang=lang)
+    chain = info.get("chain") or []
+    start_col = int(chain[0]) % 54 if chain else 0
+    return {
+        **info,
+        "start_col": start_col,
+        "c": start_col,
+        "target_cell": f"r{info['start_row']}:c{start_col}",
+        "object_name": name,
+    }
+
+
+
+def _optional_user(request: Request = None):
+    """Resolve user from Bearer token without failing module import."""
+    if request is None:
+        return None
+    try:
+        from auth.auth import decode_access_token
+        from database import SessionLocal
+        auth = (request.headers.get("Authorization") or "") if request else ""
+        if not auth.lower().startswith("bearer "):
+            return None
+        payload = decode_access_token(auth.split(" ", 1)[1])
+        uid = payload.get("sub") or payload.get("user_id")
+        if not uid:
+            return None
+        db = SessionLocal()
+        try:
+            from db_models import User as _User
+            return db.query(_User).filter(_User.id == uid).first()
+        finally:
+            db.close()
+    except Exception:
+        return None
+
 
 # Prefer persistent path; /tmp is last resort (Render ephemeral)
 ROOT = Path(
@@ -910,18 +974,60 @@ async def create_doc(req: DocCreate, request: Request = None):
     if ddir.exists():
         raise HTTPException(409, "doc already exists")
     ddir.mkdir(parents=True, exist_ok=True)
-    info = start_row_for_name(req.doc_name)
-    uid = uid_from_name(req.doc_name)
+    place = place_coords_for_name(req.doc_name)
+    uid = place.get("uid") or place.get("uid_str") or uid_from_name(req.doc_name)
+    # Ownership partition UID (org phone / user phone) — not the name chain
+    owner_uid = ""
+    try:
+        auth = (request.headers.get("Authorization") or "") if request is not None else ""
+        if auth.lower().startswith("bearer "):
+            from auth.auth import decode_access_token
+            from database import SessionLocal
+            from db_models import User as _U, OrganizationMembership, Organization
+            from memory.owner_identity import phone_uid
+            payload = decode_access_token(auth.split(" ", 1)[1])
+            uid_user = payload.get("sub") or payload.get("user_id")
+            db = SessionLocal()
+            try:
+                u = db.query(_U).filter(_U.id == uid_user).first() if uid_user else None
+                if u:
+                    # Prefer active org membership phone as org placement partition
+                    m = (
+                        db.query(OrganizationMembership)
+                        .filter(
+                            OrganizationMembership.user_id == u.id,
+                            OrganizationMembership.credential_active == True,  # noqa: E712
+                        )
+                        .first()
+                    )
+                    if m:
+                        org = db.query(Organization).filter(Organization.id == m.organization_id).first()
+                        owner_uid = phone_uid(getattr(org, "phone", None) or "") if org else ""
+                        if owner_uid:
+                            owner_uid = f"org:{owner_uid}"
+                    if not owner_uid:
+                        owner_uid = f"user:{phone_uid(getattr(u, 'phone', None) or '')}"
+            finally:
+                db.close()
+    except Exception as _ou:
+        print("[sandbox] owner_uid:", type(_ou).__name__, _ou)
+
     meta = {
         "kind": req.kind,
         "doc_name": req.doc_name,
-        "doc_uid": uid,
-        "chain": info["chain"],
-        "L": info["L"],
-        "S": info["S"],
-        "start_row": info["start_row"],
-        "root_key": info["root_key"],
-        "parent_repo": req.parent_repo,
+        "doc_uid": uid,  # name letter-chain (lookup identity for object content)
+        "owner_uid": owner_uid,  # org:phone or user:phone partition
+        "chain": place.get("chain"),
+        "L": place.get("L"),
+        "S": place.get("S"),
+        "c": place.get("start_col"),
+        "start_row": place.get("start_row"),
+        "start_col": place.get("start_col"),
+        "target_cell": place.get("target_cell"),
+        "root_key": place.get("root_key"),
+        "parent_repo": req.parent_repo or req.parent_id,
+        "parent_type": getattr(req, "parent_type", "repo"),
+        "parent_id": getattr(req, "parent_id", None) or req.parent_repo,
         "scope": req.scope,
         "created_at": time.time(),
         "grid": (
@@ -929,16 +1035,44 @@ async def create_doc(req: DocCreate, request: Request = None):
             else {"slides": True} if req.kind in ("pptx", "presentations")
             else {"n_rows": req.n_rows, "n_cols": req.n_cols, "configurable": True, "gsp": True}
         ),
+        "placement": {
+            "object_name": req.doc_name,
+            "L": place.get("L"),
+            "S": place.get("S"),
+            "c": place.get("start_col"),
+            "start_row": place.get("start_row"),
+            "start_col": place.get("start_col"),
+            "target_cell": place.get("target_cell"),
+            "doc_uid": uid,
+            "owner_uid": owner_uid,
+        },
     }
     _write_meta(ddir, meta)
+    # Seed empty grid with object marker cell at target placement
+    seed_cell = {
+        "value": req.doc_name,
+        "meta": f"placed {place.get('target_cell')}",
+        "doc_uid": uid,
+        "owner_uid": owner_uid,
+    }
+    r0, c0 = int(place.get("start_row") or 1), int(place.get("start_col") or 0)
+    cell_key = f"{r0}:{c0}"
     if req.kind in ("pptx", "presentations"):
         data = {"slides": [{"id": "s0", "title": req.doc_name, "body": "", "gradient": "g00", "blocks": []}]}
     elif req.kind in ("sheet", "workspace"):
-        data = {"cells": {}, "row_min": 1, "row_max": 64, "col_min": 0, "col_max": 53}
+        data = {"cells": {cell_key: seed_cell}, "row_min": 1, "row_max": 64, "col_min": 0, "col_max": 53}
     else:
-        data = {"cells": {}, "sheets": {"Sheet1": {"cells": {}}}, "active_sheet": "Sheet1", "n_rows": req.n_rows, "n_cols": req.n_cols, "configurable": True, "gsp": {}}
+        data = {
+            "cells": {cell_key: seed_cell},
+            "sheets": {"Sheet1": {"cells": {cell_key: seed_cell}}},
+            "active_sheet": "Sheet1",
+            "n_rows": req.n_rows,
+            "n_cols": req.n_cols,
+            "configurable": True,
+            "gsp": meta["placement"],
+        }
     _doc_data_path(ddir).write_text(json.dumps(data), encoding="utf-8")
-    return {"ok": True, **meta}
+    return {"ok": True, **meta, "gsp": meta["placement"]}
 
 @router.get("/docs")
 async def list_docs(parent_repo: str, scope: str = "user", parent_type: str = "repo", parent_id: str = "", request: Request = None):
@@ -1019,7 +1153,7 @@ class DocsImportOfficeBody(BaseModel):
 
 
 @router.post("/docs/import_office")
-def docs_import_office(body: DocsImportOfficeBody, user: User = Depends(get_current_user)):
+def docs_import_office(body: DocsImportOfficeBody, request: Request = None):
     """Excel/CSV → Accodite SheetS cells + place on ns:sheets|dbase."""
     import base64 as _b64
     import json as _json

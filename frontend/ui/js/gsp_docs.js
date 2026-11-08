@@ -478,8 +478,13 @@
       var placeMeta = res.placement || res.gsp || {};
       state.placement = {
         start_row: placeMeta.start_row || res.start_row || null,
-        start_col: placeMeta.start_col || res.start_col || null,
+        start_col: placeMeta.start_col || res.start_col || placeMeta.c || null,
+        target_cell: placeMeta.target_cell || res.target_cell || null,
         doc_uid: state.docUid,
+        owner_uid: res.owner_uid || placeMeta.owner_uid || null,
+        L: placeMeta.L || res.L,
+        S: placeMeta.S || res.S,
+        c: placeMeta.c || placeMeta.start_col || res.start_col,
       };
       if (state.kind === "presentations") {
         state.data = { slides: [{ id: "s0", title: name, body: desc || "", gradient: "g00" }] };

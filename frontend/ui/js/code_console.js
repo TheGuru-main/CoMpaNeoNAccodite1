@@ -366,6 +366,7 @@
     if (!name) return;
     if (repo === name && currentFile) {
       await loadTree();
+    try { forceCodespaceChrome(); /*after*/ } catch (e) {}
       return;
     }
     // optional autosave only if same-repo path already set
@@ -1270,6 +1271,7 @@ if (cmd === "cat" && arg) {
   }
 
   async function showPanel() {
+    try { forceCodespaceChrome(); } catch (e) {}
     var panel = $("codePanel");
     if (!panel) {
       console.error("[codespace] #codePanel missing from DOM");
@@ -1371,6 +1373,25 @@ if (cmd === "cat" && arg) {
         try { writeLog(id + ": " + errText(err) + "\n"); } catch (x) {}
       }
     };
+  }
+
+
+  function forceCodespaceChrome() {
+    var panel = $("codePanel");
+    if (!panel) return;
+    panel.style.setProperty("pointer-events", "auto", "important");
+    panel.style.setProperty("z-index", "12000", "important");
+    var bar = panel.querySelector(":scope > div");
+    if (bar) {
+      bar.style.pointerEvents = "auto";
+      bar.style.zIndex = "12001";
+      bar.querySelectorAll("button,select").forEach(function (b) {
+        b.style.pointerEvents = "auto";
+        b.style.cursor = "pointer";
+      });
+    }
+    try { bindToolbar(); } catch (e) {}
+    try { bindToolbarDelegate(); } catch (e) {}
   }
 
   function bindToolbar() {
@@ -1608,6 +1629,7 @@ if (cmd === "cat" && arg) {
 (function () {
   var _open = window.openCodePanel;
   window.openCodePanel = function () {
+    try { forceCodespaceChrome(); } catch (e) {}
     document.body.classList.add("codespace-active");
     var input = document.getElementById("inputArea");
     if (input) {

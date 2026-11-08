@@ -1145,12 +1145,23 @@
     if (!homeHost && hub) {
       homeHost = document.createElement("div");
       homeHost.id = "homeDocsStrip";
-      homeHost.style.cssText = "margin-top:10px;width:100%;display:flex;flex-wrap:wrap;gap:6px";
+      homeHost.style.cssText = "margin-top:10px;width:100%;display:flex;flex-wrap:wrap;gap:6px;visibility:visible";
       hub.appendChild(homeHost);
     }
     if (homeHost) {
+      homeHost.style.display = "flex";
+      homeHost.style.visibility = "visible";
       specs.forEach(function (s) {
-        if (!document.getElementById("home" + s.id)) homeHost.appendChild(mkBtn(s, "home"));
+        var id = "home" + s.id;
+        var el = document.getElementById(id);
+        if (!el) homeHost.appendChild(mkBtn(s, "home"));
+        else if (!el.onclick) {
+          el.onclick = function (ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            if (window[s.fn]) window[s.fn]();
+          };
+        }
       });
     }
     var roomBar =
@@ -1163,15 +1174,27 @@
       roomHost = document.createElement("div");
       roomHost.id = "roomDocsStrip";
       roomHost.className = "acd-room-docs";
-      roomHost.style.cssText = "display:none;flex-wrap:wrap;gap:6px;padding:6px 8px;width:100%";
+      roomHost.style.cssText = "flex-wrap:wrap;gap:6px;padding:6px 8px;width:100%";
       roomBar.appendChild(roomHost);
     }
     if (roomHost) {
       specs.forEach(function (s) {
-        if (!document.getElementById("ws" + s.id)) roomHost.appendChild(mkBtn(s, "ws"));
+        var id = "ws" + s.id;
+        var el = document.getElementById(id);
+        if (!el) roomHost.appendChild(mkBtn(s, "ws"));
+        else if (!el.onclick) {
+          el.onclick = function (ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            if (window[s.fn]) window[s.fn]();
+          };
+        }
       });
     }
   }
+
+  // Public re-inject for room/home transitions (strips must not stay deleted)
+  window.acdInjectDocsButtons = injectButtons;
 
   function hardenCodespace() {
     var prev = window.openCodePanel;
@@ -1207,6 +1230,10 @@
 
   function boot() {
     injectButtons();
+    setTimeout(injectButtons, 600);
+    setTimeout(injectButtons, 1800);
+    document.addEventListener("acd-room-open", function () { try { injectButtons(); } catch (e) {} });
+    document.addEventListener("acd-home", function () { try { injectButtons(); } catch (e) {} });
     hardenCodespace();
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);

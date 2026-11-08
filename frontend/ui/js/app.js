@@ -4446,6 +4446,8 @@ document.addEventListener("DOMContentLoaded", () => {
   function setMode(mode) {
     document.body.classList.remove("home-active", "workspace-active");
     if (mode === "home") document.body.classList.add("home-active");
+      try { document.dispatchEvent(new CustomEvent("acd-home")); } catch (e) {}
+      try { if (window.acdInjectDocsButtons) setTimeout(window.acdInjectDocsButtons, 30); } catch (e) {}
     if (mode === "workspace") document.body.classList.add("workspace-active");
 
     const input = document.getElementById("inputArea");
@@ -5261,6 +5263,9 @@ async function commitImageInspect() {
       if (roomId && main && main.classList.contains("active")) {
         document.body.classList.remove("home-active", "codespace-active");
         document.body.classList.add("workspace-active", "ws-room-active");
+        try { document.dispatchEvent(new CustomEvent("acd-room-open")); } catch (e) {}
+        try { if (window.acdInjectDocsButtons) setTimeout(window.acdInjectDocsButtons, 50); } catch (e) {}
+
 
         if (input) input.removeAttribute("hidden");
         if (hub) hub.style.display = "none";
@@ -5732,8 +5737,10 @@ document.addEventListener("click", function (ev) {
       docs.classList.remove("acd-open");
     }
     document.querySelectorAll("#roomDocsStrip, .acd-room-docs").forEach(function (n) {
-      try { n.remove(); } catch (e) {}
+      try { n.style.display = "none"; } catch (e) {}
     });
+    // never delete strips — reinject on next home/room
+    try { if (window.acdInjectDocsButtons) window.acdInjectDocsButtons(); } catch (e) {}
   }
 
   function revealCodePanel() {
@@ -5805,9 +5812,10 @@ document.addEventListener("click", function (ev) {
   }
 
   function scrubRoomDocs() {
-    document.querySelectorAll("#roomDocsStrip, .acd-room-docs, [id^=wsbtn]").forEach(function (n) {
-      try { n.remove(); } catch (e) {}
+    document.querySelectorAll("#roomDocsStrip, .acd-room-docs").forEach(function (n) {
+      try { /* keep node */ } catch (e) {}
     });
+    try { if (window.acdInjectDocsButtons) window.acdInjectDocsButtons(); } catch (e) {}
   }
 
   function boot() {
@@ -6194,7 +6202,7 @@ window.accdPersistStreamAi = async function (text, serverPersist, options) {
         if (killIds[id] || killText.test(t)) {
           // never remove Home / settings / org / profile chrome
           if (/home|settings|org|profile|logout|theme|invite|sidebar|call/i.test(id)) return;
-          if (el.closest && el.closest("#homeHub, #homeDocsStrip, #roomDocsStrip, #homeToolsMenu")) return;
+          if (el.closest && el.closest("#homeHub, #homeDocsStrip, #roomDocsStrip, #homeToolsMenu, #codePanel, #gspDocsPanel")) return;
           try { el.remove(); } catch (e) {}
         }
       });

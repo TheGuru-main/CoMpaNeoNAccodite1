@@ -59,9 +59,28 @@ def grid_path(owner: OwnerRef, base: Optional[str] = None) -> Path:
 
 
 def _write_manifest(d: Path, payload: dict) -> None:
+    """Durable instance/platform-side manifest beside grid.pkl."""
+    import hashlib
+    import json as _json
+    d = Path(d)
     d.mkdir(parents=True, exist_ok=True)
-    (d / MANIFEST_NAME).write_text(json.dumps(payload, indent=2), encoding="utf-8")
-
+    grid = d / GRID_NAME
+    data = dict(payload or {})
+    data.setdefault("updated_at", int(time.time()))
+    if grid.is_file() and "sha256" not in data:
+        try:
+            h = hashlib.sha256()
+            with grid.open("rb") as f:
+                for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                    h.update(chunk)
+            data["sha256"] = h.hexdigest()
+        except Exception as e:
+            data["sha256_error"] = f"{type(e).__name__}: {e}"
+    path = d / MANIFEST_NAME
+    tmp = path.with_name(path.name + ".tmp")
+    with tmp.open("w", encoding="utf-8") as fout:
+        _json.dump(data, fout, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
 
 
 def _validate_grid_snapshot(path: Path) -> None:
@@ -236,7 +255,10 @@ def create_instance_grid(
 
     _write_manifest(grid.parent, {
         "owner": owner.key,
+        "kind": owner.kind,
+        "phone_uid": owner.id,
         "created_at": int(time.time()),
+        "updated_at": int(time.time()),
         "platform_version": int(platform_version),
         "source": "platform_snapshot",
         "last_snapshot": None,
@@ -277,6 +299,8 @@ def persist_owner_grid(owner: OwnerRef, grid, *, base: Optional[str] = None) -> 
 
     _write_manifest(path.parent, {
         "owner": owner.key,
+        "kind": owner.kind,
+        "phone_uid": owner.id,
         "updated_at": int(time.time()),
         "last_snapshot": int(time.time()),
         "source": "instance_mutate",

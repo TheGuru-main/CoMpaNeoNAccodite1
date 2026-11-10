@@ -71,7 +71,7 @@ def resolve_training_grid(
 
     - prefer_platform=True  → platform grid only (product seed continuity)
     - owner / owner_kind+id → instance grid for that org|user (no worker grid)
-    - else                  → platform if present; never invent empty tenant grid
+    - workers               → no instance; pass org owner (brainstorm = ns inside org)\n    - else                  → platform if prefer_platform; never invent empty tenant grid
     """
     if grid is not None:
         return grid
@@ -89,17 +89,33 @@ def resolve_training_grid(
             from memory.memory_grid import load_grid
             o = owner if hasattr(owner, "kind") else OwnerRef(str(kind), str(oid))
             path = grid_path(o)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if not path.is_file():
+                try:
+                    from memory.b2_grid_layout import fetch_instance_grid_to_path
+                    tmp = path.with_name(path.name + ".b2.tmp")
+                    if fetch_instance_grid_to_path(o.kind, o.id, str(tmp)):
+                        import os as _os
+                        _os.replace(tmp, path)
+                        print(f"[bg-train] restored B2 instance {o.kind}:{o.id}")
+                    else:
+                        try:
+                            tmp.unlink(missing_ok=True)
+                        except Exception:
+                            pass
+                except Exception as _be:
+                    print(f"[bg-train] B2 instance restore: {type(_be).__name__}: {_be}")
             if path.is_file():
-                g = load_grid(str(path))
+                g = load_grid(str(path), bind_process=False)
                 print(f"[bg-train] instance grid {o.kind}:{o.id} docs={len(getattr(g,'documents',{}) or {})}")
                 return g
-            print(f"[bg-train] no instance grid file for {kind}:{oid}")
+            print(f"[bg-train] no instance grid for {kind}:{oid} — fail closed (no platform substitute)")
             return None
         except Exception as e:
             print(f"[bg-train] instance resolve: {type(e).__name__}: {e}")
             return None
 
-    if prefer_platform or True:
+    if prefer_platform:
         try:
             from memory.platform_grid import load_platform_grid, PlatformGridError
             try:
@@ -120,6 +136,23 @@ def resolve_training_grid(
             return None
 
     return None
+
+
+
+def _persist_if_instance(grid, owner=None) -> None:
+    """Write background-train results to durable user/org instance only."""
+    if grid is None or owner is None:
+        return
+    kind = getattr(owner, "kind", None) or (owner.get("kind") if isinstance(owner, dict) else None)
+    oid = getattr(owner, "id", None) or (owner.get("id") if isinstance(owner, dict) else None)
+    if kind not in ("org", "user") or not oid:
+        return
+    try:
+        from memory.instance_grid import OwnerRef, persist_owner_grid
+        persist_owner_grid(OwnerRef(str(kind), str(oid)), grid)
+        print(f"[bg-train] persisted instance {kind}:{oid}")
+    except Exception as e:
+        print(f"[bg-train] persist instance: {type(e).__name__}: {e}")
 
 
 def resolve_partition_for_grid(grid, *, owner=None):

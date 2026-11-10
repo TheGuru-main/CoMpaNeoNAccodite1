@@ -1786,14 +1786,36 @@ def save_grid(grid: "MemoryGrid" = None, path: str = None) -> str:
     return path
 
 
-def load_grid(path: str = None) -> "MemoryGrid":
+def load_grid(
+    path: str = None,
+    *,
+    bind_process: bool = True,
+) -> "MemoryGrid":
+    """
+    Load a MemoryGrid snapshot.
+
+    bind_process=True:
+        Preserve legacy platform/shared-grid behaviour.
+
+    bind_process=False:
+        Return an isolated grid without changing the process-wide
+        MemoryGrid singleton or integration state. Use this for
+        tenant instance grids.
+    """
     path = path or _DEFAULT_GRID_PATH
     if not os.path.isfile(path):
-        return get_process_grid()
+        if bind_process:
+            return get_process_grid()
+        raise FileNotFoundError(f"MemoryGrid snapshot not found: {path}")
+
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
+
     grid = _grid_from_dict(data)
-    set_process_grid(grid)
+
+    if bind_process:
+        set_process_grid(grid)
+
     return grid
 
 

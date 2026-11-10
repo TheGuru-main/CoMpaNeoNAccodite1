@@ -370,7 +370,7 @@ def ensure_request_grid(
     prefer_platform: bool = False,
 ) -> Any:
     """
-    Bind instance (org|user) grid for this request; fall back to platform.
+    Bind the explicitly requested platform, organisation, or user grid.
     Does not invent an empty MemoryGrid. GSP placement S is not used here.
     """
     if is_active_member is None and org_id and user_id:
@@ -405,12 +405,8 @@ def ensure_request_grid(
     except Exception as e:
         print("[integration] bind_request_grid:", type(e).__name__, e)
         grid = None
-    if grid is None and not prefer_platform:
-        try:
-            from memory.platform_grid import load_platform_grid
-            grid = load_platform_grid(require_docs=False, allow_empty=True)
-        except Exception as e:
-            print("[integration] platform fallback:", type(e).__name__, e)
+    # Tenant resolution failures remain failures.
+    # Platform access is available only through prefer_platform=True.
     if grid is not None:
         _STATE["grid"] = grid
         try:

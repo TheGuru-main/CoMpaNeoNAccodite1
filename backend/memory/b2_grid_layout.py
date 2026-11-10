@@ -101,15 +101,111 @@ def publish_instance_grid_file(kind: str, owner_id: str, path: str) -> dict:
     print(f"[b2_grid] instance {kind}/{owner_id} -> {full}")
     return {"ok": True, **meta}
 
-def fetch_instance_grid_to_path(kind: str, owner_id: str, dest: str) -> bool:
+
+def _is_missing_b2_object(exc: Exception) -> bool:
+    """Recognise missing-object responses without hiding other B2 failures."""
+    name = type(exc).__name__.lower()
+    if "filenotpresent" in name or "nosuchfile" in name:
+        return True
+
+    response = getattr(exc, "response", None) or {}
+    error = response.get("Error", {}) if isinstance(response, dict) else {}
+    code = str(error.get("Code", "")).lower()
+    status = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+
+    return code in ("nosuchkey", "notfound", "404") or status == 404
+
+
+def _fetch_grid_key_to_path(key: str, dest: str) -> bool:
     from storage.b2 import b2_get_bytes, b2_enabled
+
     if not b2_enabled():
         return False
+
+    target = Path(dest)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_name(target.name + ".download.tmp")
+
     try:
-        data = b2_get_bytes(instance_grid_key(kind, owner_id))
-        Path(dest).parent.mkdir(parents=True, exist_ok=True)
-        Path(dest).write_bytes(data)
+        data = b2_get_bytes(key)
+        if not isinstance(data, (bytes, bytearray)) or not data:
+            raise RuntimeError(f"B2 returned empty or invalid grid data: {key}")
+
+        tmp.write_bytes(bytes(data))
+        os.replace(tmp, target)
         return True
-    except Exception as e:
-        print("[b2_grid] fetch instance:", type(e).__name__, e)
+
+    except Exception as exc:
+        try:
+            tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+        if _is_missing_b2_object(exc):
+            return False
+
+        raise RuntimeError(
+            f"B2 grid fetch failed for {key}: {type(exc).__name__}: {exc}"
+        ) from exc
+
+
+
+def _is_missing_b2_object(exc: Exception) -> bool:
+    """Recognise missing-object responses without hiding other B2 failures."""
+    name = type(exc).__name__.lower()
+    if "filenotpresent" in name or "nosuchfile" in name:
+        return True
+
+    response = getattr(exc, "response", None) or {}
+    error = response.get("Error", {}) if isinstance(response, dict) else {}
+    code = str(error.get("Code", "")).lower()
+    status = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+
+    return code in ("nosuchkey", "notfound", "404") or status == 404
+
+
+def _fetch_grid_key_to_path(key: str, dest: str) -> bool:
+    from storage.b2 import b2_get_bytes, b2_enabled
+
+    if not b2_enabled():
         return False
+
+    target = Path(dest)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_name(target.name + ".download.tmp")
+
+    try:
+        data = b2_get_bytes(key)
+        if not isinstance(data, (bytes, bytearray)) or not data:
+            raise RuntimeError(f"B2 returned empty or invalid grid data: {key}")
+
+        tmp.write_bytes(bytes(data))
+        os.replace(tmp, target)
+        return True
+
+    except Exception as exc:
+        try:
+            tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+        if _is_missing_b2_object(exc):
+            return False
+
+        raise RuntimeError(
+            f"B2 grid fetch failed for {key}: {type(exc).__name__}: {exc}"
+        ) from exc
+
+
+def fetch_instance_grid_to_path(kind: str, owner_id: str, dest: str) -> bool:
+    return _fetch_grid_key_to_path(
+        instance_grid_key(kind, owner_id),
+        dest,
+    )
+
+
+def fetch_platform_grid_to_path(version: int, dest: str) -> bool:
+    return _fetch_grid_key_to_path(
+        platform_grid_key(version),
+        dest,
+    )

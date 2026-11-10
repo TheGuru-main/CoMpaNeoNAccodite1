@@ -98,9 +98,17 @@ def create_instance_grid(
     platform_version: int = 1,
     *,
     base: Optional[str] = None,
-    allow_empty_if_no_platform: bool = True,
+    allow_empty_if_no_platform: bool = False,
 ) -> Path:
-    """Provision or restore one independent owner grid."""
+    """Provision or restore one independent owner grid.
+
+    Order:
+      1) existing instance on B2
+      2) existing local instance
+      3) copy platform snapshot (local cache, else B2 platform, else ACCD_GRID_PATH)
+      4) empty invent only if allow_empty_if_no_platform=True
+    Signup must receive the platform training snapshot when available.
+    """
     if not isinstance(owner, OwnerRef):
         raise InstanceGridError("owner must be OwnerRef")
 
@@ -183,6 +191,28 @@ def create_instance_grid(
         finally:
             tmp.unlink(missing_ok=True)
 
+    # Last chance: ACCD_GRID_PATH or published platform file on disk
+    if not src.is_file():
+        import os as _os
+        for cand in (
+            _os.environ.get("ACCD_GRID_PATH"),
+            _os.environ.get("ACCD_PLATFORM_GRID_PATH"),
+        ):
+            if cand and Path(cand).is_file():
+                src = Path(cand)
+                print(f"[instance_grid] platform seed from env path {src}")
+                break
+
+    if src.is_file():
+        try:
+            _validate_grid_snapshot(src)
+            shutil.copyfile(src, tmp)
+            _validate_grid_snapshot(tmp)
+            os.replace(tmp, grid)
+            print(f"[instance_grid] provisioned from platform snapshot for {owner.key}")
+        finally:
+            tmp.unlink(missing_ok=True)
+
     elif allow_empty_if_no_platform:
         from memory.memory_grid import MemoryGrid, _grid_to_dict
 
@@ -193,13 +223,13 @@ def create_instance_grid(
 
             _validate_grid_snapshot(tmp)
             os.replace(tmp, grid)
-            print(f"[instance_grid] empty JSON grid created for {owner.key}")
+            print(f"[instance_grid] empty JSON grid created for {owner.key} (no platform seed)")
         finally:
             tmp.unlink(missing_ok=True)
 
     else:
         raise InstanceGridError(
-            f"platform grid v{platform_version} unavailable"
+            f"platform grid v{platform_version} unavailable — cannot seed instance {owner.key}"
         )
 
     _validate_grid_snapshot(grid)
@@ -208,6 +238,7 @@ def create_instance_grid(
         "owner": owner.key,
         "created_at": int(time.time()),
         "platform_version": int(platform_version),
+        "source": "platform_snapshot",
         "last_snapshot": None,
     })
 

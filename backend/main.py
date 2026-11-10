@@ -554,6 +554,7 @@ async def signup(req: SignupRequest):
             gp = create_instance_grid(
                 owner,
                 platform_version=int(os.environ.get("ACCD_PLATFORM_GRID_VERSION") or "1"),
+                allow_empty_if_no_platform=False,
             )
             grid_info = {"ok": True, "path": str(gp), "owner": owner.key}
             print(f"[ACCD-SIGNUP] instance grid ready {owner.key} -> {gp}")
@@ -705,10 +706,10 @@ async def org_create(req: OrgCreateRequest):
             _org_phone = phone_uid(getattr(org, "phone", None) or req.phone)
             owner = OwnerRef("org", _org_phone)
             try:
-                gp = create_instance_grid(owner, platform_version=int(os.environ.get("ACCD_PLATFORM_GRID_VERSION") or "1"))
+                gp = create_instance_grid(owner, platform_version=int(os.environ.get("ACCD_PLATFORM_GRID_VERSION") or "1"), allow_empty_if_no_platform=False)
                 print(f"[ACCD-ORG] instance grid ready {owner.key} -> {gp}")
             except TypeError:
-                gp = create_instance_grid(owner, platform_version=1)
+                gp = create_instance_grid(owner, platform_version=1, allow_empty_if_no_platform=False)
                 print(f"[ACCD-ORG] instance grid ready {owner.key} -> {gp}")
             except Exception as _cg:
                 print(f"[ACCD-ORG] create_instance_grid: {type(_cg).__name__}: {_cg}")

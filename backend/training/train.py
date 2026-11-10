@@ -631,23 +631,44 @@ def train(
     resume_checkpoint: Optional[str] = "companion_training_resume.pth",
 ):
 
-    # ACCD-TRAIN-REQUIRE-SHARED
+    # ACCD-TRAIN-REQUIRE-BOUND-GRID
+    # Platform train: no owner → platform snapshot/grid (already seeded+trained by product).
+    # Instance train: owner_kind+owner_id → that user/org instance (manual trigger).
+    # Never invent empty MemoryGrid here.
     if memory_grid is None:
-        try:
+        if owner_kind in ("user", "org") and owner_id:
             try:
-                from memory.platform_grid import load_platform_grid
-                memory_grid = load_platform_grid(require_docs=True, allow_empty=False)
-            except Exception:
-                from memory.shared_grid import get_shared_grid
-                memory_grid = get_shared_grid(require_docs=True)
-        except Exception as e:
-            raise RuntimeError(
-                "train requires PLATFORM MemoryGrid with documents — seed platform first"
-            ) from e
-    else:
-        docs = getattr(memory_grid, "documents", None) or {}
-        if len(docs) == 0:
-            raise RuntimeError("train refused: shared grid has 0 documents")
+                from training.background_training import resolve_training_grid
+                memory_grid = resolve_training_grid(
+                    owner_kind=owner_kind,
+                    owner_id=str(owner_id),
+                    prefer_platform=False,
+                )
+            except Exception as e:
+                raise RuntimeError(
+                    f"train: instance grid {owner_kind}:{owner_id} unavailable: {e}"
+                ) from e
+            if memory_grid is None:
+                raise RuntimeError(
+                    f"train: instance grid {owner_kind}:{owner_id} missing — "
+                    "provision at signup from platform snapshot"
+                )
+        else:
+            try:
+                try:
+                    from memory.platform_grid import load_platform_grid
+                    memory_grid = load_platform_grid(require_docs=True, allow_empty=False)
+                except Exception:
+                    from memory.shared_grid import get_shared_grid
+                    memory_grid = get_shared_grid(require_docs=True)
+            except Exception as e:
+                raise RuntimeError(
+                    "train requires PLATFORM MemoryGrid with documents — "
+                    "platform seed+train already done; load platform snapshot"
+                ) from e
+    docs = getattr(memory_grid, "documents", None) or {}
+    if len(docs) == 0:
+        raise RuntimeError("train refused: bound grid has 0 documents")
     if not TORCH_AVAILABLE:
         raise RuntimeError(
             "torch is required for training. Install it on the runtime "

@@ -60,22 +60,17 @@ router = APIRouter(prefix="/sandbox", tags=["sandbox"])
 
 def place_coords_for_name(name: str, lang: str = "en") -> dict:
     """
-    Explicit GSP cell for object name:
-      L = len(name)
-      chain = letter-index of name (0-based)
-      S = sum(chain)
-      start_row = ((L + S - 1) % 64) + 1
-      start_col = chain[0] % 54   # first letter index → column
-    Lookup key remains object name; owner_uid is separate ownership partition.
+    Canonical GSP cell — ONLY via gsp_chain.start_row_for_name.
+    start_col uses language-effective C (not chain[0]%54).
     """
-    info = start_row_for_name(name or "", lang=lang)
-    chain = info.get("chain") or []
-    start_col = int(chain[0]) % 54 if chain else 0
+    name = validate_resource_name(name or "", what="object name")
+    info = start_row_for_name(name, lang=lang)
+    start_col = int(info.get("start_col") if info.get("start_col") is not None else info.get("c") or 0)
     return {
         **info,
         "start_col": start_col,
         "c": start_col,
-        "target_cell": f"r{info['start_row']}:c{start_col}",
+        "target_cell": info.get("target_cell") or f"r{info['start_row']}:c{start_col}",
         "object_name": name,
     }
 

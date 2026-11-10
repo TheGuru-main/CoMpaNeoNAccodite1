@@ -85,14 +85,25 @@ def place_in_owner_grid(
     workspace_id: str = "",
     lang: str = "en",
     extra: Optional[Dict[str, Any]] = None,
+    replace_existing: bool = True,
 ) -> Any:
     """
-    Write a namespace object into the owner instance MemoryGrid.
-    Placement: GSP start_row from object name letter-chain (L+S), not token S.
+    Single write path for DBase/Sheets/Collab/Pres into the owner instance grid.
+
+    - Namespace (ns) is a surface marker only.
+    - Placement ONLY via gsp_chain.start_row_for_name (letter-chain L+S, lang col C).
+    - doc_uid = serialized letter-chain (canonical object id).
+    - Dedupe key: (grid_ns, doc_uid) within this owner grid.
     """
     if grid is None:
         raise RuntimeError("owner grid required")
     ns = assert_ns(ns)
+    try:
+        from gsp_chain import validate_resource_name
+        object_name = validate_resource_name(object_name, what="object name")
+    except Exception as e:
+        raise ValueError(f"invalid object name: {e}") from e
+
     start_row = None
     start_col = None
     doc_uid = ""
@@ -133,14 +144,59 @@ def place_in_owner_grid(
         extra=extra,
     )
     meta["source_marker"] = MARKER_PREFIX[ns]
-    if hasattr(grid, "add_document"):
+
+    # Dedupe: same ns + doc_uid on this owner grid → update in place (or skip)
+    existing_id = None
+    docs = getattr(grid, "documents", None) or {}
+    items = docs.items() if isinstance(docs, dict) else enumerate(docs)
+    for did, doc in items:
+        if not isinstance(doc, dict):
+            continue
+        m = doc.get("metadata") or doc.get("meta") or {}
+        if m.get("grid_ns") != ns:
+            continue
+        if str(m.get("doc_uid") or "") == str(doc_uid) or (
+            str(m.get("object_name") or "").lower() == object_name.lower()
+        ):
+            existing_id = did
+            break
+
+    if existing_id is not None and not replace_existing:
         return {
-            "doc_id": grid.add_document(body, lang=lang, source=MARKER_PREFIX[ns], metadata=meta),
+            "doc_id": existing_id,
             "doc_uid": doc_uid,
             "start_row": start_row,
             "start_col": start_col,
             "object_name": object_name,
             "ns": ns,
+            "deduped": True,
+            "replaced": False,
+        }
+
+    if hasattr(grid, "add_document"):
+        if existing_id is not None and replace_existing and isinstance(docs, dict):
+            # Replace body/meta; keep same id when possible
+            try:
+                docs[existing_id] = {
+                    **(docs.get(existing_id) or {}),
+                    "text": body,
+                    "metadata": meta,
+                    "source": MARKER_PREFIX[ns],
+                }
+                doc_id = existing_id
+            except Exception:
+                doc_id = grid.add_document(body, lang=lang, source=MARKER_PREFIX[ns], metadata=meta)
+        else:
+            doc_id = grid.add_document(body, lang=lang, source=MARKER_PREFIX[ns], metadata=meta)
+        return {
+            "doc_id": doc_id,
+            "doc_uid": doc_uid,
+            "start_row": start_row,
+            "start_col": start_col,
+            "object_name": object_name,
+            "ns": ns,
+            "deduped": existing_id is not None,
+            "replaced": existing_id is not None and replace_existing,
         }
     raise RuntimeError("grid has no add_document")
 
@@ -192,3 +248,28 @@ def list_namespace(grid, ns: str, *, workspace_id: str = "") -> List[Dict[str, A
 def monitor_workflow(grid, *, workspace_id: str = "") -> Dict[str, List[Dict[str, Any]]]:
     """Aggregate all surface namespaces for org member / AI monitoring."""
     return {ns: list_namespace(grid, ns, workspace_id=workspace_id) for ns in NAMESPACES}
+
+
+def lookup_by_name(grid, ns: str, object_name: str, *, lang: str = "en") -> Optional[Dict[str, Any]]:
+    """Resolve object by name using the same GSP identity as place."""
+    ns = assert_ns(ns)
+    try:
+        from gsp_chain import start_row_for_name, validate_resource_name
+        object_name = validate_resource_name(object_name, what="object name")
+        place = start_row_for_name(object_name, lang=lang)
+        doc_uid = str(place.get("uid") or place.get("uid_str") or "")
+    except Exception:
+        doc_uid = ""
+        place = {}
+    for row in list_namespace(grid, ns):
+        if str(row.get("doc_uid") or "") == doc_uid or (
+            str(row.get("object_name") or "").lower() == object_name.lower()
+        ):
+            row = dict(row)
+            row["placement"] = {
+                "start_row": place.get("start_row") or row.get("start_row"),
+                "start_col": place.get("start_col") or row.get("start_col"),
+                "doc_uid": doc_uid or row.get("doc_uid"),
+            }
+            return row
+    return None

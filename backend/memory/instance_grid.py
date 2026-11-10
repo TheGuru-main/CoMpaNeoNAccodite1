@@ -246,6 +246,60 @@ def create_instance_grid(
     return grid
 
 
+
+def persist_owner_grid(owner: OwnerRef, grid, *, base: Optional[str] = None) -> dict:
+    """
+    Write the in-memory owner MemoryGrid to the durable instance path and publish to B2.
+
+    Instance grids are permanent (signup seed + live mutations). Not /tmp sandbox.
+    Platform training keys are never written here.
+    """
+    if not isinstance(owner, OwnerRef):
+        raise InstanceGridError("owner must be OwnerRef")
+    if grid is None:
+        raise InstanceGridError("grid required")
+
+    path = grid_path(owner, base)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        from memory.memory_grid import save_grid
+        save_grid(grid, str(path))
+    except Exception:
+        # Fallback: pickle/json via _grid_to_dict if save_grid path-sensitive
+        from memory.memory_grid import _grid_to_dict
+        import json as _json
+        tmp = path.with_name(path.name + ".tmp")
+        payload = _grid_to_dict(grid)
+        with tmp.open("w", encoding="utf-8") as fout:
+            _json.dump(payload, fout, ensure_ascii=False)
+        os.replace(tmp, path)
+
+    _write_manifest(path.parent, {
+        "owner": owner.key,
+        "updated_at": int(time.time()),
+        "last_snapshot": int(time.time()),
+        "source": "instance_mutate",
+    })
+
+    b2_ok = False
+    b2_err = None
+    try:
+        _publish_owner_grid(owner, path)
+        b2_ok = True
+    except Exception as e:
+        b2_err = f"{type(e).__name__}: {e}"
+        print("[instance_grid] persist B2:", b2_err)
+
+    return {
+        "ok": True,
+        "path": str(path),
+        "owner": owner.key,
+        "b2_ok": b2_ok,
+        "b2_error": b2_err,
+    }
+
+
 def require_access(*, user_id: str, owner: OwnerRef, is_active_member) -> None:
     if owner.kind == "user":
         return

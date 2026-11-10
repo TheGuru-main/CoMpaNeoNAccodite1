@@ -92,7 +92,7 @@ def place_ns_object(
         u.phone = user_phone
         u.account_type = "regular"
         ownership = resolve_ownership(
-            user=u, surface=surface, room_id=workspace_id, org_id=org_id, require=False,
+            user=u, surface=surface, room_id=workspace_id, org_id=org_id,
         )
     except Exception as _oe:
         print("[ns] ownership:", type(_oe).__name__, _oe)
@@ -158,7 +158,31 @@ def place_ns_object(
         workspace_id=workspace_id,
         extra=meta_extra,
     )
+
+    # Durable instance grid (not temp): GSP already wrote into owner MemoryGrid;
+    # namespace only marks sector (dbase/sheets/...). Persist local + B2 partition.
+    persist_info = {"ok": False}
+    try:
+        from memory.instance_grid import OwnerRef, persist_owner_grid
+        from memory.owner_identity import phone_uid as _puid
+        kind = "user"
+        phone = owner_phone
+        if ownership is not None:
+            kind = "org" if getattr(ownership, "kind", "") == "org" else "user"
+            phone = getattr(ownership, "phone_uid", None) or getattr(ownership, "owner_id", None) or phone
+        if not phone:
+            phone = _puid(org_phone or user_phone) or ""
+        if phone:
+            persist_info = persist_owner_grid(OwnerRef(kind, str(phone)), grid)
+        else:
+            persist_info = {"ok": False, "error": "no owner phone for persist"}
+    except Exception as _pe:
+        persist_info = {"ok": False, "error": f"{type(_pe).__name__}: {_pe}"}
+        print("[ns] persist_owner_grid:", persist_info["error"])
+
     if isinstance(placed, dict):
+        placed = dict(placed)
+        placed["persist"] = persist_info
         return {
             "ok": True,
             "doc_id": placed.get("doc_id"),

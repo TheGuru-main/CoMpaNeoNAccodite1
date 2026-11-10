@@ -618,6 +618,8 @@ def get_batch(
 
 def train(
     memory_grid: Optional[MemoryGrid] = None,
+    owner_kind: Optional[str] = None,
+    owner_id: Optional[str] = None,
     data_dir: Optional[str] = None,
     epochs: int = 100,
     batch_size: int = 8,
@@ -695,7 +697,10 @@ def train(
         except Exception:
             memory_grid = None
         if memory_grid is None:
-            memory_grid = MemoryGrid()
+            raise RuntimeError(
+                "train: no MemoryGrid bound — pass platform grid or instance owner grid "
+                "(never invent empty MemoryGrid)"
+            )
 
     # ----------------------------------------------------------------
     # COLLECT TRAINING DATA

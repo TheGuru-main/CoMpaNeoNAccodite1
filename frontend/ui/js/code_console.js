@@ -603,7 +603,7 @@
     }
   }
 
-  async function saveFileasync function saveFile() {
+  async function saveFile() {
     if (!repo || !monacoEditor || !currentFile) return;
     try {
       await api("/sandbox/fs/write", "POST", {
@@ -1110,24 +1110,16 @@ if (cmd === "cat" && arg) {
         try {
           var g = await api("/sandbox/repos/" + encodeURIComponent(repo) + "/rootcheck?scope=" + encodeURIComponent(scope) + "&cwd=" + encodeURIComponent(cwd || ""));
           writeLog(
-            "rootcheck " + (g.ok ? "OK" : "FAIL") + "
-" +
-            "  repo=" + repo + " on_disk=" + g.on_disk + "
-" +
-            "  start_row=" + (g.start_row || "?") + " expected=" + (g.expected_start_row || "?") + "
-" +
-            "  repo_uid=" + (g.repo_uid || "?") + "
-" +
-            "  cwd=" + (g.cwd || "/") + " cwd_ok=" + g.cwd_ok + "
-" +
-            "  files=" + (g.files || 0) + " manifest=" + g.manifest_listed + "
-" +
-            (g.issues && g.issues.length ? ("  issues: " + g.issues.join("; ") + "
-") : "")
+            "rootcheck " + (g.ok ? "OK" : "FAIL") + "\n" +
+            "  repo=" + repo + " on_disk=" + g.on_disk + "\n" +
+            "  start_row=" + (g.start_row || "?") + " expected=" + (g.expected_start_row || "?") + "\n" +
+            "  repo_uid=" + (g.repo_uid || "?") + "\n" +
+            "  cwd=" + (g.cwd || "/") + " cwd_ok=" + g.cwd_ok + "\n" +
+            "  files=" + (g.files || 0) + " manifest=" + g.manifest_listed + "\n" +
+            (g.issues && g.issues.length ? ("  issues: " + g.issues.join("; ") + "\n") : "")
           );
         } catch (e) {
-          writeLog("rootcheck FAIL: " + errText(e) + "
-");
+          writeLog("rootcheck FAIL: " + errText(e) + "\n");
         }
         return;
       }
@@ -1342,11 +1334,9 @@ if (cmd === "cat" && arg) {
         await openFirstInActiveRepo();
       }
     } catch (e) {
-      writeLog("boot: " + errText(e) + "
-");
+      writeLog("boot: " + errText(e) + "\n");
     }
-    writeLog("Codespace ready · type help
-");
+    writeLog("Codespace ready · type help\n");
     paintTerm();
     setTimeout(function () {
       try { layoutEditor(); } catch (e) {}

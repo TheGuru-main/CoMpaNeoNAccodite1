@@ -880,23 +880,26 @@ def _normalize_doc_kind(kind: str) -> str:
 class DocCreate(BaseModel):
     scope: str = Field("user", pattern="^(user|org|ai)$")
     parent_type: str = Field("repo", pattern="^(repo|room)$")
-    parent_repo: str = ""  # when parent_type=repo
-    parent_id: str = ""    # when parent_type=room (or override)
+    parent_repo: str = ""
+    parent_id: str = ""
+    org_id: str = ""
     doc_name: str
     kind: str = Field("sheet", pattern="^(sheet|sheets|xlsx|dbase|workspace|collabsheet|pptx|presentations)$")
     n_rows: int = Field(100, ge=1, le=5000)
-    n_cols: int = Field(26, ge=1, le=512)
+    n_cols: int = Field(54, ge=1, le=512)
 
 class DocCellWrite(BaseModel):
     scope: str = Field("user", pattern="^(user|org|ai)$")
     parent_type: str = Field("repo", pattern="^(repo|room)$")
     parent_repo: str = ""
     parent_id: str = ""
+    org_id: str = ""
     doc_name: str
     doc_uid: str = ""
     row: int
     col: int
     value: str = ""
+    meta: str = ""
     place: bool = False
 
 def _docs_dir(scope: str, repo: str) -> Path:
@@ -933,209 +936,249 @@ def _enforce_docs_access(user, parent_type, parent_id):
         if (parent_type or "").lower() == "room":
             raise HTTPException(403, f"room access check failed: {e}")
 
+
+def _docs_surface(kind: str) -> str:
+    return {
+        "sheet": "sheets",
+        "xlsx": "dbase",
+        "workspace": "collabsheet",
+        "pptx": "presentations",
+    }.get(_normalize_doc_kind(kind), "sheets")
+
+
+def _docs_user(request):
+    user = getattr(getattr(request, "state", None), "user", None) if request else None
+    if user is None and request is not None:
+        user = _optional_user(request)
+    if user is None:
+        raise HTTPException(401, "authentication required")
+    return user
+
+
+def _resolve_docs_owner(request, parent_type, parent_id, kind, org_id=""):
+    user = _docs_user(request)
+
+    try:
+        from memory.ownership_scope import resolve_ownership
+
+        ownership = resolve_ownership(
+            user=user,
+            surface=_docs_surface(kind),
+            room_id=parent_id if parent_type == "room" else None,
+            org_id=org_id or None,
+            require=True,
+        )
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc))
+    except Exception as exc:
+        raise HTTPException(403, f"ownership resolution failed: {exc}")
+
+    _enforce_docs_access(user, parent_type, parent_id)
+    return user, ownership
+
+
+def _assert_docs_owner(meta, ownership):
+    if not meta:
+        raise HTTPException(404, "doc not found")
+
+    actual = (
+        str(meta.get("ownership_kind") or ""),
+        str(meta.get("ownership_id") or ""),
+        str(meta.get("b2_prefix") or "").strip("/"),
+    )
+
+    expected = (
+        str(ownership.kind),
+        str(ownership.owner_id),
+        str(ownership.b2_prefix or "").strip("/"),
+    )
+
+    if actual != expected:
+        raise HTTPException(403, "document ownership partition mismatch")
+
+    if ownership.org_id and str(meta.get("org_id") or "") != str(ownership.org_id):
+        raise HTTPException(403, "document organisation ownership mismatch")
+
+
+def _doc_parent(parent_type, parent_repo="", parent_id=""):
+    pt = (parent_type or "repo").strip().lower()
+    pid = (parent_id or parent_repo or "").strip()
+
+    if pt not in ("repo", "room") or not pid:
+        raise HTTPException(400, "valid parent_type and parent_repo/parent_id required")
+
+    return pt, pid
+
+
+def _docs_store_error(exc):
+    if isinstance(exc, KeyError):
+        raise HTTPException(404, "doc not found")
+    if isinstance(exc, PermissionError):
+        raise HTTPException(403, str(exc))
+    if isinstance(exc, ValueError):
+        raise HTTPException(400, str(exc))
+    if isinstance(exc, RuntimeError):
+        raise HTTPException(503, str(exc))
+
+    message = str(exc).lower()
+    if "unique" in message or "duplicate" in message:
+        raise HTTPException(409, "document already exists")
+
+    raise HTTPException(500, "document storage operation failed")
+
+
 @router.post("/docs")
 async def create_doc(req: DocCreate, request: Request = None):
-    # ACCD-DOCS-REBAC
-    parent_type = getattr(req, "parent_type", None) or "repo"
-    parent_id = getattr(req, "parent_id", None) or getattr(req, "parent_repo", None) or ""
-    user = getattr(request, "state", None) and getattr(request.state, "user", None)
-    if user is None and request is not None:
-        try:
-            from auth.auth import decode_access_token
-            auth = request.headers.get("Authorization") or ""
-            if auth.lower().startswith("bearer "):
-                payload = decode_access_token(auth.split(" ", 1)[1])
-                class _U: pass
-                user = _U()
-                user.id = payload.get("sub") or payload.get("user_id")
-        except Exception:
-            user = None
-    _enforce_docs_access(user, parent_type, parent_id)
-    req.kind = _normalize_doc_kind(req.kind)
-    # Prefer Neon+B2 when available
+    from docs_store import create_document
+
+    pt, pid = _doc_parent(req.parent_type, req.parent_repo, req.parent_id)
+    kind = _normalize_doc_kind(req.kind)
+
+    if pt == "repo" and not _repo_dir(req.scope, pid).exists():
+        raise HTTPException(404, "parent repo not found")
+
+    user, ownership = _resolve_docs_owner(
+        request, pt, pid, kind, req.org_id
+    )
+
     try:
-        from docs_store import create_document as _ds_create
-        parent_id = parent_id or getattr(req, "parent_repo", None)
-        return _ds_create(
-            parent_type=parent_type,
-            parent_id=parent_id,
+        return create_document(
+            parent_type=pt,
+            parent_id=pid,
             doc_name=req.doc_name,
-            kind=req.kind,
+            kind=kind,
             scope=req.scope,
             n_rows=req.n_rows,
             n_cols=req.n_cols,
+            owner_user_id=getattr(user, "id", None),
+            ownership_kind=ownership.kind,
+            ownership_id=ownership.owner_id,
+            b2_prefix=ownership.b2_prefix,
+            org_id=ownership.org_id,
         )
-    except Exception as _ds_err:
-        print("[docs] docs_store create fallback disk:", type(_ds_err).__name__, _ds_err)
-    rdir = _repo_dir(req.scope, req.parent_repo)
-    if not rdir.exists():
-        raise HTTPException(404, "parent repo not found")
-    ddir = _doc_dir(req.scope, req.parent_repo, req.doc_name)
-    if ddir.exists():
-        raise HTTPException(409, "doc already exists")
-    ddir.mkdir(parents=True, exist_ok=True)
-    place = place_coords_for_name(req.doc_name)
-    uid = place.get("uid") or place.get("uid_str") or uid_from_name(req.doc_name)
-    # Ownership partition UID (org phone / user phone) — not the name chain
-    owner_uid = ""
-    try:
-        auth = (request.headers.get("Authorization") or "") if request is not None else ""
-        if auth.lower().startswith("bearer "):
-            from auth.auth import decode_access_token
-            from database import SessionLocal
-            from db_models import User as _U, OrganizationMembership, Organization
-            from memory.owner_identity import phone_uid
-            payload = decode_access_token(auth.split(" ", 1)[1])
-            uid_user = payload.get("sub") or payload.get("user_id")
-            db = SessionLocal()
-            try:
-                u = db.query(_U).filter(_U.id == uid_user).first() if uid_user else None
-                if u:
-                    # Prefer active org membership phone as org placement partition
-                    m = (
-                        db.query(OrganizationMembership)
-                        .filter(
-                            OrganizationMembership.user_id == u.id,
-                            OrganizationMembership.credential_active == True,  # noqa: E712
-                        )
-                        .first()
-                    )
-                    if m:
-                        org = db.query(Organization).filter(Organization.id == m.organization_id).first()
-                        owner_uid = phone_uid(getattr(org, "phone", None) or "") if org else ""
-                        if owner_uid:
-                            owner_uid = f"org:{owner_uid}"
-                    if not owner_uid:
-                        owner_uid = f"user:{phone_uid(getattr(u, 'phone', None) or '')}"
-            finally:
-                db.close()
-    except Exception as _ou:
-        print("[sandbox] owner_uid:", type(_ou).__name__, _ou)
+    except Exception as exc:
+        _docs_store_error(exc)
 
-    meta = {
-        "kind": req.kind,
-        "doc_name": req.doc_name,
-        "doc_uid": uid,  # name letter-chain (lookup identity for object content)
-        "owner_uid": owner_uid,  # org:phone or user:phone partition
-        "chain": place.get("chain"),
-        "L": place.get("L"),
-        "S": place.get("S"),
-        "c": place.get("start_col"),
-        "start_row": place.get("start_row"),
-        "start_col": place.get("start_col"),
-        "target_cell": place.get("target_cell"),
-        "root_key": place.get("root_key"),
-        "parent_repo": req.parent_repo or req.parent_id,
-        "parent_type": getattr(req, "parent_type", "repo"),
-        "parent_id": getattr(req, "parent_id", None) or req.parent_repo,
-        "scope": req.scope,
-        "created_at": time.time(),
-        "grid": (
-            {"rows": "1..64", "cols": "0..53"} if req.kind in ("sheet", "workspace")
-            else {"slides": True} if req.kind in ("pptx", "presentations")
-            else {"n_rows": req.n_rows, "n_cols": req.n_cols, "configurable": True, "gsp": True}
-        ),
-        "placement": {
-            "object_name": req.doc_name,
-            "L": place.get("L"),
-            "S": place.get("S"),
-            "c": place.get("start_col"),
-            "start_row": place.get("start_row"),
-            "start_col": place.get("start_col"),
-            "target_cell": place.get("target_cell"),
-            "doc_uid": uid,
-            "owner_uid": owner_uid,
-        },
-    }
-    _write_meta(ddir, meta)
-    # Seed empty grid with object marker cell at target placement
-    seed_cell = {
-        "value": req.doc_name,
-        "meta": f"placed {place.get('target_cell')}",
-        "doc_uid": uid,
-        "owner_uid": owner_uid,
-    }
-    r0, c0 = int(place.get("start_row") or 1), int(place.get("start_col") or 0)
-    cell_key = f"{r0}:{c0}"
-    if req.kind in ("pptx", "presentations"):
-        data = {"slides": [{"id": "s0", "title": req.doc_name, "body": "", "gradient": "g00", "blocks": []}]}
-    elif req.kind in ("sheet", "workspace"):
-        data = {"cells": {cell_key: seed_cell}, "row_min": 1, "row_max": 64, "col_min": 0, "col_max": 53}
-    else:
-        data = {
-            "cells": {cell_key: seed_cell},
-            "sheets": {"Sheet1": {"cells": {cell_key: seed_cell}}},
-            "active_sheet": "Sheet1",
-            "n_rows": req.n_rows,
-            "n_cols": req.n_cols,
-            "configurable": True,
-            "gsp": meta["placement"],
-        }
-    _doc_data_path(ddir).write_text(json.dumps(data), encoding="utf-8")
-    return {"ok": True, **meta, "gsp": meta["placement"]}
 
 @router.get("/docs")
-async def list_docs(parent_repo: str, scope: str = "user", parent_type: str = "repo", parent_id: str = "", request: Request = None):
-    # ACCD-DOCS-REBAC
-    pt = parent_type or "repo"
-    pid = parent_id or parent_repo
-    user = None
-    if request is not None:
-        try:
-            from auth.auth import decode_access_token
-            auth = request.headers.get("Authorization") or ""
-            if auth.lower().startswith("bearer "):
-                payload = decode_access_token(auth.split(" ", 1)[1])
-                class _U: pass
-                user = _U()
-                user.id = payload.get("sub") or payload.get("user_id")
-        except Exception:
-            pass
+async def list_docs(
+    parent_repo: str = "",
+    scope: str = "user",
+    parent_type: str = "repo",
+    parent_id: str = "",
+    org_id: str = "",
+    request: Request = None,
+):
+    from docs_store import list_documents
+
+    pt, pid = _doc_parent(parent_type, parent_repo, parent_id)
+    user = _docs_user(request)
     _enforce_docs_access(user, pt, pid)
-    root = _docs_dir(scope, parent_repo)
-    if not root.exists():
-        return {"docs": [], "parent_repo": parent_repo}
-    out = []
-    for d in sorted(root.iterdir()):
-        if not d.is_dir():
-            continue
-        meta = _read_meta(d) or {}
-        name = meta.get("doc_name") or d.name
-        out.append({
-            "doc_name": name,
-            "doc_uid": meta.get("doc_uid") or uid_from_name(name),
-            "kind": meta.get("kind") or "sheet",
-            "start_row": meta.get("start_row"),
-            "chain": meta.get("chain") or letter_chain(name),
-            "parent_repo": parent_repo,
-        })
-    return {"docs": out, "parent_repo": parent_repo}
+
+    try:
+        rows = list_documents(pt, pid)
+        visible = []
+
+        for row in rows:
+            try:
+                _, ownership = _resolve_docs_owner(
+                    request, pt, pid, row.get("kind") or "sheet", org_id
+                )
+                _assert_docs_owner(row, ownership)
+
+                name = row.get("doc_name") or ""
+                updated = row.get("updated_at")
+
+                visible.append({
+                    "doc_name": name,
+                    "doc_uid": row.get("doc_uid"),
+                    "kind": row.get("kind") or "sheet",
+                    "start_row": row.get("start_row"),
+                    "chain": row.get("chain") or letter_chain(name),
+                    "version": row.get("version"),
+                    "updated_at": updated.isoformat() if updated else None,
+                    "parent_repo": pid,
+                })
+
+            except HTTPException as exc:
+                if exc.status_code not in (403, 404):
+                    raise
+
+        return {
+            "docs": visible,
+            "parent_repo": pid,
+            "parent_type": pt,
+            "parent_id": pid,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _docs_store_error(exc)
+
+
+# Register the static path before /docs/{doc_name}.
+@router.get("/docs/get")
+async def get_doc_query(
+    parent_repo: str = "",
+    parent_id: str = "",
+    parent_type: str = "repo",
+    doc_name: str = "",
+    scope: str = "user",
+    org_id: str = "",
+    request: Request = None,
+):
+    from docs_store import get_document
+
+    pt, pid = _doc_parent(parent_type, parent_repo, parent_id)
+
+    if not doc_name:
+        raise HTTPException(400, "doc_name required")
+
+    try:
+        got = get_document(pt, pid, doc_name)
+
+        _, ownership = _resolve_docs_owner(
+            request, pt, pid, got["meta"].get("kind") or "sheet", org_id
+        )
+
+        _assert_docs_owner(got["meta"], ownership)
+        return got
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _docs_store_error(exc)
+
 
 @router.get("/docs/{doc_name}")
-async def get_doc(doc_name: str, parent_repo: str, scope: str = "user"):
-    ddir = _doc_dir(scope, parent_repo, doc_name)
-    if not ddir.exists():
-        raise HTTPException(404, "doc not found")
-    meta = _read_meta(ddir) or {}
-    data = {}
-    dp = _doc_data_path(ddir)
-    if dp.is_file():
-        try:
-            data = json.loads(dp.read_text(encoding="utf-8"))
-        except Exception:
-            data = {}
-    return {"meta": meta, "data": data}
+async def get_doc(
+    doc_name: str,
+    parent_repo: str = "",
+    scope: str = "user",
+    parent_type: str = "repo",
+    parent_id: str = "",
+    org_id: str = "",
+    request: Request = None,
+):
+    from docs_store import get_document
 
+    pt, pid = _doc_parent(parent_type, parent_repo, parent_id)
 
-class DocSnapshot(BaseModel):
-    scope: str = Field("user", pattern="^(user|org|ai)$")
-    parent_type: str = Field("repo", pattern="^(repo|room)$")
-    parent_repo: str = ""
-    parent_id: str = ""
-    doc_name: str
-    doc_uid: str = ""
-    data: dict
+    try:
+        got = get_document(pt, pid, doc_name)
 
+        _, ownership = _resolve_docs_owner(
+            request, pt, pid, got["meta"].get("kind") or "sheet", org_id
+        )
+
+        _assert_docs_owner(got["meta"], ownership)
+        return got
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _docs_store_error(exc)
 
 
 class DocsImportOfficeBody(BaseModel):
@@ -1143,6 +1186,7 @@ class DocsImportOfficeBody(BaseModel):
     parent_type: str = "repo"
     parent_repo: str = ""
     parent_id: str = ""
+    org_id: str = ""
     doc_name: str
     description: str = ""
     payload_b64: str = ""
@@ -1154,163 +1198,81 @@ class DocsImportOfficeBody(BaseModel):
 
 @router.post("/docs/import_office")
 def docs_import_office(body: DocsImportOfficeBody, request: Request = None):
-    """Excel/CSV → Accodite SheetS cells + place on ns:sheets|dbase."""
-    import base64 as _b64
-    import json as _json
-    import re as _re
-    from memory.office_import import import_spreadsheet
-    from memory.grid_ns_api import place_ns_object
-    from memory.owner_identity import phone_uid
-
-    raw = _b64.b64decode(body.payload_b64) if body.payload_b64 else None
-    parsed = import_spreadsheet(
-        data=raw,
-        filename=body.filename or "",
-        url=body.url or "",
-        payload_ref=body.payload_ref or "",
+    raise HTTPException(
+        501,
+        "Office import is not yet connected to the B2 document pipeline",
     )
-    name = (body.doc_name or "").strip()
-    if not _re.match(r"^[A-Za-z][A-Za-z0-9_-]{0,62}$", name):
-        raise HTTPException(400, "doc_name must start with a letter")
-
-    scope = body.scope or "user"
-    parent_repo = body.parent_repo or body.parent_id or "default"
-    root = _docs_dir(scope, parent_repo)
-    root.mkdir(parents=True, exist_ok=True)
-    doc_path = root / f"{name}.json"
-    payload = {
-        "doc_name": name,
-        "kind": "sheet" if body.kind in ("sheets", "sheet") else "xlsx",
-        "description": body.description,
-        "data": {
-            "cells": parsed.get("cells") or {},
-            "sheets": parsed.get("sheets") or {"Sheet1": {"cells": parsed.get("cells") or {}}},
-            "active_sheet": parsed.get("active_sheet") or "Sheet1",
-            "object_name": name,
-            "object_desc": body.description,
-            "n_rows": parsed.get("n_rows"),
-            "n_cols": parsed.get("n_cols"),
-            "source_format": parsed.get("format"),
-        },
-        "meta": {"filename": body.filename, "url": body.url},
-    }
-    doc_path.write_text(_json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-
-    ns = "sheets" if body.kind in ("sheets", "sheet") else "dbase"
-    place = place_ns_object(
-        ns=ns,
-        object_name=name,
-        text=f"Imported {parsed.get('format')} {body.filename or body.url}",
-        description=body.description,
-        user_id=str(getattr(user, "id", "")),
-        user_phone=phone_uid(getattr(user, "phone", None)),
-        media_type="spreadsheet",
-        filename=body.filename or "",
-        payload_ref=body.payload_ref or body.url or "",
-    )
-    return {"ok": True, "doc_name": name, "parsed": {
-        "n_rows": parsed.get("n_rows"),
-        "n_cols": parsed.get("n_cols"),
-        "sheet_names": parsed.get("sheet_names"),
-        "format": parsed.get("format"),
-        "cell_count": len(parsed.get("cells") or {}),
-    }, "place": place}
 
 
 @router.post("/docs/snapshot")
 async def save_doc_snapshot(req: DocSnapshot, request: Request = None):
-    """Persist full doc payload (cells, sheets, slides)."""
-    pt = req.parent_type or "repo"
-    pid = req.parent_id or req.parent_repo
-    user = None
-    if request is not None:
-        try:
-            from auth.auth import decode_access_token
-            auth = request.headers.get("Authorization") or ""
-            if auth.lower().startswith("bearer "):
-                payload = decode_access_token(auth.split(" ", 1)[1])
-                class _U: pass
-                user = _U()
-                user.id = payload.get("sub") or payload.get("user_id")
-        except Exception:
-            pass
-    _enforce_docs_access(user, pt, pid)
-    parent = req.parent_repo or req.parent_id
-    ddir = _doc_dir(req.scope, parent, req.doc_name)
-    if not ddir.exists():
-        raise HTTPException(404, "doc not found")
-    if req.doc_uid and not verify_uid_matches_name(req.doc_name, req.doc_uid):
-        raise HTTPException(403, "doc_uid mismatch")
-    dp = _doc_data_path(ddir)
-    payload = req.data if isinstance(req.data, dict) else {}
-    dp.write_text(json.dumps(payload), encoding="utf-8")
-    meta = _read_meta(ddir) or {}
-    meta["updated_at"] = time.time()
-    _write_meta(ddir, meta)
-    return {"ok": True, "doc_name": req.doc_name}
+    from docs_store import get_document, save_snapshot
 
+    pt, pid = _doc_parent(req.parent_type, req.parent_repo, req.parent_id)
 
-@router.get("/docs/get")
-async def get_doc_query(
-    parent_repo: str = "",
-    parent_id: str = "",
-    parent_type: str = "repo",
-    doc_name: str = "",
-    scope: str = "user",
-):
-    parent = parent_repo or parent_id
-    if not parent or not doc_name:
-        raise HTTPException(400, "parent_repo/parent_id and doc_name required")
-    return await get_doc(doc_name, parent, scope)
+    try:
+        current = get_document(pt, pid, req.doc_name)
+
+        user, ownership = _resolve_docs_owner(
+            request, pt, pid, current["meta"].get("kind") or "sheet", req.org_id
+        )
+
+        _assert_docs_owner(current["meta"], ownership)
+
+        if req.doc_uid and req.doc_uid != current["meta"].get("doc_uid"):
+            raise HTTPException(403, "doc_uid does not match stored document")
+
+        return save_snapshot(
+            parent_type=pt,
+            parent_id=pid,
+            doc_name=req.doc_name,
+            doc_uid=req.doc_uid,
+            data=req.data,
+            actor_user_id=getattr(user, "id", None),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _docs_store_error(exc)
+
 
 @router.post("/docs/cell")
 async def write_doc_cell(req: DocCellWrite, request: Request = None):
-    # ACCD-DOCS-REBAC
-    pt = getattr(req, "parent_type", None) or "repo"
-    pid = getattr(req, "parent_id", None) or getattr(req, "parent_repo", None) or ""
-    user = None
-    if request is not None:
-        try:
-            from auth.auth import decode_access_token
-            auth = request.headers.get("Authorization") or ""
-            if auth.lower().startswith("bearer "):
-                payload = decode_access_token(auth.split(" ", 1)[1])
-                class _U: pass
-                user = _U()
-                user.id = payload.get("sub") or payload.get("user_id")
-        except Exception:
-            pass
-    _enforce_docs_access(user, pt, pid)
-    ddir = _doc_dir(req.scope, req.parent_repo, req.doc_name)
-    if not ddir.exists():
-        raise HTTPException(404, "doc not found")
-    meta = _read_meta(ddir) or {}
-    expected = uid_from_name(req.doc_name)
-    if req.doc_uid and not verify_uid_matches_name(req.doc_name, req.doc_uid):
-        raise HTTPException(403, "doc_uid does not match tokenizer letter-chain of doc_name")
-    kind = meta.get("kind") or "sheet"
+    from docs_store import get_document, write_cell
+
+    pt, pid = _doc_parent(req.parent_type, req.parent_repo, req.parent_id)
+
     try:
-        if kind in ("sheet", "workspace"):
-            row, col = validate_cell(req.row, req.col)
-        else:
-            row, col = int(req.row), int(req.col)
-    except ValueError as e:
-        raise HTTPException(400, str(e))
-    dp = _doc_data_path(ddir)
-    data = json.loads(dp.read_text(encoding="utf-8")) if dp.is_file() else {"cells": {}}
-    cells = data.setdefault("cells", {})
-    key = f"{row}:{col}"
-    entry = {"value": req.value, "row": row, "col": col}
-    if req.place or kind == "workspace":
-        entry["placed"] = True
-        entry["placement"] = {
-            "row": row, "col": col,
-            "doc_start_row": meta.get("start_row"),
-            "doc_uid": expected, "doc_name": req.doc_name,
-        }
-    cells[key] = entry
-    dp.write_text(json.dumps(data), encoding="utf-8")
-    return {"ok": True, "key": key, "entry": entry, "doc_uid": expected}
+        current = get_document(pt, pid, req.doc_name)
+
+        user, ownership = _resolve_docs_owner(
+            request, pt, pid, current["meta"].get("kind") or "sheet", req.org_id
+        )
+
+        _assert_docs_owner(current["meta"], ownership)
+
+        if req.doc_uid and req.doc_uid != current["meta"].get("doc_uid"):
+            raise HTTPException(403, "doc_uid does not match stored document")
+
+        return write_cell(
+            parent_type=pt,
+            parent_id=pid,
+            doc_name=req.doc_name,
+            doc_uid=req.doc_uid,
+            row=req.row,
+            col=req.col,
+            value=req.value,
+            meta_value=req.meta,
+            place=req.place,
+            actor_user_id=getattr(user, "id", None),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _docs_store_error(exc)
+
 
 @router.get("/gsp/chain")
 async def gsp_chain_preview(name: str, lang: str = "en"):

@@ -653,7 +653,7 @@
     }
   }
 
-  async function refreshListasync function refreshList() {
+  async function refreshList() {
     var list = document.getElementById("gspDocList");
     if (!list) return;
     list.innerHTML = '<div style="color:#94a3b8;font-size:12px;margin-bottom:8px">Paths / objects</div>';

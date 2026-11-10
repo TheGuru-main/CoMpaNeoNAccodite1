@@ -38,6 +38,12 @@ except Exception:
 # STATE
 # ============================================================================
 
+from contextvars import ContextVar
+
+# Request-scoped tenant grid — never bind tenants to process-wide _STATE["grid"]
+_request_grid_var: ContextVar = ContextVar("accd_request_grid", default=None)
+_request_owner_var: ContextVar = ContextVar("accd_request_owner", default=None)
+
 _STATE: Dict[str, Any] = {
     "ready": False,
     "control": None,       # CognitionControl
@@ -407,19 +413,50 @@ def ensure_request_grid(
         grid = None
     # Tenant resolution failures remain failures.
     # Platform access is available only through prefer_platform=True.
+    # Tenant grids stay request-scoped — do NOT assign to process-wide _STATE["grid"]
+    # unless this is an explicit platform bind (prefer_platform=True).
     if grid is not None:
-        _STATE["grid"] = grid
         try:
-            from training.background_training import resolve_partition_for_grid
-            resolve_partition_for_grid(grid)
+            _request_grid_var.set(grid)
         except Exception:
+            pass
+        if prefer_platform:
+            _STATE["grid"] = grid
             try:
-                from memory_partition import create_memory_partition
-                _STATE["partition"] = create_memory_partition(grid)
+                from training.background_training import resolve_partition_for_grid
+                resolve_partition_for_grid(grid)
+            except Exception:
+                try:
+                    from memory_partition import create_memory_partition
+                    _STATE["partition"] = create_memory_partition(grid)
+                except Exception:
+                    pass
+        else:
+            # Optional request-local partition; do not overwrite platform process grid
+            try:
+                from training.background_training import resolve_partition_for_grid
+                resolve_partition_for_grid(grid)
             except Exception:
                 pass
     return grid
 
+
+def get_request_grid():
+    """Current request tenant grid (contextvar), if set."""
+    try:
+        return _request_grid_var.get()
+    except Exception:
+        return None
+
+
+def get_active_grid(*, allow_process_platform: bool = True):
+    """Prefer request-scoped tenant grid; optionally fall back to process platform grid."""
+    g = get_request_grid()
+    if g is not None:
+        return g
+    if allow_process_platform:
+        return _STATE.get("grid")
+    return None
 
 
 

@@ -100,15 +100,18 @@ def place_in_owner_grid(
         from gsp_chain import start_row_for_name, uid_from_name, letter_chain
         place = start_row_for_name(object_name, lang=lang)
         start_row = int(place.get("start_row") or 0) or None
-        doc_uid = str(place.get("uid") or place.get("uid_str") or place.get("uid_compact") or uid_from_name(object_name, lang=lang) or "")
-        chain = place.get("chain")
-        if chain is None:
-            try:
-                chain = letter_chain(object_name, lang=lang)
-            except Exception:
-                chain = []
-        if chain:
-            start_col = int(chain[0]) % 54
+        # Canonical GSP column from gsp_chain (language-effective C) — do not recompute
+        if place.get("start_col") is not None:
+            start_col = int(place["start_col"])
+        elif place.get("c") is not None:
+            start_col = int(place["c"])
+        doc_uid = str(
+            place.get("uid")
+            or place.get("uid_str")
+            or place.get("uid_compact")
+            or uid_from_name(object_name, lang=lang)
+            or ""
+        )
     except Exception as e:
         print("[ns] gsp place:", type(e).__name__, e)
         try:

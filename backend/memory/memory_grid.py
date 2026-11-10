@@ -1776,11 +1776,20 @@ def save_grid(grid: "MemoryGrid" = None, path: str = None) -> str:
         json.dump(payload, f, ensure_ascii=False)
     os.replace(tmp, path)
     # Durable copy on Backblaze B2 when configured
+    # Global training/B2 key is PLATFORM-only. Tenant instance paths must not publish here.
     try:
         from storage.b2 import b2_enabled, b2_put_json
-        if b2_enabled():
+        pth = str(path or "")
+        is_tenant = (
+            "/instances/" in pth
+            or ("/user/" in pth and "grid" in pth)
+            or ("/org/" in pth and "grid" in pth)
+        )
+        if b2_enabled() and not is_tenant:
             key = b2_put_json("training/memory_grid/latest.json", payload)
-            print(f"[memory_grid] B2 snapshot {key}")
+            print(f"[memory_grid] B2 platform snapshot {key}")
+        elif is_tenant:
+            print("[memory_grid] skip global training B2 key for tenant path", pth)
     except Exception as e:
         print("[memory_grid] B2 snapshot skip:", type(e).__name__, e)
     return path

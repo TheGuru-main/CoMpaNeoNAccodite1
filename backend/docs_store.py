@@ -105,6 +105,7 @@ def ensure_gsp_documents_table(engine=None):
         """,
         "CREATE INDEX IF NOT EXISTS ix_gsp_documents_owner ON gsp_documents(ownership_kind,ownership_id)",
         "CREATE INDEX IF NOT EXISTS ix_gsp_documents_parent ON gsp_documents(parent_type,parent_id)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_gsp_documents_owner_parent_name ON gsp_documents(ownership_kind, ownership_id, parent_type, parent_id, doc_name)",
         "CREATE INDEX IF NOT EXISTS ix_gsp_documents_uid ON gsp_documents(doc_uid)",
         "CREATE INDEX IF NOT EXISTS ix_gsp_document_versions_parent ON gsp_document_versions(parent_type,parent_id,doc_name)"
     ]
@@ -313,32 +314,49 @@ def create_document(
     }
 
 
-def list_documents(parent_type: str, parent_id: str) -> List[Dict[str, Any]]:
+def list_documents(
+    parent_type: str,
+    parent_id: str,
+    *,
+    ownership_kind: str = "",
+    ownership_id: str = "",
+) -> List[Dict[str, Any]]:
+    """List docs under parent, scoped to owner instance partition when provided."""
     db = _db()
     try:
         ensure_gsp_documents_table()
         from sqlalchemy import text
-        rows = db.execute(
-            text(
-                """
-                SELECT id, doc_name, doc_uid, kind, start_row, chain,
-                       b2_snapshot_key, version, updated_at,
-                       owner_user_id, org_id, ownership_kind,
-                       ownership_id, b2_prefix
-                FROM gsp_documents
-                WHERE parent_type = :pt AND parent_id = :pid
-                ORDER BY doc_name
-                """
-            ),
-            {"pt": parent_type, "pid": parent_id},
-        ).mappings().all()
-        return [dict(r) for r in rows]
+
+        sql = """
+            SELECT id, doc_name, doc_uid, kind, start_row, chain,
+                   version, updated_at, b2_snapshot_key, description, payload_ref,
+                   owner_user_id, org_id, ownership_kind,
+                   ownership_id, b2_prefix, n_rows, n_cols
+            FROM gsp_documents
+            WHERE parent_type = :pt AND parent_id = :pid
+        """
+        params = {"pt": parent_type, "pid": parent_id}
+        okind = (ownership_kind or "").strip()
+        oid = str(ownership_id or "").strip()
+        if okind and oid:
+            sql += " AND ownership_kind = :okind AND ownership_id = :oid"
+            params["okind"] = okind
+            params["oid"] = oid
+        sql += " ORDER BY updated_at DESC NULLS LAST, doc_name ASC"
+        rows = db.execute(text(sql), params).mappings().all()
+        out = []
+        for r in rows:
+            out.append(dict(r))
+        return out
     finally:
-        db.close()
+        try:
+            db.close()
+        except Exception:
+            pass
 
 
 
-def get_document(parent_type: str, parent_id: str, doc_name: str) -> Dict[str, Any]:
+def get_document(parent_type: str, parent_id: str, doc_name: str, *, ownership_kind: str = "", ownership_id: str = "") -> Dict[str, Any]:
     if not b2_enabled():
         raise RuntimeError("B2 is required but is not configured")
 

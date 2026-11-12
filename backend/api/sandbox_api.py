@@ -1125,14 +1125,20 @@ async def list_docs(
     _enforce_docs_access(user, pt, pid)
 
     try:
-        rows = list_documents(pt, pid)
+        # Resolve caller ownership once (instance partition) — filter at SQL
+        _, ownership = _resolve_docs_owner(
+            request, pt, pid, "sheet", org_id
+        )
+        rows = list_documents(
+            pt,
+            pid,
+            ownership_kind=ownership.kind,
+            ownership_id=ownership.owner_id,
+        )
         visible = []
 
         for row in rows:
             try:
-                _, ownership = _resolve_docs_owner(
-                    request, pt, pid, row.get("kind") or "sheet", org_id
-                )
                 _assert_docs_owner(row, ownership)
 
                 name = row.get("doc_name") or ""
@@ -1185,7 +1191,7 @@ async def get_doc_query(
         raise HTTPException(400, "doc_name required")
 
     try:
-        got = get_document(pt, pid, doc_name)
+        got = get_document(pt, pid, doc_name, ownership_kind=getattr(ownership,'kind',''), ownership_id=getattr(ownership,'owner_id',''))
 
         _, ownership = _resolve_docs_owner(
             request, pt, pid, got["meta"].get("kind") or "sheet", org_id
@@ -1215,7 +1221,7 @@ async def get_doc(
     pt, pid = _doc_parent(parent_type, parent_repo, parent_id)
 
     try:
-        got = get_document(pt, pid, doc_name)
+        got = get_document(pt, pid, doc_name, ownership_kind=getattr(ownership,'kind',''), ownership_id=getattr(ownership,'owner_id',''))
 
         _, ownership = _resolve_docs_owner(
             request, pt, pid, got["meta"].get("kind") or "sheet", org_id

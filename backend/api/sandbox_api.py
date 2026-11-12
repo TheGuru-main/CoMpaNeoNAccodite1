@@ -1053,9 +1053,9 @@ async def create_doc(req: DocCreate, request: Request = None):
         )
     except Exception as exc:
         _docs_store_error(exc)
-        return  # unreachable if _docs_store_error raises
+        raise
 
-    # M3: same object on owner MemoryGrid via canonical place
+    # Canonical MemoryGrid place (same GSP name / owner instance)
     ns = {
         "sheet": "sheets",
         "xlsx": "dbase",
@@ -1064,37 +1064,49 @@ async def create_doc(req: DocCreate, request: Request = None):
     }.get(kind, "dbase")
     try:
         from memory.grid_ns_api import place_ns_object
-        phone = ""
-        try:
-            phone = str(getattr(user, "phone", None) or ownership.owner_id or "")
-        except Exception:
-            phone = str(getattr(ownership, "owner_id", "") or "")
+        phone = str(
+            getattr(ownership, "owner_id", None)
+            or getattr(user, "phone", None)
+            or ""
+        )
+        is_org = getattr(ownership, "kind", "") == "org"
         placed = place_ns_object(
             ns=ns,
             object_name=req.doc_name,
             description=getattr(req, "description", None) or "",
             text=getattr(req, "description", None) or req.doc_name,
             user_id=str(getattr(user, "id", "") or ""),
-            org_id=str(getattr(ownership, "org_id", None) or req.org_id or ""),
-            owner_phone_uid=phone,
+            org_id=str(
+                getattr(ownership, "org_id", None)
+                or getattr(req, "org_id", None)
+                or ""
+            ),
+            user_phone="" if is_org else phone,
+            org_phone=phone if is_org else "",
             workspace_id=str(pid or ""),
         )
         if isinstance(doc, dict):
             doc["ns"] = ns
-            doc["placement"] = (placed or {}).get("placement") or {
-                "start_row": (placed or {}).get("start_row"),
-                "start_col": (placed or {}).get("start_col"),
-                "doc_uid": (placed or {}).get("doc_uid"),
-            }
+            pl = (placed or {}).get("placement") or {}
+            if not pl:
+                pl = {
+                    "start_row": (placed or {}).get("start_row"),
+                    "start_col": (placed or {}).get("start_col"),
+                    "doc_uid": (placed or {}).get("doc_uid"),
+                }
+            doc["placement"] = pl
             doc["grid_doc_id"] = (placed or {}).get("doc_id")
-            if doc.get("start_col") is None and doc["placement"].get("start_col") is not None:
-                doc["start_col"] = doc["placement"]["start_col"]
-            if not doc.get("start_row") and doc["placement"].get("start_row"):
-                doc["start_row"] = doc["placement"]["start_row"]
+            if doc.get("start_col") is None and pl.get("start_col") is not None:
+                doc["start_col"] = pl["start_col"]
+            if not doc.get("start_row") and pl.get("start_row"):
+                doc["start_row"] = pl["start_row"]
+            if (placed or {}).get("ok") is False:
+                doc["grid_place_error"] = (placed or {}).get("error")
     except Exception as e:
         if isinstance(doc, dict):
             doc["grid_place_error"] = f"{type(e).__name__}: {e}"
     return doc
+
 
 
 @router.get("/docs")

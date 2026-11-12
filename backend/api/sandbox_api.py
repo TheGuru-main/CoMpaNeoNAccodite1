@@ -1191,12 +1191,17 @@ async def get_doc_query(
         raise HTTPException(400, "doc_name required")
 
     try:
-        got = get_document(pt, pid, doc_name, ownership_kind=getattr(ownership,'kind',''), ownership_id=getattr(ownership,'owner_id',''))
-
+        # Parent + account scope first (personal user: vs team/org space)
         _, ownership = _resolve_docs_owner(
-            request, pt, pid, got["meta"].get("kind") or "sheet", org_id
+            request, pt, pid, "sheet", org_id
         )
-
+        got = get_document(
+            pt,
+            pid,
+            doc_name,
+            ownership_kind=ownership.kind,
+            ownership_id=ownership.owner_id,
+        )
         _assert_docs_owner(got["meta"], ownership)
         return got
 
@@ -1221,12 +1226,16 @@ async def get_doc(
     pt, pid = _doc_parent(parent_type, parent_repo, parent_id)
 
     try:
-        got = get_document(pt, pid, doc_name, ownership_kind=getattr(ownership,'kind',''), ownership_id=getattr(ownership,'owner_id',''))
-
         _, ownership = _resolve_docs_owner(
-            request, pt, pid, got["meta"].get("kind") or "sheet", org_id
+            request, pt, pid, "sheet", org_id
         )
-
+        got = get_document(
+            pt,
+            pid,
+            doc_name,
+            ownership_kind=ownership.kind,
+            ownership_id=ownership.owner_id,
+        )
         _assert_docs_owner(got["meta"], ownership)
         return got
 
@@ -1266,12 +1275,16 @@ async def save_doc_snapshot(req: DocSnapshot, request: Request = None):
     pt, pid = _doc_parent(req.parent_type, req.parent_repo, req.parent_id)
 
     try:
-        current = get_document(pt, pid, req.doc_name)
-
         user, ownership = _resolve_docs_owner(
-            request, pt, pid, current["meta"].get("kind") or "sheet", req.org_id
+            request, pt, pid, "sheet", req.org_id
         )
-
+        current = get_document(
+            pt,
+            pid,
+            req.doc_name,
+            ownership_kind=ownership.kind,
+            ownership_id=ownership.owner_id,
+        )
         _assert_docs_owner(current["meta"], ownership)
 
         if req.doc_uid and req.doc_uid != current["meta"].get("doc_uid"):
@@ -1299,12 +1312,16 @@ async def write_doc_cell(req: DocCellWrite, request: Request = None):
     pt, pid = _doc_parent(req.parent_type, req.parent_repo, req.parent_id)
 
     try:
-        current = get_document(pt, pid, req.doc_name)
-
         user, ownership = _resolve_docs_owner(
-            request, pt, pid, current["meta"].get("kind") or "sheet", req.org_id
+            request, pt, pid, "sheet", req.org_id
         )
-
+        current = get_document(
+            pt,
+            pid,
+            req.doc_name,
+            ownership_kind=ownership.kind,
+            ownership_id=ownership.owner_id,
+        )
         _assert_docs_owner(current["meta"], ownership)
 
         if req.doc_uid and req.doc_uid != current["meta"].get("doc_uid"):

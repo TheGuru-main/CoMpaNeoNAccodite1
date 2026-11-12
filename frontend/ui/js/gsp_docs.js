@@ -475,7 +475,7 @@
       return pm || null;
     }
     var fd = new FormData();
-    fd.append("ns", ({ dbase: "dbase", sheets: "sheets", collabsheet: "collabsheet", presentations: "pres" }[state.kind] || "dbase"));
+    fd.append("ns", ({ dbase: "dbase", sheets: "sheets", collabsheet: "collabsheet", presentations: "presentations" }[state.kind] || "dbase"));
     fd.append("object_name", objectName);
     fd.append("description", description || "");
     if (state.parentType === "room" && state.parentId) fd.append("workspace_id", state.parentId);
@@ -605,7 +605,7 @@
 
       // MemoryGrid ns stamp (best-effort)
       try {
-        var nsMap = { dbase: "dbase", sheets: "sheets", collabsheet: "collabsheet", presentations: "pres" };
+        var nsMap = { dbase: "dbase", sheets: "sheets", collabsheet: "collabsheet", presentations: "presentations" };
         if (typeof window.accdPlaceNs === "function") {
           await window.accdPlaceNs(nsMap[state.kind] || "dbase", safeName, desc, desc || name, {
             media_type: (state.pendingMedia && state.pendingMedia.media_type) || "",

@@ -175,6 +175,7 @@ def create_document(
         raise ValueError("ownership B2 prefix is required")
 
     info = start_row_for_name(doc_name)
+    start_col = info.get("start_col") if info.get("start_col") is not None else info.get("c")
     uid = uid_from_name(doc_name)
 
     if kind in ("sheet", "workspace"):
@@ -216,6 +217,7 @@ def create_document(
         "doc_uid": uid,
         "chain": info["chain"],
         "start_row": info["start_row"],
+        "start_col": start_col if "start_col" in dir() else info.get("start_col"),
         "kind": kind,
         "data": cells,
         "version": 1,

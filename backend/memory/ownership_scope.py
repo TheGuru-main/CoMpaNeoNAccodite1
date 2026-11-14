@@ -151,7 +151,8 @@ def resolve_ownership(
     Resolve the parent MemoryGrid owner for this request.
 
     Returns kind in {"user", "org"} only.
-    room_id / team_id / department_id are recorded as namespace metadata.
+    room_id / team_id / department_id are namespace metadata only.
+    Parent grid is always signup user phone or signup org phone (via org_id).
     """
     uid = str(getattr(user, "id", "") or "") if user is not None else ""
     actor_phone = _phone_from_user(user)
@@ -159,13 +160,16 @@ def resolve_ownership(
     surface = (surface or "dbase").strip().lower()
     room_id = room_id or workspace_id
 
-    # --- Explicit organisation context (API org_id or org workspace) ---
+    # --- Explicit organisation only (signup/API org_id or explicit_kind).
+    # Room / team / dept never choose the parent grid — namespace only.
     effective_org = org_id
     wt = None
-    if room_id and not effective_org:
-        wt, org_from_room = _workspace_meta(str(room_id))
-        if org_from_room:
-            effective_org = str(org_from_room)
+    if room_id:
+        # Metadata only; do NOT set effective_org from workspace row.
+        try:
+            wt, _ignored_org = _workspace_meta(str(room_id))
+        except Exception:
+            wt = None
 
     if effective_org or (explicit_kind == "org"):
         if not effective_org:

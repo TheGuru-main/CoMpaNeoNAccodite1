@@ -75,8 +75,6 @@ def ensure_gsp_documents_table(engine=None):
             version INTEGER NOT NULL DEFAULT 1,
             created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW(),
             updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW(),
-            CONSTRAINT uq_gsp_documents_parent_name
-                UNIQUE(parent_type,parent_id,doc_name)
         )
         """,
         "ALTER TABLE gsp_documents ADD COLUMN IF NOT EXISTS ownership_kind VARCHAR(32)",
@@ -103,6 +101,7 @@ def ensure_gsp_documents_table(engine=None):
                 UNIQUE(document_id,version)
         )
         """,
+        "ALTER TABLE gsp_documents DROP CONSTRAINT IF EXISTS uq_gsp_documents_parent_name",
         "CREATE INDEX IF NOT EXISTS ix_gsp_documents_owner ON gsp_documents(ownership_kind,ownership_id)",
         "CREATE INDEX IF NOT EXISTS ix_gsp_documents_parent ON gsp_documents(parent_type,parent_id)",
         "CREATE UNIQUE INDEX IF NOT EXISTS ix_gsp_documents_owner_parent_name ON gsp_documents(ownership_kind, ownership_id, parent_type, parent_id, doc_name)",
@@ -140,7 +139,7 @@ def create_document(
     n_rows: int = 100,
     n_cols: int = 26,
     owner_user_id=None,
-    ownership_kind: str = "user_regular",
+    ownership_kind: str = "user",
     ownership_id: str = "",
     b2_prefix: str = "",
     description: str = "",

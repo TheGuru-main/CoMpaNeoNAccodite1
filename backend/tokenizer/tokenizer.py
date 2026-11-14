@@ -317,16 +317,16 @@ ALPHABETS["default"] = ALPHABETS["en"]
 # (e.g. [4,2] == "42"). Each digit expands to letter indexes of a marker.
 
 DIGIT_MARKERS: dict[str, str] = {
-    "0": "xxxlll",
-    "1": "xxxded",
-    "2": "xxxawa",
-    "3": "xxxewa",
-    "4": "cccreg",
-    "5": "bbtsv",
-    "6": "cccftd",
-    "7": "vxzkkl",
-    "8": "grtlv",
-    "9": "xxxnov",  # 10th marker; rename if you have a preferred form
+    "0": "000",
+    "1": "001",
+    "2": "002",
+    "3": "003",
+    "4": "004",
+    "5": "005",
+    "6": "006",
+    "7": "007",
+    "8": "008",
+    "9": "009",
 }
 
 
@@ -1225,17 +1225,9 @@ def uid_sequence(
     sequence: list[int] = []
 
     for ch in normalized:
-        # Digit → expand special marker into letter indexes (no raw 0-9 chain)
+        # Digits have their own typed identity namespace.
+        # They are not converted into alphabet-letter indexes.
         if ch.isdigit() and ch in DIGIT_MARKERS:
-            marker = DIGIT_MARKERS[ch]
-            for mch in marker:
-                index = alphabet_index(
-                    mch,
-                    lang,
-                    text_context=marker,
-                )
-                if index is not None:
-                    sequence.append(index)
             continue
 
         index = alphabet_index(
@@ -1546,12 +1538,32 @@ def tokenize(
 
     code = normalize_lang(lang)
 
+    # Specialist scanner identifies code-path tokens and registered symbols.
+    # The main tokenizer remains authoritative for identity and grid placement.
+    try:
+        try:
+            from code_tokenizer import tokenize_code
+        except ImportError:
+            from backend.code_tokenizer import tokenize_code
+        code_records = tokenize_code(raw_text, code)
+    except ImportError:
+        code_records = []
+
     out: list[dict[str, Any]] = []
 
     for token_index, match in enumerate(
         _TOKEN_PATTERN.finditer(raw_text)
     ):
         original = match.group(0)
+        source_start, source_end = match.span()
+
+        # Attach every specialist token found inside this main-token span.
+        helper_records = [
+            dict(item)
+            for item in code_records
+            if item.get("start", -1) >= source_start
+            and item.get("end", 0) <= source_end
+        ]
 
         normalized = normalize_lexical_token(
             original,
@@ -1563,6 +1575,16 @@ def tokenize(
             out.append(
                 {
                     "token_index": token_index,
+                    "start": source_start,
+                    "end": source_end,
+                    "source": original,
+                    "type": "symbol",
+                    "identity_type": "symbol",
+                    "code_tokens": helper_records,
+                    "code_symbols": [
+                        item for item in helper_records
+                        if item.get("type") in ("code_symbol", "unregistered_symbol")
+                    ],
                     "original": original,
                     "normalized": "",
                     "stem": "",
@@ -1594,9 +1616,29 @@ def tokenize(
             code,
         )
 
+        digit_records = [
+            {
+                "digit": ch,
+                "uid": DIGIT_MARKERS[ch],
+                "position": match.start() + offset,
+            }
+            for offset, ch in enumerate(original)
+            if ch.isdigit() and ch in DIGIT_MARKERS
+        ]
+
         out.append(
             {
                 "token_index": token_index,
+                "start": source_start,
+                "end": source_end,
+                "source": original,
+                "type": "word",
+                "identity_type": "letter",
+                "code_tokens": helper_records,
+                "code_symbols": [
+                    item for item in helper_records
+                    if item.get("type") in ("code_symbol", "unregistered_symbol")
+                ],
                 "original": original,
                 "normalized": normalized,
                 "stem": stem_token(normalized, code),
@@ -1635,6 +1677,11 @@ def tokenize(
                 "symbols": recognize_global_symbols(
                     original
                 ),
+
+                "digits": digit_records,
+                "digit_uid_sequence": [
+                    item["uid"] for item in digit_records
+                ],
             }
         )
 

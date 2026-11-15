@@ -273,78 +273,58 @@ def col_for_name(name: str, lang: Optional[str] = None) -> Dict[str, Any]:
 
 
 
-def start_row_for_name(name: str, lang: str = "auto") -> Dict[str, Any]:
+def content_place_from_name(name: str, lang: str = "auto") -> Dict[str, Any]:
     """
-    Content / object name place (NOT user message-box).
+    Content/object place. NEVER "start_row from name" as a primary step.
 
-    Order (required):
-      1) letter chain (tokenizer uid_sequence)
-      2) uID from that chain
-      3) S from the uID identity (sum of the sequence that defines the uID)
-      4) L and c from the same name
-      5) start_row / cells via keyboard.gsp_place(L, S, c)
-
-    Phone digit-sum S is only for compute_user_cell / place_user / place_message_box.
-    Physical grid face is not frozen here; R_ROWS is row modulus, C is language band width.
+    1) letter chain (0-based) → uID
+    2) S = sum(chain)          # not digit-sum of serialized uid
+    3) L = len(normalized lexical token)  # NOT keyboard calculate_lsum
+    4) c = first letter alphabet index (lang band)
+    5) ONLY THEN start_row / cells via keyboard.gsp_place(L, S, c)
     """
     name = str(name or "")
     resolved = detect_placement_lang(name, lang)
 
-    # 1) identity chain
     chain = letter_chain(name, resolved)
-
-    # 2) uID from chain (before S and before start_row)
     uid = chain_to_str(chain)
-
-    # 3) S from that uID identity (sequence sum — same components as uID)
     S = chain_sum(chain)
     if S < 0:
         S = 0
 
-    # 4) L and c from the same name
-    L = max(len([ch for ch in name if ch.isalnum() or ch.isalpha()]), 1)
-    if not name.strip():
-        L = 1
+    # Lexical L only — full normalized surface (Accodite → 8)
     try:
-        if _HAS_KB:
-            from memory.keyboard import calculate_lsum as _kb_lsum  # type: ignore
-            L = max(int(_kb_lsum(name, resolved)), 1)
+        if _HAS_TOK:
+            from tokenizer.tokenizer import normalize_lexical_token as _nlt
+        else:
+            from tokenizer import normalize_lexical_token as _nlt  # type: ignore
+        norm = _nlt(name, resolved) or ""
+        L = max(len(norm), 1)
     except Exception:
-        try:
-            from keyboard import calculate_lsum as _kb_lsum  # type: ignore
-            L = max(int(_kb_lsum(name, resolved)), 1)
-        except Exception:
-            L = max(len(name) if name else 1, 1)
+        L = max(len([ch for ch in name if ch.isalnum()]), 1) if name else 1
 
     col_info = col_for_name(name, resolved)
     c = int(col_info["start_col"])
     C = int(col_info.get("C") or effective_col_modulus(resolved))
     R = int(R_ROWS)
 
-    # 5) real GSP geometry via keyboard.gsp_place when available
-    cells = []
+    # start_row only after L and S exist
+    start_row = ((int(L) + int(S) - 1) % R) + 1
+    cells: List[Any] = []
     primary = None
-    start_row = ((L + S - 1) % R) + 1
     try:
         if _HAS_KB:
-            placed = _kb_gsp_place(Lsum=L, Ssum=S, c=c, K=5, D=8, C=C, R=R)  # type: ignore
-        else:
-            from memory.keyboard import gsp_place as _gp  # type: ignore
-            placed = _gp(Lsum=L, Ssum=S, c=c, K=5, D=8, C=C, R=R)
-        start_row = int(placed["start_row"])
-        primary = placed.get("primary_cell")
-        cells = list(placed.get("cells") or [])
-    except Exception:
-        try:
-            from keyboard import gsp_place as _gp  # type: ignore
+            try:
+                from memory.keyboard import gsp_place as _gp
+            except Exception:
+                from keyboard import gsp_place as _gp  # type: ignore
             placed = _gp(Lsum=L, Ssum=S, c=c, K=5, D=8, C=C, R=R)
             start_row = int(placed["start_row"])
             primary = placed.get("primary_cell")
             cells = list(placed.get("cells") or [])
-        except Exception:
-            # last resort: same formula, single cell
-            cells = [{"col": c % max(C, 1), "row": start_row, "k": 0}]
-            primary = cells[0]
+    except Exception:
+        cells = [{"col": c % max(C, 1), "row": start_row, "k": 0}]
+        primary = cells[0]
 
     return {
         "name": name,
@@ -369,8 +349,13 @@ def start_row_for_name(name: str, lang: str = "auto") -> Dict[str, Any]:
         "grid_rows": R,
         "grid_cols": C,
         "grid_cols_max": N_COLS,
-        "source": "chain->uid->S; L,c from name; keyboard.gsp_place",
+        "source": "L,S then start_row; no name→row shortcut",
     }
+
+
+def start_row_for_name(name: str, lang: str = "auto") -> Dict[str, Any]:
+    """Deprecated name: forwards to content_place_from_name (L,S then start_row)."""
+    return content_place_from_name(name, lang)
 
 
 def uid_from_name(name: str, lang: str = "auto") -> str:

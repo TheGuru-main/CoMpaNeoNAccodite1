@@ -91,8 +91,8 @@ def place_in_owner_grid(
     Single write path for DBase/Sheets/Collab/Pres into the owner instance grid.
 
     - Namespace (ns) is a surface marker only.
-    - Placement ONLY via gsp_chain.start_row_for_name (letter-chain L+S, lang col C).
-    - doc_uid = serialized letter-chain (canonical object id).
+    - Placement ONLY via gsp_chain.content_place_from_name (full uid_chain → S=abs → start_row).
+    - doc_uid = full serialized chain (letters + digit markers + code symbol ids).
     - Dedupe key: (grid_ns, doc_uid) within this owner grid.
     """
     if grid is None:
@@ -104,34 +104,40 @@ def place_in_owner_grid(
     except Exception as e:
         raise ValueError(f"invalid object name: {e}") from e
 
+    # M4.1 — single place path: content_place_from_name only (full uid_chain + abs S)
     start_row = None
     start_col = None
     doc_uid = ""
+    place_info = {}
     try:
-        from gsp_chain import start_row_for_name, uid_from_name, letter_chain
-        place = start_row_for_name(object_name, lang=lang)
-        start_row = int(place.get("start_row") or 0) or None
-        # Canonical GSP column from gsp_chain (language-effective C) — do not recompute
-        if place.get("start_col") is not None:
-            start_col = int(place["start_col"])
-        elif place.get("c") is not None:
-            start_col = int(place["c"])
+        from gsp_chain import content_place_from_name
+        place_info = content_place_from_name(object_name, lang=lang) or {}
+        start_row = int(place_info.get("start_row") or 0) or None
+        if place_info.get("start_col") is not None:
+            start_col = int(place_info["start_col"])
+        elif place_info.get("c") is not None:
+            start_col = int(place_info["c"])
         doc_uid = str(
-            place.get("uid")
-            or place.get("uid_str")
-            or place.get("uid_compact")
-            or uid_from_name(object_name, lang=lang)
+            place_info.get("uid")
+            or place_info.get("uid_str")
             or ""
         )
+        if not doc_uid:
+            raise RuntimeError("content_place returned empty uid")
     except Exception as e:
-        print("[ns] gsp place:", type(e).__name__, e)
-        try:
-            from gsp_chain import uid_from_name
-            doc_uid = uid_from_name(object_name, lang=lang)
-        except Exception:
-            doc_uid = object_name
+        print("[ns] gsp content_place:", type(e).__name__, e)
+        raise ValueError(f"GSP place failed for {object_name!r}: {e}") from e
 
     body = text or description or object_name
+    _extra = dict(extra or {})
+    if place_info:
+        _extra.setdefault("gsp_S", place_info.get("S"))
+        _extra.setdefault("gsp_L", place_info.get("L"))
+        _extra.setdefault("gsp_c", place_info.get("c"))
+        _extra.setdefault("gsp_lang", place_info.get("lang"))
+        _extra.setdefault("digit_markers", place_info.get("digit_markers") or [])
+        _extra.setdefault("symbol_uids", place_info.get("symbol_uids") or [])
+        _extra.setdefault("place_source", place_info.get("source") or "content_place_from_name")
     meta = build_metadata(
         ns=ns,
         object_name=object_name,
@@ -141,9 +147,10 @@ def place_in_owner_grid(
         workspace_id=workspace_id,
         start_row=start_row,
         start_col=start_col,
-        extra=extra,
+        extra=_extra,
     )
     meta["source_marker"] = MARKER_PREFIX[ns]
+    meta["doc_uid"] = str(doc_uid)
 
     # Dedupe: same ns + doc_uid on this owner grid → update in place (or skip)
     existing_id = None

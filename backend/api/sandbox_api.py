@@ -60,8 +60,8 @@ router = APIRouter(prefix="/sandbox", tags=["sandbox"])
 
 def place_coords_for_name(name: str, lang: str = "en") -> dict:
     """
-    Canonical GSP cell — ONLY via gsp_chain.start_row_for_name.
-    start_col uses language-effective C (not chain[0]%54).
+    Canonical GSP cell — ONLY via gsp_chain.content_place_from_name (M4.1).
+    start_col from place dict; never chain[0]%54.
     """
     name = validate_resource_name(name or "", what="object name")
     info = start_row_for_name(name, lang=lang)

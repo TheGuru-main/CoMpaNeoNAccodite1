@@ -209,3 +209,18 @@ def fetch_platform_grid_to_path(version: int, dest: str) -> bool:
         platform_grid_key(version),
         dest,
     )
+
+
+def instance_model_key(kind: str, owner_id: str, filename: str) -> str:
+    """B2 key for tenant model artifact under instance partition."""
+    if kind not in ("org", "user"):
+        raise ValueError("kind must be org|user")
+    name = (filename or "").strip().lstrip("/")
+    if not name or ".." in name:
+        raise ValueError("bad filename")
+    return f"grids/instances/{kind}/{owner_id}/models/{name}"
+
+
+def platform_model_key(filename: str) -> str:
+    name = (filename or "").strip().lstrip("/")
+    return f"grids/platform/models/{name}"

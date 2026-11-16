@@ -262,6 +262,12 @@ def model_readiness() -> dict:
     }
 
 
+try:
+    from model.weight_resolve import ensure_platform_weights_from_hf
+    ensure_platform_weights_from_hf()
+except Exception as _wboot:
+    print("[ACCD] platform weights HF:", type(_wboot).__name__, _wboot)
+
 load_model_if_exists()
 # ACCD-STARTUP-READY
 try:
@@ -558,6 +564,13 @@ async def signup(req: SignupRequest):
             )
             grid_info = {"ok": True, "path": str(gp), "owner": owner.key}
             print(f"[ACCD-SIGNUP] instance grid ready {owner.key} -> {gp}")
+            try:
+                from model.weight_resolve import ensure_platform_weights_from_hf, publish_instance_weights_to_b2
+                ensure_platform_weights_from_hf()
+                _pw = publish_instance_weights_to_b2("user", _pu)
+                print("[ACCD-SIGNUP] instance weights", _pw)
+            except Exception as _uw:
+                print("[ACCD-SIGNUP] instance weights:", type(_uw).__name__, _uw)
         except Exception as _ug:
             grid_info["error"] = f"{type(_ug).__name__}: {_ug}"
             print(f"[ACCD-SIGNUP] user instance grid: {grid_info['error']}")
@@ -708,6 +721,22 @@ async def org_create(req: OrgCreateRequest):
             try:
                 gp = create_instance_grid(owner, platform_version=int(os.environ.get("ACCD_PLATFORM_GRID_VERSION") or "1"), allow_empty_if_no_platform=False)
                 print(f"[ACCD-ORG] instance grid ready {owner.key} -> {gp}")
+                try:
+                    from model.weight_resolve import ensure_platform_weights_from_hf, publish_instance_weights_to_b2
+                    ensure_platform_weights_from_hf()
+                    _op = getattr(owner, "id", None) or _org_phone
+                    _pw = publish_instance_weights_to_b2("org", str(_op))
+                    print("[ACCD-ORG] instance weights", _pw)
+                except Exception as _ow:
+                    print("[ACCD-ORG] instance weights:", type(_ow).__name__, _ow)
+                try:
+                    from model.weight_resolve import ensure_platform_weights_from_hf, publish_instance_weights_to_b2
+                    ensure_platform_weights_from_hf()
+                    _op = getattr(owner, "id", None) or _org_phone
+                    _pw = publish_instance_weights_to_b2("org", str(_op))
+                    print("[ACCD-ORG] instance weights", _pw)
+                except Exception as _ow:
+                    print("[ACCD-ORG] instance weights:", type(_ow).__name__, _ow)
             except TypeError:
                 gp = create_instance_grid(owner, platform_version=1, allow_empty_if_no_platform=False)
                 print(f"[ACCD-ORG] instance grid ready {owner.key} -> {gp}")
@@ -2389,6 +2418,27 @@ try:
             )
         except Exception as _eg:
             print("[ACCD-STREAM] ensure_request_grid:", type(_eg).__name__, _eg)
+        try:
+            from model.weight_resolve import resolve_weight_dir
+            from memory.owner_identity import phone_uid as _phone_uid
+            _kind = "org" if getattr(req, "org_id", None) else "user"
+            _ph = _phone_uid(getattr(user, "phone", None)) or ""
+            if _kind == "org":
+                try:
+                    # prefer org phone when available on req/membership later
+                    _oph = getattr(req, "org_phone", None) or _ph
+                    _ph = str(_oph or _ph)
+                except Exception:
+                    pass
+            if _ph:
+                _d, _src = resolve_weight_dir(kind=_kind, phone_uid=_ph)
+                print("[ACCD-STREAM] weights", _src, _d)
+                # optional hot-swap: if instance dir has weights, point finder at it
+                if _src == "instance_b2":
+                    import os as _os
+                    _os.environ["ACCD_MODEL_DIR_INSTANCE"] = str(_d)
+        except Exception as _wr:
+            print("[ACCD-STREAM] weight_resolve:", type(_wr).__name__, _wr)
         try:
             from memory.pstm_scope import hydrate_worker_pstm, apply_pstm_scope
             from integration import get_state

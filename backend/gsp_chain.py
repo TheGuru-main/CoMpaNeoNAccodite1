@@ -333,36 +333,32 @@ def content_place_from_name(name: str, lang: str = "auto") -> Dict[str, Any]:
     name = str(name or "")
     resolved = detect_placement_lang(name, lang)
 
-    chain = letter_chain(name, resolved)
-    digit_markers = []
-    symbol_uids = []
-    identity_stream_payload = []
+    # Full chain: letters + digit markers + code symbol ids → S + uid + start_row
+    chain: list = []
+    digit_markers: list = []
+    symbol_uids: list = []
+    identity_stream_payload: list = []
     try:
-        try:
-            from tokenizer.tokenizer import (
-                identity_stream as _id_stream,
-                digit_markers_from_stream as _dm,
-                symbol_uids_from_stream as _su,
-                letter_indexes_from_stream as _li,
-            )
-        except Exception:
-            from tokenizer import (  # type: ignore
-                identity_stream as _id_stream,
-                digit_markers_from_stream as _dm,
-                symbol_uids_from_stream as _su,
-                letter_indexes_from_stream as _li,
-            )
-        identity_stream_payload = _id_stream(name, resolved)
-        digit_markers = _dm(identity_stream_payload)
-        symbol_uids = _su(identity_stream_payload)
-        letters = _li(identity_stream_payload)
-        if letters:
-            chain = list(letters)
+        _tokm = _load_tokenizer_module()
+        _uchain = getattr(_tokm, "uid_chain", None)
+        _cS = getattr(_tokm, "chain_S", None)
+        _ser = getattr(_tokm, "serialize_uid_chain", None)
+        _id = getattr(_tokm, "identity_stream", None)
+        if _id:
+            identity_stream_payload = list(_id(name, resolved) or [])
+        if _uchain:
+            chain_full = list(_uchain(name, resolved) or [])
+        else:
+            chain_full = list(letter_chain(name, resolved))
+        chain = [x for x in chain_full if isinstance(x, int)]
+        digit_markers = [x for x in chain_full if isinstance(x, str) and not str(x).startswith("-")]
+        symbol_uids = [x for x in chain_full if isinstance(x, str) and str(x).startswith("-")]
+        S = int(_cS(chain_full)) if _cS else int(sum(chain))
+        uid = _ser(chain_full) if _ser else chain_to_str(chain)
     except Exception:
-        pass
-
-    uid = chain_to_str(chain)
-    S = chain_sum(chain)
+        chain = list(letter_chain(name, resolved))
+        S = chain_sum(chain)
+        uid = chain_to_str(chain)
     if S < 0:
         S = 0
 

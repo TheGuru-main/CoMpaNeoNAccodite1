@@ -1447,6 +1447,86 @@ def identity_stream(token: str, lang: str = "en") -> list:
 
 
 
+
+def uid_chain(token: str, lang: str = "en") -> list:
+    """
+    Full identity chain for serialize + S + start_row.
+
+    Units (in order, nothing omitted for calculation):
+      letter  -> int index (0-based alphabet)
+      digit   -> str marker "000".."009"
+      symbol  -> str registry uid "-{col}"
+      unregistered kept as ("unreg", token) only if needed for audit —
+                 default: skip unregistered in chain/S (no stable id)
+
+    Code symbols and digit markers identify on the same chain as letters.
+    """
+    stream = identity_stream(token, lang)
+    out: list = []
+    for x in stream:
+        k = x.get("kind")
+        if k == "letter" and x.get("index") is not None:
+            out.append(int(x["index"]))
+        elif k == "digit" and x.get("marker"):
+            out.append(str(x["marker"]))
+        elif k == "symbol" and x.get("uid") is not None:
+            out.append(str(x["uid"]))  # "-147"
+        # unregistered: no stable id — omit from chain (not an index)
+    return out
+
+
+def unit_S_value(unit) -> int:
+    """Numeric contribution of one chain unit to S."""
+    if isinstance(unit, int):
+        return int(unit)
+    if not isinstance(unit, str):
+        return 0
+    s = unit.strip()
+    if not s:
+        return 0
+    # digit marker "001" -> 1
+    if s in DIGIT_MARKERS.values() or (len(s) == 3 and s.isdigit()):
+        return int(s)  # 001 -> 1, 000 -> 0
+    # code symbol uid "-147" -> 147 (column id magnitude)
+    if s.startswith("-") and s[1:].isdigit():
+        return int(s[1:])
+    if s.lstrip("-").isdigit():
+        return abs(int(s))
+    return 0
+
+
+def chain_S(chain) -> int:
+    """S = sum of every unit on the full chain (letters + markers + symbol ids)."""
+    return int(sum(unit_S_value(x) for x in (chain or [])))
+
+
+def serialize_uid_chain(chain) -> str:
+    """Underscore-separated full chain: 9_0_12_-147_001_002"""
+    return "_".join(str(x) for x in (chain or []))
+
+
+def deserialize_uid_chain(uid: str) -> list:
+    """Inverse: markers stay str, symbol uids stay '-N', letter indexes -> int."""
+    s = str(uid or "").strip()
+    if not s:
+        return []
+    markers = set(DIGIT_MARKERS.values())
+    out: list = []
+    for part in s.split("_"):
+        part = part.strip()
+        if not part:
+            continue
+        if part in markers or (len(part) == 3 and part.isdigit() and part.startswith("00")):
+            out.append(part)
+        elif part.startswith("-") and part[1:].isdigit():
+            out.append(part)
+        elif part.lstrip("-").isdigit() and not part.startswith("-"):
+            out.append(int(part))
+        else:
+            out.append(part)
+    return out
+
+
 def letter_indexes_from_stream(stream) -> list:
     return [int(x["index"]) for x in stream if x.get("kind") == "letter" and x.get("index") is not None]
 

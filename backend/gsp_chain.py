@@ -28,38 +28,73 @@ COL_MIN, COL_MAX = 0, 53
 
 _HAS_TOK = False
 _TOK_ERR: Any = None
+_tok_detect_lang = None  # type: ignore
+_tok_uid_sequence = None  # type: ignore
+_tok_serialize_uid = None  # type: ignore
+_tok_alphabet_index = None  # type: ignore
+_tok_alphabet_for = None  # type: ignore
+_tok_normalize_lang = None  # type: ignore
+
+
+def _load_tokenizer_module():
+    """
+    Explicit load: never rely on ambiguous `import tokenizer`.
+    Prefer package backend/tokenizer/tokenizer.py by file path, then package imports.
+    """
+    import importlib
+    import importlib.util
+    import sys
+    from pathlib import Path as _P
+
+    here = _P(__file__).resolve().parent  # backend/
+    candidates = [
+        here / "tokenizer" / "tokenizer.py",
+        here.parent / "backend" / "tokenizer" / "tokenizer.py",
+    ]
+    for path in candidates:
+        if path.is_file():
+            # Load as a real module under a private name so we don't shadow packages
+            name = "accd_tokenizer_impl"
+            spec = importlib.util.spec_from_file_location(name, str(path))
+            if spec is None or spec.loader is None:
+                continue
+            mod = importlib.util.module_from_spec(spec)
+            sys.modules[name] = mod
+            spec.loader.exec_module(mod)
+            return mod
+
+    # Package paths (PYTHONPATH=backend or installed package)
+    for modname in ("tokenizer.tokenizer", "backend.tokenizer.tokenizer"):
+        try:
+            return importlib.import_module(modname)
+        except Exception:
+            continue
+
+    # Last: package re-exports (tokenizer/__init__.py)
+    for modname in ("tokenizer", "backend.tokenizer"):
+        try:
+            mod = importlib.import_module(modname)
+            if hasattr(mod, "uid_sequence") and hasattr(mod, "serialize_uid"):
+                return mod
+        except Exception:
+            continue
+    raise ImportError(
+        "tokenizer.tokenizer not found — expected backend/tokenizer/tokenizer.py"
+    )
+
 
 try:
-    from tokenizer.tokenizer import (
-        uid_sequence as _tok_uid_sequence,
-        serialize_uid as _tok_serialize_uid,
-        alphabet_index as _tok_alphabet_index,
-        alphabet_for as _tok_alphabet_for,
-        normalize_lang as _tok_normalize_lang,
-    )
-    try:
-        from tokenizer.tokenizer import detect_lang as _tok_detect_lang
-    except Exception:
-        _tok_detect_lang = None  # type: ignore
+    _tok = _load_tokenizer_module()
+    _tok_uid_sequence = _tok.uid_sequence
+    _tok_serialize_uid = _tok.serialize_uid
+    _tok_alphabet_index = _tok.alphabet_index
+    _tok_alphabet_for = _tok.alphabet_for
+    _tok_normalize_lang = _tok.normalize_lang
+    _tok_detect_lang = getattr(_tok, "detect_lang", None)
     _HAS_TOK = True
-except Exception:
-    try:
-        from tokenizer import (
-            uid_sequence as _tok_uid_sequence,
-            serialize_uid as _tok_serialize_uid,
-            alphabet_index as _tok_alphabet_index,
-            alphabet_for as _tok_alphabet_for,
-            normalize_lang as _tok_normalize_lang,
-        )
-        try:
-            from tokenizer import detect_lang as _tok_detect_lang
-        except Exception:
-            _tok_detect_lang = None  # type: ignore
-        _HAS_TOK = True
-    except Exception as _e:
-        _HAS_TOK = False
-        _TOK_ERR = _e
-        _tok_detect_lang = None  # type: ignore
+except Exception as _e:
+    _HAS_TOK = False
+    _TOK_ERR = _e
 
 
 

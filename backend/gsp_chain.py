@@ -124,12 +124,20 @@ def detect_placement_lang(text: str, lang: Optional[str] = None) -> str:
         if _HAS_TOK:
             return _tok_normalize_lang(lang)
         return str(lang).strip().lower().split("-")[0]
+
+    s = str(text or "")
+    # Pure basic Latin (a-z only letters) → en. langdetect mislabels
+    # short product names (Accodite→ro) and breaks train-aligned chains.
+    letters = [c for c in s if c.isalpha()]
+    if letters and all("a" <= c.lower() <= "z" for c in letters):
+        return "en"
+
     if _HAS_TOK and _tok_detect_lang is not None:
         try:
             return _tok_detect_lang(text, fallback="en")
         except Exception:
             pass
-    return _fallback_detect_lang(text or "", "en")
+    return _fallback_detect_lang(s, "en")
 
 
 def letter_chain(name: str, lang: str = "en") -> List[int]:
@@ -139,8 +147,12 @@ def letter_chain(name: str, lang: str = "en") -> List[int]:
         return []
     if not _HAS_TOK:
         raise RuntimeError(f"tokenizer unavailable for letter_chain: {_TOK_ERR!r}")
-    lang = detect_placement_lang(name, lang)
-    return list(_tok_uid_sequence(name, lang))
+    # If caller already resolved lang (e.g. content_place), do not re-detect.
+    if lang and str(lang).strip().lower() not in ("auto", "detect", ""):
+        resolved = _tok_normalize_lang(lang) if _HAS_TOK else str(lang).strip().lower().split("-")[0]
+    else:
+        resolved = detect_placement_lang(name, lang)
+    return list(_tok_uid_sequence(name, resolved))
 
 
 def chain_to_str(chain: Sequence[int]) -> str:
@@ -359,6 +371,9 @@ def content_place_from_name(name: str, lang: str = "auto") -> Dict[str, Any]:
         "L": L,
         "S": S,
         "chain": list(chain),
+        "digit_markers": digit_markers,
+        "symbol_uids": symbol_uids,
+        "identity_stream": identity_stream_payload,
         "uid_str": uid,
         "uid_compact": uid,
         "uid": uid,

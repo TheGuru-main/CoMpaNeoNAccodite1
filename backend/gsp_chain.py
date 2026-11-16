@@ -287,6 +287,33 @@ def content_place_from_name(name: str, lang: str = "auto") -> Dict[str, Any]:
     resolved = detect_placement_lang(name, lang)
 
     chain = letter_chain(name, resolved)
+    digit_markers = []
+    symbol_uids = []
+    identity_stream_payload = []
+    try:
+        try:
+            from tokenizer.tokenizer import (
+                identity_stream as _id_stream,
+                digit_markers_from_stream as _dm,
+                symbol_uids_from_stream as _su,
+                letter_indexes_from_stream as _li,
+            )
+        except Exception:
+            from tokenizer import (  # type: ignore
+                identity_stream as _id_stream,
+                digit_markers_from_stream as _dm,
+                symbol_uids_from_stream as _su,
+                letter_indexes_from_stream as _li,
+            )
+        identity_stream_payload = _id_stream(name, resolved)
+        digit_markers = _dm(identity_stream_payload)
+        symbol_uids = _su(identity_stream_payload)
+        letters = _li(identity_stream_payload)
+        if letters:
+            chain = list(letters)
+    except Exception:
+        pass
+
     uid = chain_to_str(chain)
     S = chain_sum(chain)
     if S < 0:

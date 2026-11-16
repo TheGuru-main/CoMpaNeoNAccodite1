@@ -1543,40 +1543,34 @@ def lexical_identity(
     lang: str = "en",
 ) -> dict[str, Any]:
     """
-    Build the complete deterministic lexical identity.
+    Principal tokenizer identity for train / place / retrieval.
 
-    This is the principal tokenizer output consumed by later
-    placement/retrieval layers.
+    Letters  -> uid_sequence (0-based indexes); S = sum(sequence)
+    Digits   -> atomic markers 000..009 on identity_stream
+    Symbols  -> code registry -{col} on identity_stream
     """
 
     code = normalize_lang(lang)
+    raw = str(token or "")
 
-    normalized = normalize_lexical_token(token, code)
+    normalized = normalize_lexical_token(raw, code)
 
-    sequence = uid_sequence(normalized, code)
+    stream = identity_stream(raw, code)
+    letter_seq = letter_indexes_from_stream(stream)
+    # Prefer stream letters when present; else normalized letter path
+    sequence = letter_seq if letter_seq else uid_sequence(normalized, code)
     uid = serialize_uid(sequence)
 
-    L = len(normalized)
+    digit_markers = digit_markers_from_stream(stream)
+    symbol_uids = symbol_uids_from_stream(stream)
+
+    L = len(normalized) if normalized else max(len(letter_seq), 0)
     S = sum(sequence)
+    SC = sequence[0] if sequence else 0
 
-    SC = (
-        sequence[0]
-        if sequence
-        else 0
-    )
-
-    # Word-grid placement:
-    #
-    #   row = ((L + S - 1) % 26) + 1
-    #
-    # The physical word grid is 46 × 26.
-    #
-    # Column identity remains SC. The placement layer can map the
-    # alphabet index into its physical 46-column representation when
-    # required by the storage/grid implementation.
     row = (
         ((L + S - 1) % WORD_GRID_ROWS) + 1
-        if normalized
+        if (normalized or letter_seq)
         else 1
     )
 
@@ -1584,17 +1578,16 @@ def lexical_identity(
         "text": token,
         "normalized": normalized,
         "lang": code,
-
         "L": L,
-
         "uid_sequence": sequence,
         "uID_sequence": sequence,
         "uid": uid,
         "uID": uid,
-
         "S": S,
         "SC": SC,
-
+        "identity_stream": stream,
+        "digit_markers": digit_markers,
+        "symbol_uids": symbol_uids,
         "word_grid": {
             "columns": WORD_GRID_COLUMNS,
             "rows": WORD_GRID_ROWS,

@@ -25,7 +25,7 @@ def test_place_uid_resolution():
 
 def test_b2_prefix_shapes():
     from memory.ownership_scope import _b2_prefix
-    assert _b2_prefix("room", "abc-123", "dbase").startswith("rooms/")
+    assert _b2_prefix("room", "abc-123", "dbase") == "grids/instances/user/abc-123/docs/dbase"
     assert "collabsheets" in _b2_prefix("org", "org1", "collabsheets")
     assert "personal/brainstorm" in _b2_prefix("user_personal", "u1", "dbase")
     assert "regular" in _b2_prefix("user_regular", "u1", "dbase")

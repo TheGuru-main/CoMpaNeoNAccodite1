@@ -1,13 +1,14 @@
 """
-Shared MemoryGrid is the ONLY in-process document storage.
+LEGACY NAME — not a 4th grid.
 
-Rules:
-  - Never invent a new empty MemoryGrid() for generate / train / seed / understand
-    when the shared grid is missing or empty.
-  - Prefer integration._STATE["grid"], then process singleton, then load_grid()
-    from ACCD_GRID_PATH / local snapshot, then optional B2 snapshot.
-  - If still missing/empty and require_docs=True → raise GridUnavailable.
+get_shared_grid() is an alias for the PLATFORM grid only.
+Tenant brains are only:
+  user:<phone_uid>  org:<phone_uid>
+via memory.grid_request.bind_request_grid / integration.ensure_request_grid.
+
+Never invent an empty MemoryGrid for tenants.
 """
+
 from __future__ import annotations
 
 import os

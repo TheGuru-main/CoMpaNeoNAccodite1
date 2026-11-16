@@ -1496,8 +1496,12 @@ def unit_S_value(unit) -> int:
 
 
 def chain_S(chain) -> int:
-    """S = sum of every unit on the full chain (letters + markers + symbol ids)."""
-    return int(sum(unit_S_value(x) for x in (chain or [])))
+    """
+    S = sum of every unit on the full chain (letters + markers + symbol ids).
+    Always non-negative: abs before return so start_row never sees S < 0.
+    """
+    total = int(sum(unit_S_value(x) for x in (chain or [])))
+    return abs(total)
 
 
 def serialize_uid_chain(chain) -> str:

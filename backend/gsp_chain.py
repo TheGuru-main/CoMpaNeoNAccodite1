@@ -201,7 +201,7 @@ def chain_to_compact(chain: Sequence[int]) -> str:
 
 
 def chain_sum(chain: Sequence[int]) -> int:
-    return int(sum(int(x) for x in chain))
+    return abs(int(sum(int(x) for x in chain)))
 
 
 def first_letter_index(name: str, lang: str = "en") -> int:
@@ -359,8 +359,7 @@ def content_place_from_name(name: str, lang: str = "auto") -> Dict[str, Any]:
         chain = list(letter_chain(name, resolved))
         S = chain_sum(chain)
         uid = chain_to_str(chain)
-    if S < 0:
-        S = 0
+    S = abs(int(S))
 
     # Lexical L only — full normalized surface (Accodite → 8)
     try:

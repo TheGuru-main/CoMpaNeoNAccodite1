@@ -1207,39 +1207,257 @@ def uid_sequence(
     lang: str = "en",
 ) -> list[int]:
     """
-    Generate the ordered lexical UID sequence.
+    Ordered identity sequence for train + content place.
 
-    Every character contributes its zero-based alphabet index.
+    Letters  -> zero-based alphabet indexes (A/a -> 0 kept).
+    Digits   -> DIGIT_MARKERS expanded (never stripped).
+    Other alnum kept via alphabet_index when in alphabet.
 
-    Example:
-
-        ZED -> [25, 4, 3]
-        ZEE -> [25, 4, 4]
+    Code symbols (# / . ( ) etc.) are NOT stripped at this layer when
+    present in the raw token: use uid_sequence_with_code() so registry
+    markers are interleaved. Plain uid_sequence still walks the raw
+    string for digits+letters without alnum-only wiping of the scan.
     """
 
-    normalized = normalize_lexical_token(token, lang)
+    raw = str(token or "")
+    if not raw:
+        return []
 
-    if not normalized:
+    code = normalize_lang(lang)
+    sequence: list[int] = []
+
+    # Walk RAW characters so digits are not lost before marker expand.
+    # Letters use alphabet_index; digits expand DIGIT_MARKERS.
+    for ch in raw:
+        if ch.isspace():
+            continue
+
+        if ch.isdigit() and ch in DIGIT_MARKERS:
+            # Expand marker identity into the sequence (do not skip).
+            marker = DIGIT_MARKERS[ch]
+            for mch in marker:
+                if mch.isdigit():
+                    # Typed marker component: distinct from letter index 0..N
+                    # Use 1000+d so serialize boundaries stay recoverable later.
+                    sequence.append(1000 + int(mch))
+                else:
+                    idx = alphabet_index(mch, code, text_context=raw)
+                    if idx is not None:
+                        sequence.append(int(idx))
+            continue
+
+        if ch.isalpha():
+            idx = alphabet_index(ch, code, text_context=raw)
+            if idx is not None:
+                sequence.append(int(idx))
+            continue
+
+        # Non-letter, non-digit: leave for uid_sequence_with_code / symbol pass.
+        # Do not pretend they are letters.
+
+    return sequence
+
+
+def uid_sequence_with_code(
+    token: str,
+    lang: str = "en",
+) -> list[int]:
+    """
+    Main tokenizer path for code-mixed tokens and paths.
+
+    Interleaves:
+      - letter/digit identity from uid_sequence on spans
+      - code symbol markers as negative registry columns (-(col+1))
+    Never drops registered symbols or digit markers.
+    """
+    raw = str(token or "")
+    if not raw:
         return []
 
     sequence: list[int] = []
+    try:
+        from code_tokenizer import tokenize_code
+        from code_symbol_registry import CODE_SYMBOL_TO_COLUMN
+    except Exception:
+        try:
+            from backend.code_tokenizer import tokenize_code
+            from backend.code_symbol_registry import CODE_SYMBOL_TO_COLUMN
+        except Exception:
+            return uid_sequence(raw, lang)
 
-    for ch in normalized:
-        # Digits have their own typed identity namespace.
-        # They are not converted into alphabet-letter indexes.
-        if ch.isdigit() and ch in DIGIT_MARKERS:
+    for rec in tokenize_code(raw, lang):
+        typ = (rec.get("type") or "").lower()
+        tok = rec.get("token") or rec.get("source") or ""
+        if typ in ("code_symbol", "operator") or rec.get("grid") == "code":
+            col = rec.get("col")
+            if col is None and tok in CODE_SYMBOL_TO_COLUMN:
+                col = CODE_SYMBOL_TO_COLUMN[tok]
+            if col is not None:
+                sequence.append(-(int(col) + 1))  # marker id; never strip
+            continue
+        if typ in ("number",) or (tok and tok.isdigit()):
+            sequence.extend(uid_sequence(tok, lang))
+            continue
+        if typ in ("ident", "keyword", "builtin", "string") or tok:
+            # letters + digits inside the span
+            sequence.extend(uid_sequence(tok, lang))
+            continue
+    return sequence
+
+
+
+def identity_stream(token: str, lang: str = "en") -> list:
+    """
+    Main identity stream (train/place). Not the full code highlighter.
+
+    letter  -> 0-based alphabet index
+    digit   -> atomic marker "000".."009" (never split to 3 ints)
+    symbol  -> code registry uid "-{col}" via match_code_symbol
+               (# is a symbol here, NOT a line-comment eater)
+
+    KEYWORDS/BUILTINS statics: applied on letter-runs after scan.
+    """
+    raw = str(token or "")
+    if not raw:
+        return []
+    code = normalize_lang(lang)
+    out = []
+
+    try:
+        try:
+            from code_symbol_registry import (
+                match_code_symbol,
+                code_symbol_identity,
+            )
+        except ImportError:
+            from backend.code_symbol_registry import (
+                match_code_symbol,
+                code_symbol_identity,
+            )
+    except Exception:
+        match_code_symbol = None
+        code_symbol_identity = None
+
+    # Optional static role tags for identifier spans
+    try:
+        try:
+            from code_tokenizer import KEYWORDS, BUILTINS, classify_code_token
+        except ImportError:
+            from backend.code_tokenizer import KEYWORDS, BUILTINS, classify_code_token
+    except Exception:
+        KEYWORDS, BUILTINS = set(), set()
+        def classify_code_token(tok: str) -> str:
+            return "IDENT"
+
+    i = 0
+    n = len(raw)
+    while i < n:
+        ch = raw[i]
+        if ch.isspace():
+            i += 1
             continue
 
-        index = alphabet_index(
-            ch,
-            lang,
-            text_context=normalized,
-        )
+        # 1) Longest registered code symbol (includes # ( ) . / _ etc.)
+        if match_code_symbol is not None:
+            sym = match_code_symbol(raw, i)
+            if sym:
+                try:
+                    ident = code_symbol_identity(sym)
+                except Exception:
+                    ident = {"uid": None, "col": None}
+                out.append({
+                    "kind": "symbol",
+                    "token": sym,
+                    "uid": ident.get("uid"),
+                    "col": ident.get("col"),
+                    "grid": "code",
+                    "class": "OPERATOR",
+                })
+                i += len(sym)
+                continue
 
-        if index is not None:
-            sequence.append(index)
+        # 2) Digit -> atomic marker 000..009
+        if ch.isdigit() and ch in DIGIT_MARKERS:
+            out.append({
+                "kind": "digit",
+                "token": ch,
+                "marker": DIGIT_MARKERS[ch],
+                "grid": "digit",
+            })
+            i += 1
+            continue
 
-    return sequence
+        # 3) Identifier / keyword / builtin letter-run
+        if ch.isalpha() or ch == "_":
+            j = i + 1
+            while j < n and (raw[j].isalnum() or raw[j] == "_"):
+                j += 1
+            span = raw[i:j]
+            low = span.lower()
+            if low in KEYWORDS:
+                role, cls = "keyword", "KEYWORD"
+            elif span in BUILTINS or low in {b.lower() for b in BUILTINS}:
+                role, cls = "builtin", "BUILTIN"
+            else:
+                role, cls = "identifier", classify_code_token(span)
+            for c in span:
+                if c == "_":
+                    # underscore often in registry; if not matched above, keep visible
+                    if match_code_symbol is not None and match_code_symbol("_", 0) == "_":
+                        try:
+                            ident = code_symbol_identity("_")
+                        except Exception:
+                            ident = {"uid": None, "col": None}
+                        out.append({
+                            "kind": "symbol",
+                            "token": "_",
+                            "uid": ident.get("uid"),
+                            "col": ident.get("col"),
+                            "grid": "code",
+                            "class": "OPERATOR",
+                        })
+                    else:
+                        out.append({"kind": "unregistered", "token": "_", "uid": None})
+                elif c.isdigit() and c in DIGIT_MARKERS:
+                    out.append({
+                        "kind": "digit",
+                        "token": c,
+                        "marker": DIGIT_MARKERS[c],
+                        "grid": "digit",
+                        "role": role,
+                    })
+                elif c.isalpha():
+                    idx = alphabet_index(c, code, text_context=span)
+                    if idx is not None:
+                        out.append({
+                            "kind": "letter",
+                            "token": c,
+                            "index": int(idx),
+                            "role": role,
+                            "class": cls,
+                        })
+            i = j
+            continue
+
+        # 4) Unknown punct
+        out.append({"kind": "unregistered", "token": ch, "uid": None})
+        i += 1
+
+    return out
+
+
+
+def letter_indexes_from_stream(stream) -> list:
+    return [int(x["index"]) for x in stream if x.get("kind") == "letter" and x.get("index") is not None]
+
+
+def digit_markers_from_stream(stream) -> list:
+    return [str(x["marker"]) for x in stream if x.get("kind") == "digit" and x.get("marker")]
+
+
+def symbol_uids_from_stream(stream) -> list:
+    return [str(x["uid"]) for x in stream if x.get("kind") == "symbol" and x.get("uid")]
+
 
 
 def serialize_uid(

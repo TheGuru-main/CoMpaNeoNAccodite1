@@ -1466,13 +1466,29 @@ def serialize_uid(
     """
     Serialize the ordered UID sequence.
 
-    This is an identity representation.
+    Underscore separates each index so multi-digit indexes stay distinct:
+      [0, 2, 2, 14, 3, 8, 19, 4] -> "0_2_2_14_3_8_19_4"
+    Leading 0 (A/a) is kept as the token "0".
 
     IMPORTANT:
-    S is NOT calculated by digit-summing this string.
+    S is NOT calculated by digit-summing this string — use sum(sequence).
     """
+    return "_".join(str(int(value)) for value in sequence)
 
-    return "".join(str(int(value)) for value in sequence)
+
+def deserialize_uid(uid: str) -> list:
+    """Inverse of serialize_uid: split on '_' → list[int]."""
+    s = str(uid or "").strip()
+    if not s:
+        return []
+    parts = s.split("_")
+    out = []
+    for p in parts:
+        p = p.strip()
+        if p == "" or not p.lstrip("-").isdigit():
+            continue
+        out.append(int(p))
+    return out
 
 
 def uid_for_token(

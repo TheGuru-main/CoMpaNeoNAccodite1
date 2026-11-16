@@ -158,7 +158,7 @@ def letter_chain(name: str, lang: str = "en") -> List[int]:
 def chain_to_str(chain: Sequence[int]) -> str:
     if _HAS_TOK:
         return _tok_serialize_uid(chain)
-    return "".join(str(int(x)) for x in chain)
+    return "_".join(str(int(x)) for x in chain)
 
 
 def chain_to_compact(chain: Sequence[int]) -> str:

@@ -185,6 +185,63 @@ def _safe_rel(path: str) -> str:
 
 
 
+
+def path_segments(rel: str) -> list:
+    """
+    M5.1b: visible path breakdown including separators and extension dot.
+    e.g. backend/main.py → ["backend", "/", "main", ".", "py"]
+    """
+    rel = (rel or "").replace(chr(92), "/").lstrip("/")
+    if not rel:
+        return []
+    out = []
+    parts = rel.split("/")
+    for i, part in enumerate(parts):
+        if i:
+            out.append("/")
+        if not part:
+            continue
+        if "." in part and not part.startswith("."):
+            # split last extension only (main.py → main, ., py)
+            stem, _, ext = part.rpartition(".")
+            if stem:
+                out.append(stem)
+                out.append(".")
+                out.append(ext)
+            else:
+                out.append(part)
+        elif part.startswith(".") and len(part) > 1:
+            out.append(".")
+            out.append(part[1:])
+        else:
+            out.append(part)
+    return out
+
+
+def _sep_marker_map(symbol_uids: list, segments: list) -> dict:
+    """Map path seps to registry symbol uids when present (order: / then .)."""
+    seps = [s for s in segments if s in ("/", ".")]
+    uids = [str(u) for u in (symbol_uids or [])]
+    m = {}
+    ui = 0
+    for s in seps:
+        if ui < len(uids):
+            m[s] = m.get(s) or []
+            if isinstance(m[s], list):
+                m[s].append(uids[ui])
+            ui += 1
+        else:
+            m.setdefault(s, [])
+    # flatten single-entry lists for readability
+    out = {}
+    for k, v in m.items():
+        if isinstance(v, list) and len(v) == 1:
+            out[k] = v[0]
+        else:
+            out[k] = v
+    return out
+
+
 def path_place_for_rel(repo_name: str, rel: str, *, repo_uid: str = "") -> dict:
     """M5.1: place one path inside a repo from relative path string."""
     rel = (rel or "").replace(chr(92), "/").lstrip("/")
@@ -198,6 +255,8 @@ def path_place_for_rel(repo_name: str, rel: str, *, repo_uid: str = "") -> dict:
     uid = str(info.get("uid") or "")
     if not uid or not info.get("start_row"):
         raise HTTPException(400, "path place empty uid/start_row")
+    segs = path_segments(rel)
+    syms = list(info.get("symbol_uids") or [])
     return {
         "path": rel,
         "repo": repo_name,
@@ -212,7 +271,9 @@ def path_place_for_rel(repo_name: str, rel: str, *, repo_uid: str = "") -> dict:
         "root_key": info.get("root_key") or f"r{int(info['start_row'])}",
         "chain": info.get("chain") or [],
         "digit_markers": info.get("digit_markers") or [],
-        "symbol_uids": info.get("symbol_uids") or [],
+        "symbol_uids": syms,
+        "segments": segs,
+        "sep_markers": _sep_marker_map(syms, segs),
         "source": "path_content_place",
     }
 
@@ -236,6 +297,8 @@ def _paths_index_update(rdir: Path, rel: str, place: dict) -> None:
         "L": place.get("L"),
         "S": place.get("S"),
         "compound_key": place.get("compound_key"),
+        "segments": place.get("segments") or [],
+        "sep_markers": place.get("sep_markers") or {},
     }
     idx["paths"] = paths
     idx["updated_at"] = time.time()
@@ -788,6 +851,10 @@ async def fs_list(repo: str, scope: str = "user", path: str = ""):
                     ent["start_row"] = pl.get("start_row")
                     ent["start_col"] = pl.get("start_col")
                     ent["path_uid"] = pl.get("path_uid")
+                    if pl.get("segments"):
+                        ent["segments"] = pl.get("segments")
+                    if pl.get("sep_markers"):
+                        ent["sep_markers"] = pl.get("sep_markers")
         except Exception:
             pass
         entries.append(ent)
@@ -860,7 +927,17 @@ async def fs_mkdir(req: FsMkdir):
     if parent != rdir and parent.exists() and parent.is_file():
         raise HTTPException(409, f"parent is a file: {parent.relative_to(rdir)}")
     target.mkdir(parents=True, exist_ok=False)
-    return {"ok": True, "path": rel}
+    place = None
+    try:
+        meta = _read_meta(rdir) or {}
+        place = path_place_for_rel(req.repo, rel, repo_uid=str(meta.get("repo_uid") or ""))
+        _paths_index_update(rdir, rel, place)
+    except Exception as e:
+        print("[fs/mkdir] path place:", type(e).__name__, e)
+    out = {"ok": True, "path": rel}
+    if place:
+        out["place"] = place
+    return out
 
 
 class PushRequest(BaseModel):

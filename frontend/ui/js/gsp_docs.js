@@ -539,6 +539,26 @@
     }
   }
 
+
+  async function serverLookup(name) {
+    name = String(name || "").trim();
+    if (!name) return null;
+    var kindApi = (KINDS[state.kind] || {}).api || "xlsx";
+    var q =
+      "/sandbox/docs/lookup?name=" + encodeURIComponent(name) +
+      "&kind=" + encodeURIComponent(kindApi) +
+      "&parent_type=" + encodeURIComponent(state.parentType || "repo") +
+      "&parent_id=" + encodeURIComponent(state.parentId || state.parentRepo || "HomeDocs") +
+      "&parent_repo=" + encodeURIComponent(state.parentRepo || "HomeDocs");
+    if (state.orgId) q += "&org_id=" + encodeURIComponent(state.orgId);
+    try {
+      return await api(q);
+    } catch (e) {
+      console.warn("lookup", e);
+      return null;
+    }
+  }
+
   async function createDoc() {
     var nd = readNameDesc();
     var name = nd.name;
@@ -998,9 +1018,7 @@
     };
     document.getElementById("gridLookupGo").onclick = async function () {
       state.lookup = document.getElementById("gridLookup").value || "";
-      // Client grid filter
       renderSheet();
-      // Also search server list by name when possible
       try {
         await refreshList();
         var q = (state.lookup || "").toLowerCase();
@@ -1013,7 +1031,46 @@
             });
           }
         }
-      } catch (e) {}
+        if (state.lookup) {
+          var res = await serverLookup(state.lookup);
+          var lh = document.getElementById("lookupHits");
+          if (res && res.place) {
+            state.placement = {
+              start_row: res.place.start_row,
+              start_col: res.place.start_col,
+              doc_uid: res.place.doc_uid,
+              S: res.place.S,
+              L: res.place.L,
+            };
+            if (lh) {
+              lh.textContent =
+                (res.ok ? "hit" : "place-only") +
+                " r" + res.place.start_row +
+                ":c" + res.place.start_col +
+                " uid=" + (res.place.doc_uid || "").slice(0, 24);
+            }
+            // highlight target cell after re-render
+            state.lookupFocus = {
+              r: res.place.start_row,
+              c: res.place.start_col != null ? res.place.start_col : 0,
+            };
+            renderSheet();
+            try {
+              var td = document.querySelector(
+                '#gspDocStage td[data-r="' + state.lookupFocus.r + '"][data-c="' + state.lookupFocus.c + '"]'
+              );
+              if (td) {
+                td.classList.add("on", "hit");
+                td.scrollIntoView({ block: "nearest", inline: "nearest" });
+              }
+            } catch (_e) {}
+          } else if (lh) {
+            lh.textContent = "no match";
+          }
+        }
+      } catch (e) {
+        console.warn("lookup go", e);
+      }
     };
     document.getElementById("gridLookup").onkeydown = function (ev) {
       if (ev.key === "Enter") {
@@ -1027,11 +1084,12 @@
         stage.querySelectorAll("td.on").forEach(function (x) {
           x.classList.remove("on");
         });
-        td.classList.add("on"); try { showCellInspect(r, c, cell); } catch (_i) {};
         var r = +td.getAttribute("data-r");
         var c = +td.getAttribute("data-c");
         state.selected = { r: r, c: c };
         var cur = cells[r + ":" + c];
+        td.classList.add("on");
+        try { showCellInspect(r, c, cur); } catch (_i) {}
         var val = cellText(cur);
         var meta = cellMeta(cur) || "";
         var next = prompt("Cell " + r + ":" + c + " — value", val);

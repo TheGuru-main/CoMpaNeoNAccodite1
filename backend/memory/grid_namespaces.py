@@ -261,9 +261,9 @@ def lookup_by_name(grid, ns: str, object_name: str, *, lang: str = "en") -> Opti
     """Resolve object by name using the same GSP identity as place."""
     ns = assert_ns(ns)
     try:
-        from gsp_chain import start_row_for_name, validate_resource_name
+        from gsp_chain import content_place_from_name, validate_resource_name
         object_name = validate_resource_name(object_name, what="object name")
-        place = start_row_for_name(object_name, lang=lang)
+        place = content_place_from_name(object_name, lang=lang) or {}
         doc_uid = str(place.get("uid") or place.get("uid_str") or "")
     except Exception:
         doc_uid = ""

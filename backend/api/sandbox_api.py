@@ -1145,6 +1145,104 @@ async def create_doc(req: DocCreate, request: Request = None):
 
 
 
+
+
+@router.get("/docs/lookup")
+async def docs_lookup(
+    name: str,
+    kind: str = "xlsx",
+    parent_type: str = "repo",
+    parent_id: str = "HomeDocs",
+    parent_repo: str = "",
+    org_id: str = "",
+    lang: str = "en",
+    request: Request = None,
+):
+    """M4.3: resolve object by name via content_place identity on owner grid."""
+    from memory.grid_namespaces import lookup_by_name, assert_ns
+    from memory.grid_request import bind_request_grid
+    from gsp_chain import content_place_from_name
+
+    pt, pid = _doc_parent(parent_type, parent_repo or parent_id, parent_id or parent_repo)
+    kind_n = _normalize_doc_kind(kind)
+    user, ownership = _resolve_docs_owner(request, pt, pid, kind_n, org_id)
+    user_phone, org_phone = _phones_from_ownership(user, ownership)
+
+    ns = {
+        "sheet": "sheets",
+        "xlsx": "dbase",
+        "workspace": "collabsheet",
+        "pptx": "presentations",
+    }.get(kind_n, "dbase")
+    try:
+        assert_ns(ns)
+    except Exception as e:
+        raise HTTPException(400, str(e))
+
+    place = {}
+    try:
+        place = content_place_from_name(name, lang=lang or "en") or {}
+    except Exception as e:
+        raise HTTPException(400, f"place identity failed: {e}")
+
+    grid = bind_request_grid(
+        user_id=str(getattr(user, "id", "") or ""),
+        org_id=str(getattr(ownership, "org_id", None) or org_id or ""),
+        user_phone=user_phone or None,
+        org_phone=org_phone or None,
+    )
+    hit = None
+    if grid is not None:
+        try:
+            hit = lookup_by_name(grid, ns, name, lang=lang or "en")
+        except Exception as e:
+            print("[docs.lookup]", type(e).__name__, e)
+
+    # Neon meta list fallback by name under owner
+    neon = None
+    try:
+        from docs_store import list_documents, get_document
+        rows = list_documents(
+            parent_type=pt,
+            parent_id=pid,
+            kind=kind_n,
+            ownership_kind=ownership.kind,
+            ownership_id=ownership.owner_id,
+        ) or []
+        for row in rows:
+            if str(row.get("doc_name") or row.get("name") or "").lower() == name.lower():
+                neon = row
+                break
+        if neon is None:
+            try:
+                neon = get_document(
+                    pt, pid, name,
+                    ownership_kind=ownership.kind,
+                    ownership_id=ownership.owner_id,
+                )
+            except Exception:
+                pass
+    except Exception as e:
+        print("[docs.lookup neon]", type(e).__name__, e)
+
+    return {
+        "ok": bool(hit or neon),
+        "name": name,
+        "ns": ns,
+        "place": {
+            "start_row": place.get("start_row"),
+            "start_col": place.get("start_col") if place.get("start_col") is not None else place.get("c"),
+            "doc_uid": place.get("uid"),
+            "S": place.get("S"),
+            "L": place.get("L"),
+            "c": place.get("c"),
+        },
+        "grid_hit": hit,
+        "neon": neon,
+        "owner": {"kind": ownership.kind, "owner_id": ownership.owner_id},
+    }
+
+
 @router.get("/docs")
 async def list_docs(
     parent_repo: str = "",

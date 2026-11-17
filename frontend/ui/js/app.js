@@ -698,53 +698,65 @@ try {
 
 
 // ========== Particle Bubble Canvas ==========
+
 function initBubbleCanvas() {
-    const canvas = document.getElementById('bubbleCanvas');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    let W = 0, H = 0;
+    // ACCD-PARTICLE-NETWORK
+    var canvas = document.getElementById("bubbleCanvas");
+    if (!canvas) {
+        canvas = document.createElement("canvas");
+        canvas.id = "bubbleCanvas";
+        document.body.prepend(canvas);
+    }
+    var ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    var W, H, nodes = [], mouse = { x: null, y: null };
     function resize() {
-        W = canvas.width  = window.innerWidth;
+        W = canvas.width = window.innerWidth;
         H = canvas.height = window.innerHeight;
     }
     resize();
-    window.addEventListener('resize', resize);
-
-    const COUNT = Math.max(18, Math.min(45, Math.floor(W * H / 42000)));
-    const bubbles = Array.from({ length: COUNT }, () => ({
-        x: Math.random() * W,
-        y: Math.random() * H,
-        r: 6 + Math.random() * 34,
-        dx: (Math.random() - 0.5) * 0.45,
-        dy: -0.15 - Math.random() * 0.55,
-        a: 0.035 + Math.random() * 0.09,
-        hue: [220, 340, 172][Math.floor(Math.random() * 3)],  // neon blue, burgundy, aqua
-    }));
-
+    window.addEventListener("resize", resize);
+    var N = Math.min(55, Math.floor((W * H) / 28000));
+    for (var i = 0; i < N; i++) {
+        nodes.push({
+            x: Math.random() * W,
+            y: Math.random() * H,
+            vx: (Math.random() - 0.5) * 0.45,
+            vy: (Math.random() - 0.5) * 0.45,
+            r: 1.2 + Math.random() * 1.8,
+        });
+    }
     function frame() {
         ctx.clearRect(0, 0, W, H);
-        for (const b of bubbles) {
-            ctx.beginPath();
-            ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
-            ctx.fillStyle = `hsla(${b.hue}, 80%, 60%, ${b.a})`;
-            ctx.fill();
-            ctx.strokeStyle = `hsla(${b.hue}, 80%, 75%, ${b.a * 0.7})`;
-            ctx.lineWidth = 1;
-            ctx.stroke();
-
-            b.x += b.dx;
-            b.y += b.dy;
-            if (b.y + b.r < -10) {
-                b.y = H + b.r;
-                b.x = Math.random() * W;
+        for (var i = 0; i < nodes.length; i++) {
+            var a = nodes[i];
+            a.x += a.vx; a.y += a.vy;
+            if (a.x < 0 || a.x > W) a.vx *= -1;
+            if (a.y < 0 || a.y > H) a.vy *= -1;
+            for (var j = i + 1; j < nodes.length; j++) {
+                var b = nodes[j];
+                var dx = a.x - b.x, dy = a.y - b.y;
+                var d2 = dx * dx + dy * dy;
+                if (d2 < 140 * 140) {
+                    var alpha = 1 - Math.sqrt(d2) / 140;
+                    ctx.strokeStyle = "rgba(165,243,252," + (alpha * 0.35).toFixed(3) + ")";
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(a.x, a.y);
+                    ctx.lineTo(b.x, b.y);
+                    ctx.stroke();
+                }
             }
-            if (b.x < -b.r) b.x = W + b.r;
-            if (b.x > W + b.r) b.x = -b.r;
+            ctx.beginPath();
+            ctx.arc(a.x, a.y, a.r, 0, Math.PI * 2);
+            ctx.fillStyle = "rgba(134,239,172,0.55)";
+            ctx.fill();
         }
         requestAnimationFrame(frame);
     }
     frame();
 }
+
 
 // boot the canvas once
 try { initBubbleCanvas(); } catch (_) {}
@@ -6295,5 +6307,53 @@ window.accdPersistStreamAi = async function (text, serverPersist, options) {
   setTimeout(stripHeaderJunk, 400);
   setTimeout(stripHeaderJunk, 1200);
   setTimeout(patchOpenOrg, 600);
+})();
+
+// ACCD-ATTACH-EYE
+(function bindAttachEye() {
+  function go() {
+    var eye = document.getElementById("btnAttachEye");
+    var tray = document.getElementById("wsAttachTray");
+    var note = document.getElementById("wsAttachNote");
+    if (!eye || !tray || eye.dataset.bound) return;
+    eye.dataset.bound = "1";
+    eye.addEventListener("click", function () {
+      var open = tray.classList.toggle("open");
+      eye.setAttribute("aria-expanded", open ? "true" : "false");
+      if (note) note.classList.toggle("open", open);
+    });
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", go);
+  else go();
+})();
+
+// ACCD-VOICE-REC-BAR
+(function bindVoiceRecBar() {
+  function $(id) { return document.getElementById(id); }
+  function go() {
+    var start = $("btnVoiceRecStart");
+    var stop = $("btnVoiceRecStop");
+    var bar = $("voiceRecBar");
+    var mic = $("btnMic");
+    if (!start || start.dataset.bound) return;
+    start.dataset.bound = "1";
+    start.onclick = function () {
+      if (bar) bar.classList.add("on");
+      if (typeof window.startVoiceNote === "function") window.startVoiceNote();
+      else if (mic) mic.click();
+    };
+    if (stop) stop.onclick = function () {
+      if (typeof window.stopVoiceNote === "function") window.stopVoiceNote();
+      else if (mic) mic.click();
+    };
+    // mirror timer if voiceTimer exists
+    var src = $("voiceTimer");
+    var dst = $("voiceRecTimer");
+    if (src && dst) {
+      setInterval(function () { dst.textContent = src.textContent || "0:00"; }, 400);
+    }
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", go);
+  else go();
 })();
 

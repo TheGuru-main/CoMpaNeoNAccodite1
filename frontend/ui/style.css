@@ -8,12 +8,14 @@
 :root {
     --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', 'Cascadia Code',
                  ui-monospace, Menlo, Consolas, 'Courier New', monospace;
-    --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue',
-                 Arial, sans-serif;
+    --font-sans: 'Segoe UI', system-ui, -apple-system, Roboto, 'Helvetica Neue', Arial, sans-serif;
 
     /* --- charcoal base --- */
-    --bg: #0c0c10;
-    --bg-2: #14141a;
+    --bg: #3f3f46;
+    --bg-2: #52525b;
+    --sand: #d6c6a8;
+    --sand-deep: #a89070;
+    --gray-mid: #71717a;
     --panel: rgba(20, 20, 26, 0.78);
     --panel-solid: #14141a;
     --charcoal: #1c1c22;
@@ -22,7 +24,7 @@
     --border: rgba(255, 255, 255, 0.08);
     --border-strong: rgba(255, 255, 255, 0.16);
 
-    --text: #eceef3;
+    --text: #ffffff;
     --text-dim: rgba(236, 238, 243, 0.66);
     --text-faint: rgba(236, 238, 243, 0.4);
 
@@ -43,7 +45,9 @@
     --aqua-deep: #4ba9a6;
     --aqua-glow: rgba(125, 211, 208, 0.35);
 
-    --green: #22c55e;
+    --green: #86efac;
+    --btn-cyan: #a5f3fc;
+    --btn-green: #86efac;
     --red: #ef4444;
 
     --radius: 0.85rem;
@@ -56,11 +60,12 @@
 html, body { min-height: 100%; margin: 0; padding: 0; overflow-x: hidden; }
 
 body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: var(--font-mono);
-    font-size: 15px;
-    line-height: 1.5;
+    background: linear-gradient(347deg, #3f3f46 0%, #52525b 38%, #a89070 72%, #d6c6a8 100%);
+    background-attachment: fixed;
+    color: #ffffff;
+    font-family: var(--font-mono), var(--font-sans);
+    font-size: 14px;
+    line-height: 1.45;
     -webkit-font-smoothing: antialiased;
     overflow-x: hidden;
     position: relative;
@@ -73,11 +78,7 @@ body {
     inset: 0;
     z-index: 0;
     pointer-events: none;
-    background:
-        radial-gradient(ellipse at 50% 0%,
-            rgba(79, 140, 255, 0.10) 0%,
-            rgba(20, 20, 26, 1) 45%,
-            #0c0c10 100%);
+    background: transparent;
 }
 
 .app {
@@ -2498,3 +2499,91 @@ body:not(.logged-in) .bottom-nav-fixed { display: none !important; }
     margin-top: 0;
     padding: 14px;
 }
+
+/* ACCD-THEME-COMPACT-COMPOSER */
+.input-area {
+    padding: 0.35rem 0.5rem calc(0.35rem + env(safe-area-inset-bottom, 0px)) !important;
+    min-height: 0 !important;
+    background: rgba(63, 63, 70, 0.92) !important;
+    border-top: 1px solid rgba(214, 198, 168, 0.25) !important;
+}
+.ws-composer-box {
+    gap: 0.35rem !important;
+}
+.input-area input#promptInput,
+#promptInput {
+    min-height: 36px !important;
+    height: 36px !important;
+    padding: 0.35rem 0.65rem !important;
+    font-size: 13px !important;
+    border-radius: 10px !important;
+    background: rgba(24, 24, 27, 0.55) !important;
+    color: #fff !important;
+}
+.input-area .attach-btn,
+.input-area .icon-btn,
+.input-area .send-btn {
+    width: 34px !important;
+    height: 34px !important;
+    min-width: 34px !important;
+    padding: 0 !important;
+    border-radius: 10px !important;
+}
+.input-area .send-btn {
+    background: var(--btn-cyan, #a5f3fc) !important;
+    color: #14532d !important;
+}
+.ws-attach-row {
+    display: none;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    width: 100%;
+    padding: 0.25rem 0 0;
+}
+.ws-attach-row.open { display: flex !important; }
+.ws-attach-note {
+    display: none;
+    width: 100%;
+    font-size: 11px;
+    color: rgba(255,255,255,0.75);
+    padding: 0.15rem 0 0;
+}
+.ws-attach-row.open + .ws-attach-note,
+.ws-attach-note.open { display: block; }
+.ws-call-btn { display: inline-flex !important; }
+.voice-rec-bar {
+    display: none;
+    align-items: center;
+    gap: 0.4rem;
+    width: 100%;
+    font-size: 12px;
+    color: #fff;
+}
+.voice-rec-bar.on { display: flex; }
+.voice-rec-bar button {
+    background: var(--btn-green, #86efac);
+    color: #14532d;
+    border: none;
+    border-radius: 8px;
+    padding: 0.25rem 0.5rem;
+    font-size: 12px;
+}
+.top-header h1,
+.auth-hero h1 {
+    font-family: var(--font-mono), var(--font-sans);
+}
+.acd-brand-mark { margin-right: 0.35rem; color: #a5f3fc; }
+.acd-brand-mark .fa-link { font-size: 0.75em; opacity: 0.9; margin-left: 2px; }
+/* DBase + codespace density */
+.acd-top .acd-btn, .acd-top .acd-inp {
+    padding: 4px 8px !important;
+    font-size: 12px !important;
+    min-height: 30px !important;
+}
+.acd-inp { font-size: 12px !important; }
+#codeToolbar button, #codePanel .acd-btn, .code-toolbar button {
+    padding: 4px 8px !important;
+    font-size: 12px !important;
+    min-height: 30px !important;
+}
+

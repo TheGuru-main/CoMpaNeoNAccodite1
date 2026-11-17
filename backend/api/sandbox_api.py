@@ -10,6 +10,8 @@ repo_uid is generated on create (secret to user/team).
 commit / push require repo name + repo_uid.
 
 Runner: sandbox.runner (untouched).
+
+M5.3: ROOT prefers ACCD_SANDBOX_ROOT (durable). Owner isolation: scope/phone/repo.
 """
 from __future__ import annotations
 
@@ -112,18 +114,55 @@ SAFE_NAME = re.compile(r"^[a-zA-Z0-9._\-]+$")
 R_ROWS = 64
 
 
-def _scope_root(scope: str) -> Path:
+def _owner_phone_from_request(request: Request = None) -> str:
+    """M5.3: phone uid for disk partition (not SQL UUID)."""
+    if request is None:
+        return (os.environ.get("ACCD_SANDBOX_PHONE") or "").strip()
+    # explicit header from frontend
+    h = (request.headers.get("X-Accd-Phone") or request.headers.get("X-Phone-Uid") or "").strip()
+    if h:
+        try:
+            from memory.owner_identity import phone_uid
+            return phone_uid(h) or h
+        except Exception:
+            return h
+    try:
+        u = _optional_user(request)
+        phone = getattr(u, "phone", None) if u else None
+        if phone:
+            from memory.owner_identity import phone_uid
+            return phone_uid(str(phone)) or str(phone)
+    except Exception:
+        pass
+    return (os.environ.get("ACCD_SANDBOX_PHONE") or "").strip()
+
+
+def _scope_root(scope: str, owner_phone: str = "") -> Path:
+    """
+    M5.3 durable layout:
+      ACCD_SANDBOX_ROOT / {scope} / {phone_uid} / <repo>
+    Without phone (legacy): ACCD_SANDBOX_ROOT / {scope} / <repo>
+    Prefer ACCD_SANDBOX_ROOT on Render disk (/var/data/...), never rely on /tmp.
+    """
     scope = (scope or "user").strip().lower()
     if scope not in ("user", "org", "ai"):
         scope = "user"
-    p = ROOT / scope
-    p.mkdir(parents=True, exist_ok=True)
-    return p
+    base = ROOT / scope
+    base.mkdir(parents=True, exist_ok=True)
+    phone = (owner_phone or "").strip()
+    if phone and os.environ.get("ACCD_SANDBOX_OWNER_ISOLATION", "1") not in ("0", "false", "no"):
+        # sanitize phone for path
+        safe = re.sub(r"[^0-9A-Za-z_+-]", "", phone)[:64]
+        if safe:
+            base = base / safe
+            base.mkdir(parents=True, exist_ok=True)
+    return base
 
 
 
-def _manifest_path(scope: str) -> Path:
-    return _scope_root(scope) / ".accd_repos_manifest.json"
+
+def _manifest_path(scope: str, owner_phone: str = "") -> Path:
+    return _scope_root(scope, owner_phone) / ".accd_repos_manifest.json"
 
 
 def _load_manifest(scope: str) -> list:
@@ -164,12 +203,12 @@ def _manifest_remove(scope: str, name: str) -> None:
     entries = [e for e in _load_manifest(scope) if e.get("name") != name]
     _save_manifest(scope, entries)
 
-def _repo_dir(scope: str, repo: str) -> Path:
+def _repo_dir(scope: str, repo: str, owner_phone: str = "") -> Path:
     try:
         repo = validate_resource_name(repo, what="repo name")
     except ValueError as e:
         raise HTTPException(400, str(e))
-    return _scope_root(scope) / repo
+    return _scope_root(scope, owner_phone) / repo
 
 
 def _safe_rel(path: str) -> str:
@@ -637,19 +676,25 @@ async def sandbox_health():
         probe_err = str(e)
     else:
         probe_err = None
+    root_s = str(ROOT)
+    ephemeral = root_s.startswith("/tmp") or "/tmp/" in root_s
     return {
         "ok": True,
-        "root": str(ROOT),
+        "root": root_s,
         "writable": writable,
         "probe_error": probe_err,
         "ts": time.time(),
-        "ephemeral_hint": str(ROOT).startswith("/tmp"),
+        "ephemeral_hint": ephemeral,
+        "durable": (not ephemeral) and writable,
+        "owner_isolation": os.environ.get("ACCD_SANDBOX_OWNER_ISOLATION", "1") not in ("0", "false", "no"),
+        "m": "5.3",
     }
 
 
 @router.get("/repos")
-async def list_repos(scope: str = "user"):
-    root = _scope_root(scope)
+async def list_repos(scope: str = "user", request: Request = None):
+    phone = _owner_phone_from_request(request)
+    root = _scope_root(scope, phone)
     out: List[dict] = []
     for d in sorted(root.iterdir() if root.exists() else []):
         if not d.is_dir():

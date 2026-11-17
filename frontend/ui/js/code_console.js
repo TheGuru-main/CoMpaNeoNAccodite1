@@ -331,7 +331,7 @@
             writeLog("ignored file from repo '" + repoAtPaint + "' (active is '" + repo + "')\n");
             return;
           }
-          openFile(meta.path, { silent: true });
+          openFile(meta.path, { fromTree: true, place: { start_row: meta.start_row, start_col: meta.start_col, path_uid: meta.path_uid, segments: meta.segments } });
         };
         container.appendChild(row);
       }
@@ -561,7 +561,7 @@
       var slash = path.lastIndexOf("/");
       setCwd(slash >= 0 ? path.slice(0, slash) : "");
       await loadTree();
-      if (!opts.silent) {
+      if (!opts.silent || opts.fromTree) {
         var pl = opts.place || {};
         var extra = "";
         if (pl.start_row != null) extra += " · r" + pl.start_row;

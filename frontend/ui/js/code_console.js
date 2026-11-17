@@ -252,6 +252,122 @@
     }, 120);
   }
 
+
+  /* ACCD-RepoTreeProvider — VS Code TreeDataProvider-shaped, web-only.
+   * Not a stub: drives Explorer via /sandbox/fs/list + openFile.
+   * getChildren / getTreeItem / executeCommand mirror VS Code concepts.
+   */
+  var RepoTreeProvider = {
+    _cache: null,
+    _cacheRepo: "",
+
+    invalidate: function () {
+      this._cache = null;
+      this._cacheRepo = "";
+    },
+
+    /** Root or folder children (lazy). element null = repo root. */
+    listChildren: async function (elementPath) {
+      if (!repo) return [];
+      var path = elementPath || "";
+      var data = await api(
+        "/sandbox/fs/list?scope=" + encodeURIComponent(scope) +
+        "&repo=" + encodeURIComponent(repo) +
+        "&path=" + encodeURIComponent(path)
+      );
+      var out = [];
+      (data.entries || []).forEach(function (e) {
+        if (e.name === ".git" || (e.path && e.path.split("/")[0] === ".git")) return;
+        out.push({
+          name: e.name,
+          path: e.path || e.name,
+          type: e.type === "dir" ? "dir" : "file",
+          start_row: e.start_row,
+          start_col: e.start_col,
+          path_uid: e.path_uid,
+          segments: e.segments,
+          sep_markers: e.sep_markers,
+        });
+      });
+      out.sort(function (a, b) {
+        if (a.type !== b.type) return a.type === "dir" ? -1 : 1;
+        return String(a.name).localeCompare(String(b.name));
+      });
+      return out;
+    },
+
+    /** Full tree entries (same as old walk) for buildTree compatibility. */
+    listAll: async function () {
+      if (!repo) return [];
+      if (this._cache && this._cacheRepo === repo) return this._cache;
+      var all = [];
+      var self = this;
+      async function walk(path) {
+        var kids = await self.listChildren(path);
+        for (var i = 0; i < kids.length; i++) {
+          all.push(kids[i]);
+          if (kids[i].type === "dir") await walk(kids[i].path);
+        }
+      }
+      await walk("");
+      this._cache = all;
+      this._cacheRepo = repo;
+      return all;
+    },
+
+    /** UI representation of one node (TreeItem). */
+    getTreeItem: function (element) {
+      var isDir = element.type === "dir";
+      var label = (isDir ? "📁 " : "📄 ") + element.name;
+      if (!isDir && element.start_row != null) label += " · r" + element.start_row;
+      return {
+        label: label,
+        path: element.path,
+        type: isDir ? "dir" : "file",
+        collapsible: isDir,
+        contextValue: isDir ? "dir" : "file",
+        start_row: element.start_row,
+        start_col: element.start_col,
+        path_uid: element.path_uid,
+        segments: element.segments,
+        command: isDir
+          ? null
+          : {
+              id: "accodite.openPath",
+              title: "Open",
+              arguments: [element.path, {
+                fromTree: true,
+                place: {
+                  start_row: element.start_row,
+                  start_col: element.start_col,
+                  path_uid: element.path_uid,
+                  segments: element.segments,
+                },
+              }],
+            },
+      };
+    },
+
+    executeCommand: async function (cmd) {
+      if (!cmd || !cmd.id) return;
+      if (cmd.id === "accodite.openPath") {
+        var path = cmd.arguments && cmd.arguments[0];
+        var opts = (cmd.arguments && cmd.arguments[1]) || {};
+        await openFile(path, opts);
+      }
+    },
+
+    reveal: function (path) {
+      var box = $("codeFileTree");
+      if (!box || !path) return;
+      var el = box.querySelector('[data-path="' + path.replace(/"/g, "") + '"]');
+      if (el) {
+        el.scrollIntoView({ block: "nearest" });
+        el.style.color = "#22d3ee";
+      }
+    },
+  };
+
   function buildTree(entries) {
     var root = {};
     (entries || []).forEach(function (e) {
@@ -331,7 +447,13 @@
             writeLog("ignored file from repo '" + repoAtPaint + "' (active is '" + repo + "')\n");
             return;
           }
-          openFile(meta.path, { fromTree: true, place: { start_row: meta.start_row, start_col: meta.start_col, path_uid: meta.path_uid, segments: meta.segments } });
+          var item = RepoTreeProvider.getTreeItem({
+            name: meta.name, path: meta.path, type: meta.type || "file",
+            start_row: meta.start_row, start_col: meta.start_col,
+            path_uid: meta.path_uid, segments: meta.segments
+          });
+          if (item.command) RepoTreeProvider.executeCommand(item.command);
+          else openFile(meta.path, { fromTree: true, place: { start_row: meta.start_row, start_col: meta.start_col, path_uid: meta.path_uid, segments: meta.segments } });
         };
         container.appendChild(row);
       }
@@ -404,6 +526,7 @@
       } catch (e) {}
     }
     repo = name;
+    RepoTreeProvider.invalidate();
     cwd = "";
     currentFile = "";
     var sel = $("codeRepoSelect");
@@ -477,26 +600,16 @@
     box.appendChild(filesTitle);
 
     try {
-      var all = [];
-      async function walk(path) {
-        var data = await api(
-          "/sandbox/fs/list?scope=" + encodeURIComponent(scope) +
-          "&repo=" + encodeURIComponent(repo) +
-          "&path=" + encodeURIComponent(path || "")
-        );
-        for (var i = 0; i < (data.entries || []).length; i++) {
-          var e = data.entries[i];
-          if (e.name === ".git" || (e.path && e.path.split("/")[0] === ".git")) continue;
-          all.push(e);
-          if (e.type === "dir") await walk(e.path);
-        }
-      }
-      await walk("");
+      RepoTreeProvider.invalidate();
+      var all = await RepoTreeProvider.listAll();
       var treeRoot = document.createElement("div");
       treeRoot.setAttribute("data-active-repo", repo || "");
       box.appendChild(treeRoot);
       renderNode(treeRoot, buildTree(all), 0);
-    } catch (err) {}
+      if (currentFile) RepoTreeProvider.reveal(currentFile);
+    } catch (err) {
+      writeLog("tree: " + errText(err) + "\n");
+    }
   }
 
   function initMonaco() {
@@ -548,6 +661,7 @@
       }
       currentFile = path;
       lastRunPath = path;
+      try { RepoTreeProvider.reveal(path); } catch (e) {}
       if (monacoEditor) {
         monacoEditor.setValue(data.content || "");
         try {

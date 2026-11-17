@@ -184,6 +184,67 @@ def _safe_rel(path: str) -> str:
     return "/".join(parts)
 
 
+
+def path_place_for_rel(repo_name: str, rel: str, *, repo_uid: str = "") -> dict:
+    """M5.1: place one path inside a repo from relative path string."""
+    rel = (rel or "").replace(chr(92), "/").lstrip("/")
+    if not rel:
+        raise HTTPException(400, "path required for path place")
+    try:
+        from gsp_chain import content_place_from_name
+        info = content_place_from_name(rel) or {}
+    except Exception as e:
+        raise HTTPException(400, f"path GSP place failed: {e}") from e
+    uid = str(info.get("uid") or "")
+    if not uid or not info.get("start_row"):
+        raise HTTPException(400, "path place empty uid/start_row")
+    return {
+        "path": rel,
+        "repo": repo_name,
+        "repo_uid": repo_uid or "",
+        "compound_key": f"{repo_uid or repo_name}::{rel}",
+        "path_uid": uid,
+        "L": info.get("L"),
+        "S": info.get("S"),
+        "c": info.get("c") if info.get("c") is not None else info.get("start_col"),
+        "start_col": info.get("start_col") if info.get("start_col") is not None else info.get("c"),
+        "start_row": info["start_row"],
+        "root_key": info.get("root_key") or f"r{int(info['start_row'])}",
+        "chain": info.get("chain") or [],
+        "digit_markers": info.get("digit_markers") or [],
+        "symbol_uids": info.get("symbol_uids") or [],
+        "source": "path_content_place",
+    }
+
+
+def _paths_index_update(rdir: Path, rel: str, place: dict) -> None:
+    idx_path = rdir / ".gsp_paths.json"
+    idx = {}
+    if idx_path.is_file():
+        try:
+            idx = json.loads(idx_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            idx = {}
+    if not isinstance(idx, dict):
+        idx = {}
+    paths = idx.get("paths") if isinstance(idx.get("paths"), dict) else {}
+    paths[rel] = {
+        "path_uid": place.get("path_uid"),
+        "start_row": place.get("start_row"),
+        "start_col": place.get("start_col"),
+        "c": place.get("c"),
+        "L": place.get("L"),
+        "S": place.get("S"),
+        "compound_key": place.get("compound_key"),
+    }
+    idx["paths"] = paths
+    idx["updated_at"] = time.time()
+    try:
+        idx_path.write_text(json.dumps(idx, indent=2), encoding="utf-8")
+    except Exception as e:
+        print("[sandbox] paths index:", e)
+
+
 def compute_start_row(repo_name: str, repo_uid: str = "") -> dict:
     """M5.0: L,S,c then start_row via content_place_from_name (full chain)."""
     try:
@@ -281,12 +342,19 @@ def _scaffold_conventional(rdir: Path, name: str) -> None:
         "scripts",
         "docs",
     )
+    repo_meta0 = _read_meta(rdir) or {}
+    repo_uid0 = str(repo_meta0.get("repo_uid") or "")
     for rel in roots:
         d = rdir / rel
         if not d.exists():
             d.mkdir(parents=True, exist_ok=True)
         elif d.is_file():
             raise HTTPException(409, f"path conflict: {rel} is a file, expected directory root")
+        try:
+            place = path_place_for_rel(name, rel, repo_uid=repo_uid0)
+            _paths_index_update(rdir, rel, place)
+        except Exception as e:
+            print("[scaffold] root place", rel, type(e).__name__, e)
 
     files = {
         "backend/__init__.py": "",
@@ -309,12 +377,19 @@ def _scaffold_conventional(rdir: Path, name: str) -> None:
             f"Do not create a second folder with the same root name inside this repo.\n"
         ),
     }
+    repo_meta = _read_meta(rdir) or {}
+    repo_uid = str(repo_meta.get("repo_uid") or "")
     for rel, body in files.items():
         p = rdir / rel
         p.parent.mkdir(parents=True, exist_ok=True)
         if p.exists():
             continue  # never overwrite
         p.write_text(body, encoding="utf-8")
+        try:
+            place = path_place_for_rel(name, rel, repo_uid=repo_uid)
+            _paths_index_update(rdir, rel, place)
+        except Exception as e:
+            print("[scaffold] path place", rel, type(e).__name__, e)
 
 
 
@@ -697,12 +772,25 @@ async def fs_list(repo: str, scope: str = "user", path: str = ""):
     for child in sorted(target.iterdir()):
         if child.name.startswith(".gsp") or child.name.startswith(".accd"):
             continue
-        entries.append({
+        rel_p = str(child.relative_to(rdir)).replace(chr(92), "/")
+        ent = {
             "name": child.name,
-            "path": str(child.relative_to(rdir)).replace("\\", "/"),
+            "path": rel_p,
             "type": "dir" if child.is_dir() else "file",
             "size": child.stat().st_size if child.is_file() else 0,
-        })
+        }
+        try:
+            idx_path = rdir / ".gsp_paths.json"
+            if idx_path.is_file():
+                idx = json.loads(idx_path.read_text(encoding="utf-8")) or {}
+                pl = (idx.get("paths") or {}).get(rel_p)
+                if pl:
+                    ent["start_row"] = pl.get("start_row")
+                    ent["start_col"] = pl.get("start_col")
+                    ent["path_uid"] = pl.get("path_uid")
+        except Exception:
+            pass
+        entries.append(ent)
     return {"type": "dir", "path": rel or "", "entries": entries}
 
 
@@ -742,7 +830,17 @@ async def fs_write(req: FsWrite):
     if target.parent.exists() and target.parent.is_file():
         raise HTTPException(409, "parent path is a file")
     target.write_text(req.content or "", encoding="utf-8")
-    return {"ok": True, "path": rel, "size": target.stat().st_size}
+    place = None
+    try:
+        meta = _read_meta(rdir) or {}
+        place = path_place_for_rel(req.repo, rel, repo_uid=str(meta.get("repo_uid") or ""))
+        _paths_index_update(rdir, rel, place)
+    except Exception as e:
+        print("[fs/write] path place:", type(e).__name__, e)
+    out = {"ok": True, "path": rel, "size": target.stat().st_size}
+    if place:
+        out["place"] = place
+    return out
 
 
 @router.post("/fs/mkdir")

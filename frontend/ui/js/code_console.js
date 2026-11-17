@@ -1,3 +1,4 @@
+/* ACCD-M5.2 path cell → Monaco; terminal cwd inside active repo only */
 /**
  * Accodite Codespace P4
  * - Terminal: tap surface → ghost input (mobile keyboard)
@@ -254,14 +255,31 @@
   function buildTree(entries) {
     var root = {};
     (entries || []).forEach(function (e) {
-      var parts = e.path.split("/").filter(Boolean);
+      var parts = (e.path || "").split("/").filter(Boolean);
       var node = root;
       parts.forEach(function (part, i) {
         var last = i === parts.length - 1;
         if (!node[part]) {
-          node[part] = { __meta: { name: part, path: parts.slice(0, i + 1).join("/"), type: last ? e.type : "dir", children: {} } };
+          node[part] = {
+            __meta: {
+              name: part,
+              path: parts.slice(0, i + 1).join("/"),
+              type: last ? e.type : "dir",
+              children: {},
+              start_row: last ? e.start_row : null,
+              start_col: last ? e.start_col : null,
+              path_uid: last ? e.path_uid : null,
+              segments: last ? e.segments : null,
+            },
+          };
         }
-        if (!last) {
+        if (last) {
+          if (e.start_row != null) node[part].__meta.start_row = e.start_row;
+          if (e.start_col != null) node[part].__meta.start_col = e.start_col;
+          if (e.path_uid) node[part].__meta.path_uid = e.path_uid;
+          if (e.segments) node[part].__meta.segments = e.segments;
+          node[part].__meta.type = e.type || "file";
+        } else {
           node[part].__meta.type = "dir";
           node = node[part].__meta.children;
         }
@@ -299,7 +317,10 @@
         container.appendChild(wrap);
         renderNode(wrap, meta.children, depth + 1);
       } else {
-        row.textContent = "📄 " + meta.name;
+        var placeBit = meta.start_row != null ? (" · r" + meta.start_row) : "";
+        row.textContent = "📄 " + meta.name + placeBit;
+        if (meta.path_uid) row.setAttribute("data-path-uid", meta.path_uid);
+        if (meta.start_row != null) row.setAttribute("data-start-row", String(meta.start_row));
         if (meta.path === currentFile && repo === repoAtPaint) {
           row.style.color = "#22d3ee";
           row.style.fontWeight = "600";
@@ -346,11 +367,15 @@
   function resolvePath(userPath) {
     userPath = String(userPath || "").trim();
     if (!userPath || userPath === ".") return cwd || "";
-    // absolute-within-repo
-    if (userPath.startsWith("/") || userPath.startsWith("\~/")) {
-      return normalizeRel(userPath.replace(/^\~/, ""));
+    // strip mistaken leading repo name: /Accodite2/backend → backend
+    if (repo) {
+      var reRepo = new RegExp("^/*" + repo.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&") + "/*");
+      userPath = userPath.replace(reRepo, "");
     }
-    // relative → append under cwd
+    // absolute-within-repo only (no host fs)
+    if (userPath.startsWith("/") || userPath.indexOf("\~/") === 0 || userPath.charAt(0) === "\~") {
+      return normalizeRel(userPath.replace(/^\~/, "").replace(/^\/+/, ""));
+    }
     var base = cwd || "";
     return normalizeRel(base ? base + "/" + userPath : userPath);
   }
@@ -530,10 +555,24 @@
         } catch (e) {}
         layoutEditor();
       }
-      var tab = $("codeActivePath");
+            var tab = $("codeActivePath");
       if (tab) tab.textContent = repo + " / " + path;
+      // M5.2: cwd stays inside repo at file parent (terminal cannot leave repo)
+      var slash = path.lastIndexOf("/");
+      setCwd(slash >= 0 ? path.slice(0, slash) : "");
       await loadTree();
-      if (!opts.silent) writeLog("opened " + path + "\n");
+      if (!opts.silent) {
+        var pl = opts.place || {};
+        var extra = "";
+        if (pl.start_row != null) extra += " · r" + pl.start_row;
+        if (pl.path_uid) extra += " · uid " + String(pl.path_uid).slice(0, 24);
+        if (pl.segments && pl.segments.length) extra += " · " + pl.segments.join("");
+        writeLog("opened " + path + extra + "
+");
+        if (opts.fromTree) writeLog("path cell → Monaco · cwd /" + repo + (cwd ? "/" + cwd : "") + "
+");
+      }
+
     } catch (err) {
       if (!opts.silent) writeLog("open: " + errText(err) + "\n");
     }
@@ -857,7 +896,9 @@
           "&path=" + encodeURIComponent(listPath)
         );
         var names = (data.entries || []).map(function (e) {
-          return e.type === "dir" ? e.name + "/" : e.name;
+          var n = e.type === "dir" ? e.name + "/" : e.name;
+          if (e.start_row != null) n += "[r" + e.start_row + "]";
+          return n;
         });
         writeLog((names.join("  ") || "(empty)") + "\n");
         writeLog("[repo " + repo + " · cwd /" + (listPath || "") + "]\n");

@@ -594,87 +594,51 @@ class MemoryGrid:
             resolved_lang,
         )
 
-        Lsum = calculate_lsum(
-            normalized,
-            resolved_lang,
-        )
+        # Authoritative place: same as gsp_chain.content_place_from_name (full uid_chain S)
+        try:
+            from gsp_chain import content_place_from_name
+            info = content_place_from_name(normalized or text, resolved_lang) or {}
+        except Exception as e:
+            print("[MemoryGrid] content_place_from_name:", type(e).__name__, e)
+            info = {}
 
-        Ssum = calculate_ssum(
-            normalized,
-            resolved_lang,
-        )
-
-        c = first_letter_index(
-            normalized,
-            resolved_lang,
-        )
-
-        placement = gsp_place(
-
-            Lsum=Lsum,
-
-            Ssum=Ssum,
-
-            c=c,
-
-            # Entry only.
-            #
-            # These are not crawler traversal values.
-            K=0,
-
-            D=0,
-
-            C=self.cols,
-
-            R=self.rows,
-
-        )
-
-        start_row = (
-            _normalise_row(
-                placement.get(
-                    "start_row",
-                    1,
-                ),
-                self.rows,
+        if info.get("start_row") is not None:
+            Lsum = int(info.get("L") or 1)
+            Ssum = abs(int(info.get("S") or 0))
+            c = int(info.get("c") if info.get("c") is not None else (info.get("start_col") or 0))
+            start_row = _normalise_row(int(info["start_row"]), self.rows)
+            start_col = _normalise_col(c, self.cols)
+            placement = {
+                "start_row": start_row,
+                "start_col": start_col,
+                "c": c,
+                "L": Lsum,
+                "S": Ssum,
+                "uid": info.get("uid"),
+                "cells": info.get("cells") or [],
+                "source": "content_place_from_name",
+            }
+        else:
+            # last resort keyboard (should be rare)
+            Lsum = calculate_lsum(normalized, resolved_lang)
+            Ssum = calculate_ssum(normalized, resolved_lang)
+            c = first_letter_index(normalized, resolved_lang)
+            placement = gsp_place(
+                Lsum=Lsum, Ssum=Ssum, c=c, K=0, D=0, C=self.cols, R=self.rows,
             )
-        )
-
-        start_col = (
-            _normalise_col(
-                c,
-                self.cols,
-            )
-        )
+            start_row = _normalise_row(placement.get("start_row", 1), self.rows)
+            start_col = _normalise_col(c, self.cols)
 
         return {
-
-            "normalized":
-                normalized,
-
-            "language":
-                resolved_lang,
-
-            "Lsum":
-                int(Lsum),
-
-            "Ssum":
-                int(Ssum),
-
-            # Original tokenizer/keyboard linguistic c.
-            "c":
-                int(c),
-
-            "start_row":
-                start_row,
-
-            # Operational MemoryGrid column.
-            "start_col":
-                start_col,
-
-            "placement":
-                placement,
-
+            "normalized": normalized,
+            "language": resolved_lang,
+            "Lsum": int(Lsum),
+            "Ssum": int(Ssum),
+            "c": int(c),
+            "start_row": start_row,
+            "start_col": start_col,
+            "uid": (info.get("uid") if info else None),
+            "placement": placement,
         }
 
     # ========================================================================

@@ -1449,6 +1449,7 @@ def identity_stream(token: str, lang: str = "en") -> list:
 
 
 def uid_chain(token: str, lang: str = "en") -> list:
+    """Full place/train chain. Whitespace skipped. Letters + digit markers + symbol uids + unregistered as uORD."""
     """
     Full identity chain for serialize + S + start_row.
 
@@ -1471,7 +1472,7 @@ def uid_chain(token: str, lang: str = "en") -> list:
             out.append(str(x["marker"]))
         elif k == "symbol" and x.get("uid") is not None:
             out.append(str(x["uid"]))  # "-147"
-        # unregistered: no stable id — omit from chain (not an index)
+        # unregistered: include as "u{ord}" so chain/S stay deterministic (whitespace still skipped)
     return out
 
 

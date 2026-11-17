@@ -291,18 +291,9 @@ def col_for_name(name: str, lang: Optional[str] = None) -> Dict[str, Any]:
     resolved = detect_placement_lang(name, lang)
     C = effective_col_modulus(resolved)
 
-    # Prefer keyboard first-letter column when available
-    idx = None
-    if _HAS_KB:
-        try:
-            # keyboard expects a string; pass first alpha run
-            letters = "".join(ch for ch in (name or "") if ch.isalpha())
-            probe = letters or (name or "a")
-            idx = int(_kb_first_letter(probe, resolved))
-        except Exception:
-            idx = None
-    if idx is None:
-        idx = first_letter_index(name, resolved)
+    # c = first alphabetic character index in lang alphabet only
+    # (do NOT run keyboard on concatenated path letters — breaks path c)
+    idx = first_letter_index(name, resolved)
 
     start_col = int(idx) % max(1, C)
     return {
@@ -431,6 +422,11 @@ def start_row_for_name(name: str, lang: str = "auto") -> Dict[str, Any]:
 
 
 def uid_from_name(name: str, lang: str = "auto") -> str:
+    """Same identity string as content_place_from_name (full uid_chain)."""
+    info = content_place_from_name(name, lang) or {}
+    u = str(info.get("uid") or info.get("uid_str") or "")
+    if u:
+        return u
     resolved = detect_placement_lang(name, lang)
     return chain_to_str(letter_chain(name, resolved))
 

@@ -4,7 +4,7 @@ Sandbox API — run + repo/fs + GSP start_row roots
 Repo root (ONLY start_row — no K/D strides or jumps):
   start_row = ((L + S - 1) % 64) + 1
   L = len(repo_name)
-  S = digit-sum of system-assigned secret repo_uid
+  S = digit-sum of content-place uid of repo name (full chain)
 
 repo_uid is generated on create (secret to user/team).
 commit / push require repo name + repo_uid.
@@ -185,25 +185,50 @@ def _safe_rel(path: str) -> str:
 
 
 def compute_start_row(repo_name: str, repo_uid: str = "") -> dict:
-    """start_row from training tokenizer letter-chain of the name."""
-    info = start_row_for_name(repo_name or "")
-    expected = uid_from_name(repo_name or "")
-    if repo_uid and not verify_uid_matches_name(repo_name or "", repo_uid):
-        raise HTTPException(400, "repo_uid does not match tokenizer letter-chain of repo name")
+    """M5.0: L,S,c then start_row via content_place_from_name (full chain)."""
+    try:
+        from gsp_chain import content_place_from_name
+        info = content_place_from_name(repo_name or "") or {}
+    except Exception as e:
+        raise HTTPException(400, f"GSP place failed: {e}") from e
+    expected = str(info.get("uid") or info.get("uid_str") or "")
+    if not expected or not info.get("start_row"):
+        raise HTTPException(400, "GSP place produced empty uid/start_row")
+    if repo_uid and str(repo_uid) != expected and not verify_uid_matches_name(repo_name or "", str(repo_uid)):
+        # allow underscore form vs compact if both verify
+        try:
+            if str(repo_uid).replace("_", "") != expected.replace("_", ""):
+                raise HTTPException(400, "repo_uid does not match content place uid of repo name")
+        except HTTPException:
+            raise
     return {
-        "L": info["L"],
-        "S": info["S"],
+        "L": info.get("L"),
+        "S": info.get("S"),
+        "c": info.get("c") if info.get("c") is not None else info.get("start_col"),
+        "start_col": info.get("start_col") if info.get("start_col") is not None else info.get("c"),
         "start_row": info["start_row"],
-        "root_key": info["root_key"],
+        "root_key": info.get("root_key") or f"r{int(info['start_row'])}",
         "repo": repo_name,
         "repo_uid": expected,
-        "chain": info["chain"],
-        "grid_rows": R_ROWS,
-        "grid_cols": GSP_N_COLS,
+        "chain": info.get("chain") or [],
+        "digit_markers": info.get("digit_markers") or [],
+        "symbol_uids": info.get("symbol_uids") or [],
+        "grid_rows": info.get("grid_rows") or R_ROWS,
+        "grid_cols": info.get("C") or info.get("grid_cols") or GSP_N_COLS,
+        "source": info.get("source") or "content_place",
     }
 
 
 def _repo_uid_from_name(name: str) -> str:
+    """Full content-place uid (underscore chain), not letter-only collapse."""
+    try:
+        from gsp_chain import content_place_from_name
+        info = content_place_from_name(name or "") or {}
+        u = str(info.get("uid") or "")
+        if u:
+            return u
+    except Exception:
+        pass
     return uid_from_name(name)
 
 
@@ -545,24 +570,15 @@ async def create_repo(req: RepoCreate):
         except Exception as e:
             raise HTTPException(500, f"cannot create repo dir: {type(e).__name__}: {e}") from e
 
-    # GSP identity — soft-fail so disk create is never blocked by tokenizer glitch
+    # M5.0: GSP identity required — no invented S=0 placement
     try:
         repo_uid = _repo_uid_from_name(req.name)
         gsp = compute_start_row(req.name, repo_uid)
+        repo_uid = str(gsp.get("repo_uid") or repo_uid)
+    except HTTPException:
+        raise
     except Exception as e:
-        print("[sandbox] gsp on create:", type(e).__name__, e)
-        repo_uid = str(req.name)
-        gsp = {
-            "L": len(req.name),
-            "S": 0,
-            "start_row": ((len(req.name) - 1) % 64) + 1,
-            "root_key": f"r{((len(req.name) - 1) % 64) + 1:02d}",
-            "repo": req.name,
-            "repo_uid": repo_uid,
-            "chain": [],
-            "grid_rows": 64,
-            "grid_cols": 54,
-        }
+        raise HTTPException(400, f"repo GSP place failed: {type(e).__name__}: {e}") from e
 
     meta = {
         **gsp,
@@ -581,6 +597,34 @@ async def create_repo(req: RepoCreate):
         _write_meta(d, meta)
     except Exception as e:
         raise HTTPException(500, f"cannot write .gsp.json: {e}") from e
+
+    # M5.0: record repo in owner MemoryGrid namespace "codespace"
+    try:
+        from memory.grid_ns_api import place_ns_object
+        scope = str(getattr(req, "scope", None) or "user")
+        # phones optional on RepoCreate — best-effort from request state if present
+        req_obj = req
+        user_phone = str(getattr(req_obj, "user_phone", None) or "")
+        org_phone = str(getattr(req_obj, "org_phone", None) or "")
+        if user_phone or org_phone or scope in ("user", "org", "ai"):
+            place_ns_object(
+                ns="codespace",
+                object_name=req.name,
+                description="repo",
+                text=req.name,
+                user_phone=user_phone if scope != "org" else "",
+                org_phone=org_phone if scope == "org" else "",
+                extra={
+                    "kind": "repo",
+                    "repo_uid": repo_uid,
+                    "start_row": meta.get("start_row"),
+                    "start_col": meta.get("start_col") or meta.get("c"),
+                    "path": str(d),
+                    "scope": scope,
+                },
+            )
+    except Exception as _pe:
+        print("[sandbox] repo grid place:", type(_pe).__name__, _pe)
 
     try:
         _scaffold_conventional(d, req.name)

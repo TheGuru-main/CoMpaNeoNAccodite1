@@ -145,11 +145,11 @@
       ".acd-btn.primary{background:#0e7490;border-color:#06b6d4}" +
       ".acd-btn.active{border-color:#e0f2fe;box-shadow:0 0 0 1px var(--acd-accent,#38bdf8)}" +
       ".acd-inp{padding:8px 10px;border-radius:10px;border:1px solid #334155;background:#0b1220;color:#fff;font-size:13px}" +
-      ".acd-body{display:flex;flex:1;min-height:0}" +
-      ".acd-side{width:240px;min-width:240px;background:#0b1220;border-right:1px solid #1e293b;overflow:auto;transition:width .2s,min-width .2s,padding .2s}" +
-      ".acd-side.collapsed{width:0;min-width:0;padding:0;border:none;overflow:hidden}" +
+      ".acd-body{display:flex;flex:1;min-height:0;position:relative}" +
+      ".acd-side{position:absolute;left:0;top:0;bottom:0;z-index:30;width:260px;max-width:85vw;background:#0b1220;border-right:1px solid #1e293b;overflow:auto;box-shadow:8px 0 24px #0008;transform:translateX(0);transition:transform .2s ease}" +
+      ".acd-side.collapsed{transform:translateX(-105%);pointer-events:none;box-shadow:none}" +
       ".acd-side-inner{padding:12px;width:240px}" +
-      ".acd-main{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden;background:#020617}" +
+      ".acd-main{flex:1;width:100%;min-width:0;display:flex;flex-direction:column;overflow:hidden;background:#020617}" +
       ".acd-entry{padding:12px;border-bottom:1px solid #1e293b;background:#0f172a;display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:end}" +
       ".acd-entry label{display:block;font-size:11px;color:#94a3b8;margin-bottom:4px}" +
       ".acd-lookup{padding:8px 12px;border-bottom:1px solid #1e293b;display:flex;gap:8px;align-items:center}" +
@@ -164,7 +164,7 @@
       ".acd-doc-item{display:block;width:100%;text-align:left;margin:0 0 6px;padding:10px 12px;border-radius:12px;border:1px solid #1e293b;background:#111827;color:#e2e8f0;cursor:pointer}" +
       ".acd-doc-item:hover,.acd-doc-item.on{border-color:#22d3ee}" +
       ".acd-face{min-height:360px;border-radius:18px;padding:32px;color:#fff;margin:12px}" +
-      ".acd-empty{text-align:center;padding:48px 20px;color:#94a3b8}" +
+      ".acd-side-backdrop{display:none;position:absolute;inset:0;z-index:25;background:#0006}.acd-side-backdrop.on{display:block}.acd-empty{text-align:center;padding:48px 20px;color:#94a3b8}" +
       ".acd-cell.placed{outline:2px solid #22d3ee;box-shadow:0 0 0 1px #22d3ee inset}" +
       ".acd-grid-wrap{overflow:auto;max-height:calc(100vh - 220px);-webkit-overflow-scrolling:touch}" +
       ".acd-grid{display:grid;gap:1px;background:#1e293b;min-width:100%}";
@@ -184,12 +184,10 @@
       '<strong id="gspDocTitle">DBase</strong>' +
       '<span id="gspDocScope" style="color:#94a3b8;font-size:12px"></span>' +
       '<span style="flex:1"></span>' +
-      '<input class="acd-inp" id="gspDocNameInput" placeholder="Object name (letter start)" maxlength="64" style="width:130px" />' +
-      '<input class="acd-inp" id="gspDocDescInput" placeholder="Description / about" maxlength="240" style="flex:1;min-width:120px" />' +
-      '<button type="button" class="acd-btn primary" id="gspDocCreate">Place</button>' +
+      '<span id="gspSheetSwitch" style="display:flex;gap:4px;align-items:center"></span>' +
       "</div>" +
       '<div class="acd-top" id="gspMediaBar" style="background:#0a0f1a;flex-wrap:wrap;gap:6px">' +
-      '<span style="color:#94a3b8;font-size:12px">Attach</span>' +
+      '<span style="color:#94a3b8;font-size:12px">Insert</span>' +
       '<button type="button" class="acd-btn" id="gspPickImage">Image</button>' +
       '<button type="button" class="acd-btn" id="gspPickVoice">Voice</button>' +
       '<button type="button" class="acd-btn" id="gspPickDoc">Doc</button>' +
@@ -199,9 +197,18 @@
       '<input type="file" id="gspFileInput" style="display:none" />' +
       '<span id="gspMediaChip" style="color:#7dd3fc;font-size:12px"></span>' +
       '</div>' +
+      '<div class="acd-top" id="gspEntryBar" style="background:#0f172a;flex-wrap:wrap;gap:8px;align-items:center">' +
+      '<label style="font-size:11px;color:#94a3b8">Object name' +
+      '<input class="acd-inp" id="gspDocNameInput" placeholder="Letter start · unique per sheet" maxlength="64" style="display:block;width:160px;margin-top:4px" /></label>' +
+      '<label style="font-size:11px;color:#94a3b8;flex:1;min-width:160px">Description' +
+      '<input class="acd-inp" id="gspDocDescInput" placeholder="About this object" maxlength="240" style="display:block;width:100%;margin-top:4px" /></label>' +
+      '<button type="button" class="acd-btn primary" id="gspDocCreate" style="align-self:flex-end">Save meta</button>' +
+      '<button type="button" class="acd-btn" id="gspNewSheet" style="align-self:flex-end" title="New DBase sheet">+ Sheet</button>' +
+      "</div>" +
       '<div class="acd-top" id="gspKindBar" style="background:#0b1220"></div>' +
       '<div class="acd-body">' +
-      '<aside class="acd-side" id="gspSide"><div class="acd-side-inner" id="gspDocList"></div></aside>' +
+      '<div class="acd-side-backdrop" id="gspSideBackdrop"></div>' +
+      '<aside class="acd-side collapsed" id="gspSide"><div class="acd-side-inner" id="gspDocList"></div></aside>' +
       '<main class="acd-main" id="gspDocStage"></main>' +
       "</div>";
     document.body.appendChild(p);
@@ -212,11 +219,47 @@
     document.getElementById("gspSideToggle").onclick = function () {
       state.sideOpen = !state.sideOpen;
       var side = document.getElementById("gspSide");
+      var bd = document.getElementById("gspSideBackdrop");
       if (side) side.classList.toggle("collapsed", !state.sideOpen);
+      if (bd) bd.classList.toggle("on", !!state.sideOpen);
     };
+    var _bd = document.getElementById("gspSideBackdrop");
+    if (_bd && !_bd.dataset.bound) {
+      _bd.dataset.bound = "1";
+      _bd.onclick = function () {
+        state.sideOpen = false;
+        var side = document.getElementById("gspSide");
+        if (side) side.classList.add("collapsed");
+        _bd.classList.remove("on");
+      };
+    }
     document.getElementById("gspDocCreate").onclick = function () {
       createDoc();
     };
+
+    var _ns = document.getElementById("gspNewSheet");
+    if (_ns && !_ns.dataset.bound) {
+      _ns.dataset.bound = "1";
+      _ns.onclick = function () {
+        if (state.kind !== "dbase" && state.kind !== "sheets" && state.kind !== "collabsheet") {
+          alert("Sheets apply to DBase / SheetS / CollabSheet");
+          return;
+        }
+        var name = prompt("Unique sheet name (letter start)");
+        if (!name) return;
+        name = String(name).trim();
+        if (!/^[A-Za-z]/.test(name)) { alert("Sheet name must start with a letter"); return; }
+        state.data = state.data || { sheets: {}, active_sheet: "Sheet1" };
+        state.data.sheets = state.data.sheets || {};
+        if (state.data.sheets[name]) { alert("Sheet already exists"); return; }
+        state.data.sheets[name] = { cells: {}, n_rows: state.nRows, n_cols: state.nCols };
+        state.data.active_sheet = name;
+        state.sheetName = name;
+        try { paintSheetTabs(); } catch (e) {}
+        renderSheet();
+      };
+    }
+
 
     function setPendingMedia(file, mediaType) {
       if (!file) return;
@@ -535,6 +578,7 @@
         n_rows: state.kind === "dbase" ? (state.nRows || 64) : 64,
         n_cols: state.kind === "dbase" ? (state.nCols || 26) : 54,
         description: desc,
+        sheet_name: (state.data && state.data.active_sheet) || state.sheetName || "Sheet1",
       });
       state.docName = safeName;
       state.docUid = res.doc_uid || res.uid || "";
@@ -637,7 +681,7 @@
       renderSheet();
       refreshList();
       alert(
-        "Placed " +
+        "Saved meta / placed " +
           name +
           " at " +
           (state.placement.target_cell || cellKey) +
@@ -796,6 +840,59 @@
       renderSheet();
     };
   }
+
+  function showCellInspect(r, c, cell) {
+    var el = document.getElementById("gspCellInspect");
+    if (!el) return;
+    cell = cell || {};
+    var parts = [];
+    parts.push("r" + r + " c" + c);
+    if (cell.object_name || cell.name) parts.push("name=" + (cell.object_name || cell.name));
+    if (cell.doc_uid) parts.push("uid=" + cell.doc_uid);
+    if (cell.start_row != null) parts.push("start_row=" + cell.start_row);
+    if (cell.start_col != null) parts.push("start_col=" + cell.start_col);
+    if (cell.gsp_S != null) parts.push("S=" + cell.gsp_S);
+    if (cell.description) parts.push(cell.description);
+    el.textContent = parts.join(" · ") || "Empty cell";
+    var eb = document.getElementById("gspEditCell");
+    if (eb) {
+      var canEdit = state.kind === "collabsheet" || state.kind === "sheets";
+      eb.style.display = canEdit ? "" : "none";
+      eb.onclick = function () {
+        if (!canEdit) return;
+        var cur = (cell.text || cell.value || cell.description || "") + "";
+        var next = prompt("Edit cell text (CollabSheet / SheetS)", cur);
+        if (next == null) return;
+        cell.text = next;
+        cell.value = next;
+        try { writeCellRemote(r, c, cell); } catch (e) {}
+        renderSheet();
+      };
+    }
+  }
+
+
+  function paintSheetTabs() {
+    var host = document.getElementById("gspSheetSwitch");
+    if (!host) return;
+    var sheets = (state.data && state.data.sheets) || { Sheet1: { cells: {} } };
+    var active = (state.data && state.data.active_sheet) || "Sheet1";
+    host.innerHTML = "";
+    Object.keys(sheets).forEach(function (nm) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "acd-btn" + (nm === active ? " primary" : "");
+      b.textContent = nm;
+      b.onclick = function () {
+        state.data.active_sheet = nm;
+        state.sheetName = nm;
+        paintSheetTabs();
+        renderSheet();
+      };
+      host.appendChild(b);
+    });
+  }
+
   function renderSheet() {
     var stage = document.getElementById("gspDocStage");
     var rows = Math.max(1, Math.min(state.nRows || 64, state.kind === "dbase" ? 128 : 64));
@@ -820,30 +917,10 @@
         '<span style="color:#94a3b8;font-size:12px">DBase size is configurable · SheetS stays 54×64</span></div>';
     }
     html +=
-      '<div class="acd-entry">' +
-      '<div><label>Object name</label><input class="acd-inp" id="objName" style="width:100%" value="' +
-      escapeHtml(objName) +
-      '" /></div>' +
-      '<div><label>Description</label><input class="acd-inp" id="objDesc" style="width:100%" value="' +
-      escapeHtml(objDesc) +
-      '" placeholder="What this base holds" /></div>' +
-      '<button type="button" class="acd-btn primary" id="objSave">Save meta</button>' +
-      (place.start_row
-        ? '<span style="color:#7dd3fc;font-size:12px">GSP row ' +
-          place.start_row +
-          (place.start_col != null ? " · col " + place.start_col : "") +
-          (place.doc_uid ? " · uid " + String(place.doc_uid).slice(0, 20) : "") +
-          "</span>"
-        : "") +
-      "</div>";
-
-    html +=
-      '<div class="acd-lookup">' +
-      '<input class="acd-inp" id="gridLookup" style="flex:1" placeholder="Lookup — lexicon / token / cell text" value="' +
-      escapeHtml(state.lookup || "") +
-      '" />' +
-      '<button type="button" class="acd-btn" id="gridLookupGo">Search</button>' +
-      '<span id="lookupHits" style="color:#94a3b8;font-size:12px"></span></div>';
+      '<div class="acd-entry" id="gspInspectBar" style="grid-template-columns:1fr auto">' +
+      '<div><label>Cell inspect</label><div id="gspCellInspect" style="font-size:12px;color:#94a3b8">Tap a placed cell</div></div>' +
+      '<button type="button" class="acd-btn" id="gspEditCell" style="display:none">Edit cell</button>' +
+      '</div>';
 
     if (state.kind === "dbase" && state.data.sheets) {
       html += '<div style="padding:8px 12px;display:flex;gap:6px;flex-wrap:wrap">';
@@ -894,7 +971,7 @@
     var lh = document.getElementById("lookupHits");
     if (lh) lh.textContent = q ? hits + " hits" : "";
 
-    document.getElementById("objSave").onclick = async function () {
+    var _os = document.getElementById("objSave"); if (_os) _os.onclick = async function () {
       var nd = readNameDesc();
       if (!state.data) state.data = { cells: {}, sheets: { Sheet1: { cells: {} } }, active_sheet: "Sheet1" };
       state.data.object_name = nd.name;
@@ -950,7 +1027,7 @@
         stage.querySelectorAll("td.on").forEach(function (x) {
           x.classList.remove("on");
         });
-        td.classList.add("on");
+        td.classList.add("on"); try { showCellInspect(r, c, cell); } catch (_i) {};
         var r = +td.getAttribute("data-r");
         var c = +td.getAttribute("data-c");
         state.selected = { r: r, c: c };

@@ -950,11 +950,34 @@ def _docs_user(request):
     return user
 
 
+
+def _phones_from_ownership(user, ownership):
+    """M4.2: grid bind uses phone UIDs only."""
+    from memory.owner_identity import phone_uid
+    kind = str(getattr(ownership, "kind", "") or "")
+    owner_phone = str(getattr(ownership, "phone_uid", None) or getattr(ownership, "owner_id", None) or "")
+    owner_phone = phone_uid(owner_phone) or owner_phone
+    # reject UUID-shaped owner_id
+    if owner_phone and len(owner_phone) == 36 and owner_phone.count("-") == 4:
+        raise HTTPException(403, "ownership_id must be phone UID, not SQL UUID")
+    if not owner_phone:
+        # last resort: user phone for personal only
+        if kind != "org":
+            owner_phone = phone_uid(getattr(user, "phone", None)) or ""
+    if not owner_phone:
+        raise HTTPException(403, "phone UID required for document ownership")
+    if kind == "org":
+        return "", owner_phone  # user_phone, org_phone
+    return owner_phone, ""
+
+
 def _resolve_docs_owner(request, parent_type, parent_id, kind, org_id=""):
+    """M4.2: ownership.kind + ownership.owner_id are always phone-backed parents."""
     user = _docs_user(request)
 
     try:
         from memory.ownership_scope import resolve_ownership
+        from memory.owner_identity import phone_uid
 
         ownership = resolve_ownership(
             user=user,
@@ -963,6 +986,19 @@ def _resolve_docs_owner(request, parent_type, parent_id, kind, org_id=""):
             org_id=org_id or None,
             require=True,
         )
+        # Normalize: owner_id / phone_uid must be phone digits, never user UUID
+        ph = phone_uid(getattr(ownership, "phone_uid", None) or getattr(ownership, "owner_id", None))
+        if not ph and getattr(ownership, "kind", "") != "org":
+            ph = phone_uid(getattr(user, "phone", None))
+        if not ph:
+            raise PermissionError("phone UID unresolved for document owner")
+        try:
+            object.__setattr__(ownership, "owner_id", ph)
+            object.__setattr__(ownership, "phone_uid", ph)
+        except Exception:
+            ownership.owner_id = ph  # type: ignore
+            if hasattr(ownership, "phone_uid"):
+                ownership.phone_uid = ph  # type: ignore
     except PermissionError as exc:
         raise HTTPException(403, str(exc))
     except Exception as exc:
@@ -976,6 +1012,11 @@ def _assert_docs_owner(meta, ownership):
     if not meta:
         raise HTTPException(404, "doc not found")
 
+    exp_id = str(getattr(ownership, "owner_id", "") or "")
+    # M4.2: ownership_id must match phone parent (not UUID)
+    if exp_id and len(exp_id) == 36 and exp_id.count("-") == 4:
+        raise HTTPException(403, "ownership partition misconfigured (UUID parent)")
+
     actual = (
         str(meta.get("ownership_kind") or ""),
         str(meta.get("ownership_id") or ""),
@@ -984,8 +1025,8 @@ def _assert_docs_owner(meta, ownership):
 
     expected = (
         str(ownership.kind),
-        str(ownership.owner_id),
-        str(ownership.b2_prefix or "").strip("/"),
+        exp_id,
+        str(getattr(ownership, "b2_prefix", None) or "").strip("/"),
     )
 
     if actual != expected:
@@ -1064,12 +1105,7 @@ async def create_doc(req: DocCreate, request: Request = None):
     }.get(kind, "dbase")
     try:
         from memory.grid_ns_api import place_ns_object
-        phone = str(
-            getattr(ownership, "owner_id", None)
-            or getattr(user, "phone", None)
-            or ""
-        )
-        is_org = getattr(ownership, "kind", "") == "org"
+        user_phone, org_phone = _phones_from_ownership(user, ownership)
         placed = place_ns_object(
             ns=ns,
             object_name=req.doc_name,
@@ -1081,8 +1117,8 @@ async def create_doc(req: DocCreate, request: Request = None):
                 or getattr(req, "org_id", None)
                 or ""
             ),
-            user_phone="" if is_org else phone,
-            org_phone=phone if is_org else "",
+            user_phone=user_phone,
+            org_phone=org_phone,
             workspace_id=str(pid or ""),
         )
         if isinstance(doc, dict):

@@ -62,6 +62,16 @@ class ScopeError(PermissionError):
     pass
 
 
+def _assert_phone_owner_id(owner_id: str, *, what: str = "owner") -> str:
+    """M4.2 phone guard — grid parents are phone UIDs only."""
+    oid = (owner_id or "").strip()
+    if not oid:
+        raise ScopeError(f"{what} phone UID required")
+    if len(oid) == 36 and oid.count("-") == 4:
+        raise ScopeError(f"{what} must be phone UID, not SQL UUID")
+    return oid
+
+
 def _phone_from_user(user) -> str:
     if user is None:
         return ""
@@ -189,7 +199,7 @@ def resolve_ownership(
             ns = f"department:{department_id}"
         return OwnershipScope(
             kind="org",
-            owner_id=org_phone,
+            owner_id=_assert_phone_owner_id(org_phone, what="org"),
             phone_uid=org_phone,
             org_id=str(effective_org),
             room_id=str(room_id) if room_id else None,
@@ -212,7 +222,7 @@ def resolve_ownership(
         ns = f"room:{room_id}"
     return OwnershipScope(
         kind="user",
-        owner_id=actor_phone,
+        owner_id=_assert_phone_owner_id(actor_phone, what="user"),
         phone_uid=actor_phone,
         org_id=None,
         room_id=str(room_id) if room_id else None,

@@ -386,6 +386,47 @@ class GridCrawler:
     # CANONICAL GSP ENTRY
     # ========================================================================
 
+    
+    def _content_place_meta(self, text: str, lang: str = "en") -> Dict[str, Any]:
+        """Authoritative L/S/c/start_row — same as gsp_chain / MemoryGrid place."""
+        text = str(text or "")
+        active = self.resolve_language(lang) if hasattr(self, "resolve_language") else (lang or "en")
+        try:
+            from gsp_chain import content_place_from_name
+            info = content_place_from_name(text, active) or {}
+        except Exception as e:
+            print("[GridCrawler] content_place:", type(e).__name__, e)
+            info = {}
+        if info.get("start_row") is not None:
+            return {
+                "normalized": info.get("name") or text,
+                "lang": info.get("lang") or active,
+                "L": int(info.get("L") or 1),
+                "S": abs(int(info.get("S") or 0)),
+                "c": int(info["c"] if info.get("c") is not None else (info.get("start_col") or 0)),
+                "start_row": int(info["start_row"]),
+                "start_col": int(info["c"] if info.get("c") is not None else (info.get("start_col") or 0)),
+                "uid": info.get("uid"),
+                "source": "content_place_from_name",
+            }
+        # rare fallback keyboard
+        normalized = normalise(text, active)
+        Lsum = calculate_lsum(normalized, active)
+        Ssum = calculate_ssum(normalized, active)
+        c = first_letter_index(normalized, active)
+        result = gsp_place(Lsum=Lsum, Ssum=Ssum, c=c, K=0, D=0, C=self.cols, R=self.rows)
+        return {
+            "normalized": normalized,
+            "lang": active,
+            "L": int(Lsum),
+            "S": abs(int(Ssum)),
+            "c": int(c),
+            "start_row": int(result.get("start_row") or 1),
+            "start_col": int(c),
+            "uid": None,
+            "source": "keyboard_fallback",
+        }
+
     def canonical_start_row(
         self,
         text: str,
@@ -463,45 +504,10 @@ class GridCrawler:
                     pass
 
         # --------------------------------------------------------------------
-        # KEYBOARD FALLBACK
+        # CONTENT PLACE (authoritative full uid_chain S)
         # --------------------------------------------------------------------
-
-        normalized = normalise(
-            text,
-            active_language,
-        )
-
-        Lsum = calculate_lsum(
-            normalized,
-            active_language,
-        )
-
-        Ssum = calculate_ssum(
-            normalized,
-            active_language,
-        )
-
-        c = first_letter_index(
-            normalized,
-            active_language,
-        )
-
-        result = gsp_place(
-            Lsum=Lsum,
-            Ssum=Ssum,
-            c=c,
-            K=0,
-            D=self.forward_d,
-            C=self.cols,
-            R=self.rows,
-        )
-
-        return int(
-            result.get(
-                "start_row",
-                0,
-            )
-        )
+        meta = self._content_place_meta(text, active_language)
+        return int(meta.get("start_row") or 0)
 
     # ========================================================================
     # QUERY GSP INFORMATION
@@ -525,56 +531,36 @@ class GridCrawler:
             lang
         )
 
-        normalized = normalise(
-            query,
-            active_language,
-        )
-
-        Lsum = calculate_lsum(
-            normalized,
-            active_language,
-        )
-
-        Ssum = calculate_ssum(
-            normalized,
-            active_language,
-        )
-
-        c = first_letter_index(
-            normalized,
-            active_language,
-        )
-
+        meta = self._content_place_meta(query, active_language)
         start_row = self.canonical_start_row(
             text=query,
             lang=active_language,
             uid=uid,
             placement_type="query",
         )
+        # Prefer content-place L/S/c; start_row still via canonical (placement.py then content)
+        if not start_row:
+            start_row = meta.get("start_row") or 0
 
         return {
 
             "query": query,
 
-            "normalized": normalized,
+            "normalized": meta.get("normalized") or query,
 
-            "lang": active_language,
+            "lang": meta.get("lang") or active_language,
 
-            "L": int(
-                Lsum
-            ),
+            "L": int(meta.get("L") or 1),
 
-            "S": int(
-                Ssum
-            ),
+            "S": int(meta.get("S") or 0),
 
-            "c": int(
-                c
-            ),
+            "c": int(meta.get("c") or 0),
 
-            "start_row": int(
-                start_row
-            ),
+            "uid": meta.get("uid"),
+
+            "source": meta.get("source"),
+
+            "start_row": int(start_row),
 
             "rows": self.rows,
 
@@ -1272,55 +1258,34 @@ class GridCrawler:
             "en"
         )
 
-        normalized = normalise(
-            original,
-            lang,
-        )
-
-        Lsum = calculate_lsum(
-            normalized,
-            lang,
-        )
-
-        Ssum = calculate_ssum(
-            normalized,
-            lang,
-        )
-
-        c = first_letter_index(
-            normalized,
-            lang,
-        )
-
+        meta = self._content_place_meta(original, lang)
         start_row = self.canonical_start_row(
             text=original,
             lang=lang,
             placement_type="token",
         )
+        if not start_row:
+            start_row = meta.get("start_row") or 0
 
         return {
 
             "text": original,
 
-            "normalized": normalized,
+            "normalized": meta.get("normalized") or original,
 
-            "lang": lang,
+            "lang": meta.get("lang") or lang,
 
-            "L": int(
-                Lsum
-            ),
+            "L": int(meta.get("L") or 1),
 
-            "S": int(
-                Ssum
-            ),
+            "S": int(meta.get("S") or 0),
 
-            "c": int(
-                c
-            ),
+            "c": int(meta.get("c") or 0),
 
-            "start_row": int(
-                start_row
-            ),
+            "uid": meta.get("uid"),
+
+            "source": meta.get("source"),
+
+            "start_row": int(start_row),
         }
 
     # ========================================================================

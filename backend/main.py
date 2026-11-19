@@ -197,28 +197,79 @@ def _find_model_asset(name: str) -> str:
             return cand
     return name  # fall back to relative name for error messages
 
+
 def load_model_if_exists():
+    """Platform weights from ACCD_MODEL_DIR (HF-filled). Fixed embed table ACCD_EMBED_ROWS."""
     global model, tokenizer_vocab, reverse_vocab
+    embed_rows = int(os.environ.get("ACCD_EMBED_ROWS", "8192"))
+    try:
+        embed_rows = max(8, embed_rows)
+    except Exception:
+        embed_rows = 8192
+
+    # Prefer vocab then weights; accept fp16 filename
     vocab_path = _find_model_asset("tokenizer_vocab.json")
     weights_path = _find_model_asset("companion_model.pth")
+    if not os.path.isfile(weights_path):
+        weights_path = _find_model_asset(
+            os.environ.get("ACCD_HF_WEIGHTS") or "companion_model_fp16.pth"
+        )
+    if not os.path.isfile(weights_path):
+        weights_path = _find_model_asset("companion_model_fp16.pth")
+
     if os.path.isfile(vocab_path):
         with open(vocab_path, "r", encoding="utf-8") as f:
             data = json.load(f)
             tokenizer_vocab = data.get("vocab") or data
             rev = data.get("reverse") or {}
-            reverse_vocab = {int(k): v for k, v in rev.items()} if rev else {v: k for k, v in tokenizer_vocab.items()}
+            if rev:
+                reverse_vocab = {int(k): v for k, v in rev.items()}
+            else:
+                reverse_vocab = {
+                    int(v): k for k, v in tokenizer_vocab.items()
+                    if isinstance(v, int)
+                }
         print(f"[ACCD] vocab loaded from {vocab_path} size={len(tokenizer_vocab)}")
     else:
-        tokenizer_vocab = {"<pad>":0, "<unk>":1, "<start>":2, "<end>":3}
-        reverse_vocab = {0:"<pad>",1:"<unk>",2:"<start>",3:"<end>"}
+        tokenizer_vocab = {"<pad>": 0, "<unk>": 1, "<start>": 2, "<end>": 3}
+        reverse_vocab = {0: "<pad>", 1: "<unk>", 2: "<start>", 3: "<end>"}
         print("[ACCD] vocab missing; using specials only")
+
     if os.path.isfile(weights_path) and TORCH_AVAILABLE:
         try:
-            model = MiniCompanionAI(vocab_size=_accd_embed_rows())
-            model.load_state_dict(torch.load(weights_path, map_location=device))
+            # ALWAYS table size = embed rows (train contract), never len(vocab)
+            model = MiniCompanionAI(vocab_size=embed_rows)
+            raw = torch.load(weights_path, map_location=device)
+            state = raw
+            if isinstance(raw, dict):
+                if "model_state_dict" in raw:
+                    state = raw["model_state_dict"]
+                elif "state_dict" in raw:
+                    state = raw["state_dict"]
+            # drop unexpected prefixes
+            if isinstance(state, dict):
+                cleaned = {}
+                for k, v in state.items():
+                    nk = k[6:] if k.startswith("module.") else k
+                    cleaned[nk] = v
+                state = cleaned
+            missing, unexpected = model.load_state_dict(state, strict=False)
+            if missing:
+                print("[ACCD] load missing keys sample", list(missing)[:5])
+            if unexpected:
+                print("[ACCD] load unexpected keys sample", list(unexpected)[:5])
             model.to(device)
+            # optional half on CPU-poor hosts
+            if os.environ.get("ACCD_MODEL_HALF", "0") in ("1", "true", "True"):
+                try:
+                    model = model.half()
+                except Exception as _h:
+                    print("[ACCD] half skip", _h)
             model.eval()
-            print(f"[ACCD] model loaded from {weights_path}")
+            print(
+                f"[ACCD] model loaded from {weights_path} "
+                f"embed_rows={embed_rows} device={device}"
+            )
         except Exception as e:
             model = None
             print(f"[ACCD] model load failed: {type(e).__name__}: {e}")
@@ -227,7 +278,11 @@ def load_model_if_exists():
         if not TORCH_AVAILABLE:
             print("[ACCD] model not loaded: torch unavailable")
         else:
-            print(f"[ACCD] model weights not found (searched {_MODEL_SEARCH_DIRS})")
+            print(
+                f"[ACCD] model weights not found "
+                f"(searched {_MODEL_SEARCH_DIRS}) path={weights_path!r}"
+            )
+
 
 def reload_model_if_exists():
     """Reload the model from disk. Called by the weights relay."""

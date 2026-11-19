@@ -281,24 +281,11 @@ _LANGUAGE_ALIASES = {
 # ============================================================================
 
 def resolve_language(lang: str = "en") -> str:
-    
+    """
 
-BOUNDARY (Accodite)
--------------------
-Content / object / path / doc placement does NOT use:
-    calculate_lsum, calculate_ssum, first_letter_index (keymap),
-    calculate_full_text_s, generate_randomized_uid
-for L, S, or c.
+# BOUNDARY: content place L/S/c = tokenizer + gsp_chain only.
+# This file = keymaps / language faces / pure gsp_place(L,S,c) helper / phone digit S.
 
-Those come from tokenizer uid_chain + gsp_chain.content_place_from_name.
-
-This module keeps:
-    - keymaps / language faces for on-screen keyboard
-    - gsp_place(Lsum, Ssum, c, ...) as a pure formula helper only
-      (callers must pass L/S/c already computed; do not derive them here for content)
-    - user/message phone digit-sum helpers (separate from content S)
-
-"""
     Resolve a language name or language code to a canonical code.
     """
 

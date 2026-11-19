@@ -8,6 +8,8 @@ Source of truth: backend.tokenizer.tokenizer
   - serialize_uid(seq) → string (leading 0 preserved as character)
 
 Placement grid: 54 columns (0..53) × 64 rows (1..64).
+Placement identity/L/S/c = tokenizer + this module only.
+keyboard.py is for input layouts / language faces; not content place math.
 
 Column mapping (lang-aware):
   detect language of the name (langdetect + script heuristics)
@@ -247,34 +249,22 @@ def alphabet_size(lang: str = "en") -> int:
 
 def effective_col_modulus(lang: str) -> int:
     """
-    Column width for this language:
-      C = explicit language alphabet length
-          (max of keyboard layout count and tokenizer ALPHABETS[lang])
-      if C >= 54: use 54 (full GSP width only when alphabet reaches it)
-      else: use C (en → 26, fr/yo/ar → their real lengths — never force 54)
+    Placement column width C from tokenizer language alphabet only.
+    Keyboard layout width is NOT used for placement (keyboard = input faces).
+      C = len(ALPHABETS[lang]); if C >= 54 → 54 else C
     """
     resolved = detect_placement_lang("", lang) if lang else "en"
-    candidates = []
-    if _HAS_KB:
-        try:
-            candidates.append(int(_kb_col_count(resolved)))
-        except Exception:
-            pass
-        try:
-            candidates.append(len(_kb_alphabet(resolved)))
-        except Exception:
-            pass
+    A = 26
     if _HAS_TOK:
         try:
-            candidates.append(max(1, len(_tok_alphabet_for(resolved))))
+            A = max(1, len(_tok_alphabet_for(resolved)))
         except Exception:
-            pass
-    A = max(candidates) if candidates else 26
-    if A < 1:
-        A = 26
+            A = 26
     if A >= N_COLS:
         return N_COLS
     return int(A)
+
+
 
 
 def col_for_name(name: str, lang: Optional[str] = None) -> Dict[str, Any]:
@@ -282,7 +272,7 @@ def col_for_name(name: str, lang: Optional[str] = None) -> Dict[str, Any]:
     Map first letter of name → start_col using language alphabet length.
 
       A / C = effective_col_modulus(lang)   # alphabet length, or 54 if A≥54
-      idx   = first letter index in that language (keyboard or tokenizer)
+      idx   = first letter index in that language (tokenizer alphabet only)
       start_col = idx % C
 
     English stays in 0..25. Longer alphabets use 0..(A-1). Only when A≥54
@@ -368,23 +358,16 @@ def content_place_from_name(name: str, lang: str = "auto") -> Dict[str, Any]:
     C = int(col_info.get("C") or effective_col_modulus(resolved))
     R = int(R_ROWS)
 
-    # start_row only after L and S exist
+    # start_row only after L and S exist — pure place formula (no keyboard L/S/c)
+    # Same math as keyboard.gsp_place, inlined so placement never depends on keymap.
+    K_FRAG, D_STEP = 5, 8
     start_row = ((int(L) + int(S) - 1) % R) + 1
     cells: List[Any] = []
-    primary = None
-    try:
-        if _HAS_KB:
-            try:
-                from memory.keyboard import gsp_place as _gp
-            except Exception:
-                from keyboard import gsp_place as _gp  # type: ignore
-            placed = _gp(Lsum=L, Ssum=S, c=c, K=5, D=8, C=C, R=R)
-            start_row = int(placed["start_row"])
-            primary = placed.get("primary_cell")
-            cells = list(placed.get("cells") or [])
-    except Exception:
-        cells = [{"col": c % max(C, 1), "row": start_row, "k": 0}]
-        primary = cells[0]
+    for k in range(K_FRAG):
+        row_k = ((start_row - 1 + k * D_STEP) % R) + 1
+        col_k = (int(c) + k) % max(int(C), 1)
+        cells.append({"col": col_k, "row": row_k, "k": k})
+    primary = cells[0] if cells else {"col": int(c) % max(int(C), 1), "row": start_row, "k": 0}
 
     return {
         "name": name,
@@ -412,7 +395,7 @@ def content_place_from_name(name: str, lang: str = "auto") -> Dict[str, Any]:
         "grid_rows": R,
         "grid_cols": C,
         "grid_cols_max": N_COLS,
-        "source": "L,S then start_row; no name→row shortcut",
+        "source": "tokenizer L/S/c + pure place formula; keyboard not used for place",
     }
 
 

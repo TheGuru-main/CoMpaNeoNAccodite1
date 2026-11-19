@@ -342,6 +342,22 @@ def collect_training_data(
 
 # Fixed embedding table size. Model rows are NOT sequential discovery ids.
 # Content identity = int(serialize_uid(uid_sequence(...))) e.g. home -> 714124
+
+# ---------------------------------------------------------------------------
+# EMBED vs GSP start_row (do not conflate)
+# ---------------------------------------------------------------------------
+# ACCD_EMBED_ROWS (default 8192): fixed table size for MiniCompanionAI.
+# Each vocab seat is the identity of a unit:
+#   letter index | digit marker 000-009 | symbol uid | u{ord}
+# via uid_chain → chain fingerprint → chain_to_row ∈ [4, embed_rows).
+# Specials 0..3 stay <pad>/<unk>/<start>/<end>.
+#
+# GSP start_row = ((L + S - 1) % 64) + 1 from content_place_from_name.
+# That is grid *placement* of a doc/path/name. It is NOT the embed row.
+# Inside one placed start_row cell, every word/code/number still maps by its
+# own chain identity into embed_rows — seq_len only sets how many tokens
+# are shown in one train window (now default 300).
+# ---------------------------------------------------------------------------
 EMBED_ROWS = int(__import__("os").environ.get("ACCD_EMBED_ROWS", "8192"))
 
 
@@ -391,7 +407,7 @@ def letter_chain_id(token_str: str, lang: str = "en") -> int:
 
 def chain_to_row(chain_id: int, embed_rows: int = EMBED_ROWS) -> int:
     """
-    Training embed seat only.
+    Training embed seat only (chain identity → row). Not GSP start_row.
     Rows 0..3 = named specials (<pad>, <unk>, <start>, <end>).
     Content spans 4 .. embed_rows-1  (addition of +4 at the front of the usable grid).
     """
@@ -623,7 +639,7 @@ def train(
     data_dir: Optional[str] = None,
     epochs: int = 100,
     batch_size: int = 8,
-    seq_len: int = 75,
+    seq_len: int = 300,
     lr: float = 1e-4,
     save_model: str = "companion_model.pth",
     save_vocab: str = "tokenizer_vocab.json",

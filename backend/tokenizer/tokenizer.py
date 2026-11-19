@@ -1519,7 +1519,7 @@ def serialize_uid_chain(chain) -> str:
 
 
 def deserialize_uid_chain(uid: str) -> list:
-    """Inverse: markers stay str, symbol uids stay '-N', letter indexes -> int."""
+    """Inverse: markers stay str, symbol uids stay '-N', uORD stay 'uN', letters -> int."""
     s = str(uid or "").strip()
     if not s:
         return []
@@ -1533,14 +1533,15 @@ def deserialize_uid_chain(uid: str) -> list:
             out.append(part)
         elif part.startswith("-") and part[1:].isdigit():
             out.append(part)
-        elif part.lstrip("-").isdigit() and not part.startswith("-"):
-            if part.startswith("u") and part[1:].isdigit():
+        elif part.startswith("u") and part[1:].isdigit():
             out.append(part)
-        else:
+        elif part.lstrip("-").isdigit() and not part.startswith("-"):
             out.append(int(part))
         else:
             out.append(part)
     return out
+
+
 
 
 def letter_indexes_from_stream(stream) -> list:

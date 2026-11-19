@@ -83,7 +83,7 @@ FULL-TEXT PLACEMENT
     Full text is tokenized.
 
     L = derived from the supplied text structure
-    S = randomized uID-derived S
+    S = full uid_chain sum via content_place (M5.4)
     c = supplied by tokenizer output
 
 ROOM MESSAGES
@@ -678,7 +678,7 @@ def place_full_text(
         tokenizer processes the text
 
         L = text structure
-        S = randomized-uID-derived S
+        S = full uid_chain sum via content_place_from_name (M5.4)
         c = tokenizer language-specific column
 
     S MUST NOT come from:
@@ -706,25 +706,31 @@ def place_full_text(
         signal.language,
     )
 
-    L = calculate_lsum(
-        normalized_text,
-        signal.language,
-    )
-
-    S = calculate_full_text_s(
-        uid
-    )
-
-    c = resolve_column(
-        signal,
-        fallback_text=normalized_text,
-        columns=C,
-    )
+    # M5.4: authoritative content place (full uid_chain S) — not randomized uid S
+    try:
+        from gsp_chain import content_place_from_name
+        _cp = content_place_from_name(normalized_text, signal.language) or {}
+        L = int(_cp.get("L") or max(1, len(normalized_text)))
+        S = abs(int(_cp.get("S") or 0))
+        c = int(_cp.get("c") if _cp.get("c") is not None else (_cp.get("start_col") or 0))
+        final_gsp = {
+            "uid": _cp.get("uid"),
+            "start_row": _cp.get("start_row"),
+            "source": "content_place_from_name",
+            "digit_markers": _cp.get("digit_markers"),
+            "symbol_uids": _cp.get("symbol_uids"),
+        }
+    except Exception as _e:
+        L = calculate_lsum(normalized_text, signal.language)
+        S = abs(int(calculate_full_text_s(uid) or 0))
+        c = resolve_column(signal, fallback_text=normalized_text, columns=C)
+        final_gsp = {"source": "fallback_keyboard", "error": type(_e).__name__}
 
     final_metadata = {
         "placement_identity": (
             "full_text"
         ),
+        "gsp": final_gsp,
 
         "uid": str(uid),
 
@@ -822,7 +828,7 @@ def place_token(
     )
 
     # Token entries are text-derived objects.
-    # Therefore they use the full-text randomized S path.
+    # Therefore they use the content_place full-text path.
 
     S = calculate_full_text_s(
         uid
@@ -958,7 +964,7 @@ def place_room_message(
     )
 
     # Room content is text content.
-    # It uses randomized text S.
+    # It uses content_place S.
 
     S = calculate_full_text_s(
         sender_uid

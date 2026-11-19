@@ -1458,7 +1458,7 @@ def uid_chain(token: str, lang: str = "en") -> list:
       digit   -> str marker "000".."009"
       symbol  -> str registry uid "-{col}"
       unregistered kept as ("unreg", token) only if needed for audit —
-                 default: skip unregistered in chain/S (no stable id)
+                 M5.4: unregistered -> u{ord} on chain; S includes unit_S_value
 
     Code symbols and digit markers identify on the same chain as letters.
     """
@@ -1472,7 +1472,12 @@ def uid_chain(token: str, lang: str = "en") -> list:
             out.append(str(x["marker"]))
         elif k == "symbol" and x.get("uid") is not None:
             out.append(str(x["uid"]))  # "-147"
-        # unregistered: include as "u{ord}" so chain/S stay deterministic (whitespace still skipped)
+        elif k == "unregistered":
+            ch = str(x.get("token") or "")
+            if not ch or ch.isspace():
+                continue
+            # M5.4: stable unit, never drop from chain/S
+            out.append("u" + str(ord(ch[0])))
     return out
 
 
@@ -1493,6 +1498,9 @@ def unit_S_value(unit) -> int:
         return int(s[1:])
     if s.lstrip("-").isdigit():
         return abs(int(s))
+    # M5.4 unregistered: "u64" -> 64
+    if s.startswith("u") and s[1:].isdigit():
+        return int(s[1:])
     return 0
 
 
@@ -1526,6 +1534,9 @@ def deserialize_uid_chain(uid: str) -> list:
         elif part.startswith("-") and part[1:].isdigit():
             out.append(part)
         elif part.lstrip("-").isdigit() and not part.startswith("-"):
+            if part.startswith("u") and part[1:].isdigit():
+            out.append(part)
+        else:
             out.append(int(part))
         else:
             out.append(part)

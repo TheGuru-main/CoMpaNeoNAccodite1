@@ -198,6 +198,7 @@ def _find_model_asset(name: str) -> str:
     return name  # fall back to relative name for error messages
 
 
+
 def load_model_if_exists():
     """Platform weights from ACCD_MODEL_DIR (HF-filled). Fixed embed table ACCD_EMBED_ROWS."""
     global model, tokenizer_vocab, reverse_vocab

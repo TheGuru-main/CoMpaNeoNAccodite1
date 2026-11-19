@@ -217,22 +217,26 @@ def encode_prompt(
     ]
 
     for token in tokens:
-
-        stem = token["stem"]
-        original = token["original"]
-
-        if stem in vocab:
-            word = stem
-
-        elif original in vocab:
-            word = original
-
-        else:
-            word = "<unk>"
-
-        ids.append(
-            vocab.get(word, 1)
-        )
+        stem = token.get("stem") or ""
+        original = token.get("original") or ""
+        word = stem if stem else original
+        row = None
+        try:
+            from training.train import letter_chain_id, chain_to_row, EMBED_ROWS
+            import os as _os
+            cid = letter_chain_id(word, lang)
+            if cid is not None and int(cid) >= 0:
+                row = chain_to_row(int(cid), int(_os.environ.get("ACCD_EMBED_ROWS", EMBED_ROWS)))
+        except Exception:
+            row = None
+        if row is None:
+            if stem in vocab:
+                row = vocab.get(stem, 1)
+            elif original in vocab:
+                row = vocab.get(original, 1)
+            else:
+                row = vocab.get("<unk>", 1)
+        ids.append(int(row))
 
     ids.append(
         vocab.get("<end>", 3)

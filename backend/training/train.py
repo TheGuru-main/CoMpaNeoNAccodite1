@@ -392,7 +392,39 @@ def letter_chain_id(token_str: str, lang: str = "en") -> int:
     norm = normalize_lexical_token(str(token_str), code)
     if not norm:
         return -1
-    seq = uid_sequence(norm, code)
+    # Prefer full identity chain (letters + digit markers + symbol uids).
+    # Same units content_place / tokenizer use; embed row stays chain fingerprint.
+    seq = None
+    try:
+        from tokenizer import uid_chain as _uid_chain  # type: ignore
+    except Exception:
+        try:
+            from tokenizer.tokenizer import uid_chain as _uid_chain
+        except Exception:
+            _uid_chain = None
+    if _uid_chain is not None:
+        try:
+            raw = _uid_chain(norm, code)
+            # fingerprint must be hashable ints: markers "001"→1, "-147"→147, "u8364"→8364
+            seq = []
+            for u in raw or []:
+                if isinstance(u, int):
+                    seq.append(int(u))
+                else:
+                    s = str(u)
+                    if s.startswith("u") and s[1:].isdigit():
+                        seq.append(int(s[1:]))
+                    elif s.lstrip("-").isdigit():
+                        seq.append(abs(int(s)))
+                    elif len(s) == 3 and s.isdigit():
+                        seq.append(int(s))
+                    else:
+                        seq.append(hash(s) & 0x7FFFFFFF)
+            seq = tuple(seq) if seq else None
+        except Exception:
+            seq = None
+    if not seq:
+        seq = uid_sequence(norm, code)
     if not seq:
         # symbol-only fallback: hash codepoints, still training-only
         seq = tuple(ord(ch) & 0xFFFF for ch in norm)

@@ -214,7 +214,7 @@ def load_model_if_exists():
         print("[ACCD] vocab missing; using specials only")
     if os.path.isfile(weights_path) and TORCH_AVAILABLE:
         try:
-            model = MiniCompanionAI(len(tokenizer_vocab))
+            model = MiniCompanionAI(vocab_size=_accd_embed_rows())
             model.load_state_dict(torch.load(weights_path, map_location=device))
             model.to(device)
             model.eval()
@@ -285,14 +285,61 @@ except Exception as _accd_boot_err:
     print(f"[ACCD] bootstrap error: {type(_accd_boot_err).__name__}: {_accd_boot_err}")
 
 # Helpers
+
+# ACCD-ENCODE-ALIGN: same embed seats as training (chain identity → row)
+def _accd_embed_rows() -> int:
+    return max(8, int(os.environ.get("ACCD_EMBED_ROWS", "8192")))
+
+def _accd_token_to_row(token_str: str, lang: str = "en") -> int:
+    """Map surface token to embed row; train-compatible chain fingerprint."""
+    try:
+        from training.train import letter_chain_id, chain_to_row, EMBED_ROWS
+        cid = letter_chain_id(token_str, lang)
+        if cid is None or int(cid) < 0:
+            return int(tokenizer_vocab.get("<unk>", 1)) if tokenizer_vocab else 1
+        return int(chain_to_row(int(cid), int(os.environ.get("ACCD_EMBED_ROWS", EMBED_ROWS))))
+    except Exception:
+        pass
+    if not tokenizer_vocab:
+        return 1
+    if token_str in tokenizer_vocab:
+        return int(tokenizer_vocab[token_str])
+    return int(tokenizer_vocab.get("<unk>", 1))
+
 def encode_text(text: str, lang: str = "en") -> List[int]:
+    """Encode like train: each token → chain identity → embed row (not string-only vocab)."""
     tokens = tokenize(text, lang)
-    ids = [tokenizer_vocab.get("<start>", 2)]
+    start_id = int((tokenizer_vocab or {}).get("<start>", 2))
+    end_id = int((tokenizer_vocab or {}).get("<end>", 3))
+    ids = [start_id]
     for t in tokens:
-        word = t['stem'] if t['stem'] in tokenizer_vocab else (t['original'] if t['original'] in tokenizer_vocab else "<unk>")
-        ids.append(tokenizer_vocab.get(word, 1))
-    ids.append(tokenizer_vocab.get("<end>", 3))
+        if not isinstance(t, dict):
+            continue
+        word = (t.get("stem") or t.get("original") or t.get("normalized") or "")
+        word = str(word).strip()
+        if not word:
+            continue
+        # Prefer chain→row (train). Vocab string hit is only a soft alias.
+        row = _accd_token_to_row(word, lang)
+        ids.append(int(row))
+    ids.append(end_id)
+    # Budget: leave room for generation inside model max context
+    try:
+        max_ctx = int(os.environ.get("ACCD_MAX_CTX", "4096"))
+        gen_budget = int(os.environ.get("ACCD_GEN_BUDGET", "256"))
+        max_prompt = max(32, max_ctx - gen_budget)
+        if len(ids) > max_prompt:
+            # keep <start> + tail + <end>
+            core = ids[1:-1][-(max_prompt - 2):]
+            ids = [start_id] + core + [end_id]
+            print(f"[ACCD] encode_text truncated prompt_tokens={len(ids)} max_prompt={max_prompt}")
+    except Exception:
+        pass
+    print(f"[ACCD] encode_text prompt_tokens={len(ids)}")
     return ids
+
+
+
 
 def decode_ids(ids: List[int]) -> str:
     return ' '.join([reverse_vocab.get(i, '<unk>') for i in ids if i not in {0,2,3}])

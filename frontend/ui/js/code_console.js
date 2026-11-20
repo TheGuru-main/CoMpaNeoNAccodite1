@@ -46,8 +46,22 @@
   function authHeaders() {
     var h = { "Content-Type": "application/json" };
     var token = (typeof authToken !== "undefined" && authToken) ||
-                localStorage.getItem("coMpaNeoN_token") || "";
+                localStorage.getItem("coMpaNeoN_token") ||
+                localStorage.getItem("access_token") ||
+                localStorage.getItem("token") || "";
     if (token) h["Authorization"] = "Bearer " + token;
+    var ph = "";
+    try {
+      if (typeof accdOwnerPhone === "function") ph = accdOwnerPhone() || "";
+    } catch (e) {}
+    if (!ph) {
+      try {
+        var u = window.ACCD_USER || window.currentUser || {};
+        ph = (u.phone || u.phone_uid || localStorage.getItem("accd_phone") || "") + "";
+      } catch (e2) {}
+    }
+    ph = String(ph || "").trim();
+    if (ph) h["X-Accd-Phone"] = ph;
     return h;
   }
 
@@ -1563,6 +1577,8 @@ if (cmd === "cat" && arg) {
     wireBtn("btnToggleTerm", function () { setTermCollapsed(!termCollapsed); });
     // hub open is owned by app.js acdOpenCodespace — do not steal btnHomeCode here
   }
+  window.acdBindCodespaceToolbar = bindToolbar;
+  window.acdForceCodespaceChrome = forceCodespaceChrome;
 
   function bind() {
     var panel = $("codePanel");
@@ -1635,6 +1651,48 @@ if (cmd === "cat" && arg) {
     setCtrl: function (v) { window.__termCtrl = !!v; },
     setAlt: function (v) { window.__termAlt = !!v; }
   };
+
+  
+  // ACCD-CS-REBIND-V1
+  function accdRebindCodespaceChrome() {
+    try { forceCodespaceChrome(); } catch (e) {}
+    try { bindToolbar(); } catch (e) {}
+    try { bindToolbarDelegate(); } catch (e) {}
+    try {
+      var bar = document.getElementById("termKeyBar");
+      if (bar && !bar.dataset.rebound) {
+        bar.dataset.rebound = "1";
+        bar.addEventListener("click", function (ev) {
+          var btn = ev.target && ev.target.closest ? ev.target.closest(".term-key") : null;
+          if (!btn) return;
+          ev.preventDefault();
+          var api = window.acdTermApi;
+          if (!api) return;
+          var k = btn.getAttribute("data-term-key");
+          var c = btn.getAttribute("data-term-cmd");
+          if (c === "cd") { api.insert("cd "); return; }
+          if (c) { api.setLine(c); api.enter(); return; }
+          if (k === "ctrl" && api.setCtrl) { api.setCtrl(!api.getMods().ctrl); return; }
+          if (k === "alt" && api.setAlt) { api.setAlt(!api.getMods().alt); return; }
+          if (k === "home" && api.home) { api.home(); return; }
+          if (k === "end" && api.end) { api.end(); return; }
+          if (k === "tilde") { api.insert("\~"); return; }
+          if (k === "slash") { api.insert("/"); return; }
+          if (k === "enter" && api.enter) { api.enter(); return; }
+        });
+      }
+    } catch (e) {}
+  }
+  var _showPanel0 = typeof showPanel === "function" ? showPanel : null;
+  if (_showPanel0) {
+    showPanel = async function () {
+      var r = _showPanel0.apply(this, arguments);
+      try { if (r && r.then) await r; } catch (e) {}
+      accdRebindCodespaceChrome();
+      return r;
+    };
+  }
+  window.acdRebindCodespaceChrome = accdRebindCodespaceChrome;
 
   window.openCodePanel = showPanel;
   window.acdGetActiveRepo = function () { return repo || null; };

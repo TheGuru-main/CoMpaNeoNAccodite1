@@ -1305,9 +1305,12 @@ def ensure_seed_crawl(*, force: bool = False, grid=None):
             grid = None
         if grid is None:
             try:
-                grid = MemoryGrid()
+                from memory.platform_grid import load_platform_grid
+                grid = load_platform_grid(require_docs=False, allow_empty=True)
             except Exception:
-                return {"ok": False, "reason": "no grid"}
+                grid = None
+        if grid is None:
+            return {"ok": False, "reason": "no platform/shared grid — refuse empty MemoryGrid invent"}
 
     
     # ACCD-ENSURE-SEED-LOAD — restore persisted seed before counting

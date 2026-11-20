@@ -57,8 +57,8 @@ from model.head_router import TOTAL_HEADS, BASE_HEADS, SPECIAL_HEADS, PAIRS
 # DEFAULTS
 # ============================================================================
 
-DEFAULT_D_MODEL  = 2240      # 140 heads x 16 head_dim
-DEFAULT_HEAD_DIM = 16
+DEFAULT_D_MODEL  = 2800      # 140 heads x 20 head_dim (RoPE-safe even width)
+DEFAULT_HEAD_DIM = 20
 DEFAULT_D_FF     = 4096
 DEFAULT_MAX_LEN  = 4096
 DEFAULT_N_LANGS  = 64

@@ -1653,47 +1653,6 @@ if (cmd === "cat" && arg) {
   };
 
   
-  // ACCD-CS-REBIND-V1
-  function accdRebindCodespaceChrome() {
-    try { forceCodespaceChrome(); } catch (e) {}
-    try { bindToolbar(); } catch (e) {}
-    try { bindToolbarDelegate(); } catch (e) {}
-    try {
-      var bar = document.getElementById("termKeyBar");
-      if (bar && !bar.dataset.rebound) {
-        bar.dataset.rebound = "1";
-        bar.addEventListener("click", function (ev) {
-          var btn = ev.target && ev.target.closest ? ev.target.closest(".term-key") : null;
-          if (!btn) return;
-          ev.preventDefault();
-          var api = window.acdTermApi;
-          if (!api) return;
-          var k = btn.getAttribute("data-term-key");
-          var c = btn.getAttribute("data-term-cmd");
-          if (c === "cd") { api.insert("cd "); return; }
-          if (c) { api.setLine(c); api.enter(); return; }
-          if (k === "ctrl" && api.setCtrl) { api.setCtrl(!api.getMods().ctrl); return; }
-          if (k === "alt" && api.setAlt) { api.setAlt(!api.getMods().alt); return; }
-          if (k === "home" && api.home) { api.home(); return; }
-          if (k === "end" && api.end) { api.end(); return; }
-          if (k === "tilde") { api.insert("\~"); return; }
-          if (k === "slash") { api.insert("/"); return; }
-          if (k === "enter" && api.enter) { api.enter(); return; }
-        });
-      }
-    } catch (e) {}
-  }
-  var _showPanel0 = typeof showPanel === "function" ? showPanel : null;
-  if (_showPanel0) {
-    showPanel = async function () {
-      var r = _showPanel0.apply(this, arguments);
-      try { if (r && r.then) await r; } catch (e) {}
-      accdRebindCodespaceChrome();
-      return r;
-    };
-  }
-  window.acdRebindCodespaceChrome = accdRebindCodespaceChrome;
-
   window.openCodePanel = showPanel;
   window.acdGetActiveRepo = function () { return repo || null; };
   window.acdGetRepoUid = function (name) {
@@ -1837,28 +1796,7 @@ if (cmd === "cat" && arg) {
 })();
 
 
-// ACCD-OPEN-CODE-RESCUE — always delegate to real showPanel (full bind)
-(function () {
-  var _open = window.openCodePanel;
-  window.openCodePanel = function () {
-    try { forceCodespaceChrome(); } catch (e) {}
-    document.body.classList.add("codespace-active");
-    var input = document.getElementById("inputArea");
-    if (input) {
-      input.setAttribute("hidden", "");
-      input.style.setProperty("display", "none", "important");
-    }
-    if (typeof _open === "function") {
-      try {
-        var r = _open();
-        if (r && typeof r.then === "function") return r;
-        return r;
-      } catch (e) {
-        console.error("[codespace] open", e);
-      }
-    }
-  };
-})();
+
 
 // ACCD-CODESPACE-INTERACTION — terminal focus and panel interaction only.
 (function () {

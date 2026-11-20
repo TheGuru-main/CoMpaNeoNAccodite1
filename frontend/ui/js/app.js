@@ -6358,20 +6358,4 @@ window.accdPersistStreamAi = async function (text, serverPersist, options) {
 })();
 
 
-/* ACCD-CS-REBIND-HOOK */
-(function(){
-  var _o = window.acdOpenCodespace;
-  if (typeof _o === 'function') {
-    window.acdOpenCodespace = function(ev){
-      var r = _o.apply(this, arguments);
-      setTimeout(function(){
-        try {
-          if (window.acdRebindCodespaceChrome) window.acdRebindCodespaceChrome();
-          else if (window.acdBindCodespaceToolbar) window.acdBindCodespaceToolbar();
-          if (window.acdForceCodespaceChrome) window.acdForceCodespaceChrome();
-        } catch(e) {}
-      }, 50);
-      return r;
-    };
-  }
-})();
+

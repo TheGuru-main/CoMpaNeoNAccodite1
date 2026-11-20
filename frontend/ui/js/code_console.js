@@ -58,7 +58,16 @@
     try { return JSON.stringify(e); } catch (x) { return String(e); }
   }
 
-  async function api(path, method, body) {
+  
+  function accdOwnerPhone() {
+    try {
+      var u = (window.ACCD_USER || window.currentUser || {});
+      var ph = u.phone || u.phone_uid || localStorage.getItem("accd_phone") || "";
+      return String(ph || "").trim();
+    } catch (e) { return ""; }
+  }
+
+async function api(path, method, body) {
     var opt = { method: method || "GET", headers: authHeaders() };
     if (body != null) opt.body = JSON.stringify(body);
     var res = await fetch(path, opt);

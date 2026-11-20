@@ -165,8 +165,8 @@ def _manifest_path(scope: str, owner_phone: str = "") -> Path:
     return _scope_root(scope, owner_phone) / ".accd_repos_manifest.json"
 
 
-def _load_manifest(scope: str) -> list:
-    p = _manifest_path(scope)
+def _load_manifest(scope: str, owner_phone: str = "") -> list:
+    p = _manifest_path(scope, owner_phone)
     if not p.is_file():
         return []
     try:
@@ -177,15 +177,15 @@ def _load_manifest(scope: str) -> list:
         return []
 
 
-def _save_manifest(scope: str, entries: list) -> None:
+def _save_manifest(scope: str, entries: list, owner_phone: str = "") -> None:
     import json as _json
-    p = _manifest_path(scope)
+    p = _manifest_path(scope, owner_phone)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(_json.dumps(entries, indent=2), encoding="utf-8")
 
 
-def _manifest_upsert(scope: str, name: str, meta: dict) -> None:
-    entries = [e for e in _load_manifest(scope) if e.get("name") != name]
+def _manifest_upsert(scope: str, name: str, meta: dict, owner_phone: str = "") -> None:
+    entries = [e for e in _load_manifest(scope, owner_phone) if e.get("name") != name]
     entries.append({
         "name": name,
         "scope": scope,
@@ -196,12 +196,12 @@ def _manifest_upsert(scope: str, name: str, meta: dict) -> None:
         "updated_at": meta.get("created_at") or meta.get("updated_at") or time.time(),
     })
     entries.sort(key=lambda e: e.get("name") or "")
-    _save_manifest(scope, entries)
+    _save_manifest(scope, entries, owner_phone)
 
 
-def _manifest_remove(scope: str, name: str) -> None:
-    entries = [e for e in _load_manifest(scope) if e.get("name") != name]
-    _save_manifest(scope, entries)
+def _manifest_remove(scope: str, name: str, owner_phone: str = "") -> None:
+    entries = [e for e in _load_manifest(scope, owner_phone) if e.get("name") != name]
+    _save_manifest(scope, entries, owner_phone)
 
 def _repo_dir(scope: str, repo: str, owner_phone: str = "") -> Path:
     try:
@@ -687,7 +687,9 @@ async def sandbox_health():
         "ephemeral_hint": ephemeral,
         "durable": (not ephemeral) and writable,
         "owner_isolation": os.environ.get("ACCD_SANDBOX_OWNER_ISOLATION", "1") not in ("0", "false", "no"),
+        "sandbox_root_env": bool(os.environ.get("ACCD_SANDBOX_ROOT")),
         "m": "5.3",
+        "note": "repos live under ROOT/scope/phone/repo when isolation on",
     }
 
 
@@ -718,7 +720,7 @@ async def list_repos(scope: str = "user", request: Request = None):
         })
     # Manifest entries not currently on disk (e.g. after volume miss)
     seen = {r["name"] for r in out}
-    for e in _load_manifest(scope):
+    for e in _load_manifest(scope, phone):
         n = e.get("name")
         if not n or n in seen:
             continue
@@ -732,20 +734,32 @@ async def list_repos(scope: str = "user", request: Request = None):
             "repo_uid": e.get("repo_uid"),
             "chain": e.get("chain"),
             "on_disk": False,
+            "owner_phone": phone or None,
             "note": "listed in manifest only — restore volume or re-clone",
         })
-    return {"repos": out, "root": str(_scope_root(scope))}
+    return {
+        "repos": out,
+        "root": str(root),
+        "owner_phone": phone or None,
+        "owner_isolation": bool(phone),
+    }
 
 
 @router.post("/repos")
-async def create_repo(req: RepoCreate):
+async def create_repo(req: RepoCreate, request: Request = None):
     """Create GSP-rooted repo. Idempotent: existing name returns current meta (ok=true, existed=true)."""
     try:
         req.name = validate_resource_name(req.name, what="repo name")
     except ValueError as e:
         raise HTTPException(400, str(e))
 
-    d = _repo_dir(req.scope, req.name)
+    phone = _owner_phone_from_request(request)
+    # optional body phones (frontend may send)
+    try:
+        phone = phone or str(getattr(req, "user_phone", None) or getattr(req, "org_phone", None) or "") or phone
+    except Exception:
+        pass
+    d = _repo_dir(req.scope, req.name, phone)
     existed = d.exists()
     if not existed:
         try:
@@ -769,6 +783,7 @@ async def create_repo(req: RepoCreate):
         "created_at": time.time() if not existed else ( (_read_meta(d) or {}).get("created_at") or time.time() ),
         "scope": req.scope,
         "repo": req.name,
+        "owner_phone": phone or "",
     }
     # Prefer existing meta if present
     old = _read_meta(d) if existed else None
@@ -787,8 +802,8 @@ async def create_repo(req: RepoCreate):
         scope = str(getattr(req, "scope", None) or "user")
         # phones optional on RepoCreate — best-effort from request state if present
         req_obj = req
-        user_phone = str(getattr(req_obj, "user_phone", None) or "")
-        org_phone = str(getattr(req_obj, "org_phone", None) or "")
+        user_phone = str(getattr(req_obj, "user_phone", None) or "") or (phone if scope != "org" else "")
+        org_phone = str(getattr(req_obj, "org_phone", None) or "") or (phone if scope == "org" else "")
         if user_phone or org_phone or scope in ("user", "org", "ai"):
             place_ns_object(
                 ns="codespace",
@@ -817,7 +832,7 @@ async def create_repo(req: RepoCreate):
         print("[sandbox] scaffold:", type(e).__name__, e)
 
     try:
-        _manifest_upsert(req.scope, req.name, meta)
+        _manifest_upsert(req.scope, req.name, meta, phone)
     except Exception as e:
         print("[sandbox] manifest upsert:", e)
 
@@ -842,12 +857,17 @@ async def create_repo(req: RepoCreate):
 
 
 @router.delete("/repos/{name}")
-async def delete_repo(name: str, scope: str = "user", repo_uid: str = ""):
-    d = _repo_dir(scope, name)
+async def delete_repo(name: str, scope: str = "user", repo_uid: str = "", request: Request = None):
+    phone = _owner_phone_from_request(request)
+    d = _repo_dir(scope, name, phone)
     if not d.exists():
         raise HTTPException(404, "repo not found")
     _verify_repo_key(d, name, repo_uid)
     shutil.rmtree(d)
+    try:
+        _manifest_remove(scope, name, phone)
+    except Exception:
+        pass
     return {"ok": True}
 
 

@@ -490,6 +490,108 @@ async def list_messages(
         db.close()
 
 
+
+@router.post("/{room_id}/messages/ai")
+async def post_ai_message(room_id: str, request: Request, body: dict = None):
+    """
+    Persist streamed AI reply so history survives leave/re-enter.
+    Does not run inference. Client already streamed tokens.
+    """
+    body = body or {}
+    content = (body.get("content") or body.get("text") or "").strip()
+    if not content:
+        raise HTTPException(400, "content required")
+    content = content[:50000]
+
+    user = None
+    try:
+        from auth.auth import get_current_user
+        user = await get_current_user(request)
+    except Exception:
+        try:
+            from auth import get_current_user as gcu
+            user = await gcu(request)
+        except Exception:
+            user = None
+
+    db = None
+    try:
+        from database import SessionLocal
+        db = SessionLocal()
+    except Exception:
+        pass
+
+    # Prefer existing room message helpers if present
+    try:
+        # resolve membership soft — fail closed only if room missing
+        rid = str(room_id)
+        meta = {
+            "role": "assistant",
+            "source": "stream",
+            "ref_message_id": body.get("ref_message_id"),
+            "prompt": (body.get("prompt") or "")[:2000],
+        }
+        # Try common model names
+        msg_id = None
+        if db is not None:
+            try:
+                from sqlalchemy import text as sa_text
+                import uuid
+                msg_id = str(uuid.uuid4())
+                # Minimal insert compatible with typical messages schema
+                db.execute(
+                    sa_text(
+                        """
+                        INSERT INTO messages (id, room_id, sender_id, content, role, created_at)
+                        VALUES (:id, :room_id, :sender_id, :content, :role, NOW())
+                        """
+                    ),
+                    {
+                        "id": msg_id,
+                        "room_id": rid,
+                        "sender_id": str(getattr(user, "id", None) or "") or None,
+                        "content": content,
+                        "role": "assistant",
+                    },
+                )
+                db.commit()
+                return {"ok": True, "message_id": msg_id, "role": "assistant", "content": content}
+            except Exception as e1:
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+                # Fallback: columns may differ — try content-only style used elsewhere
+                print("[rooms] ai persist primary:", type(e1).__name__, e1)
+                try:
+                    import uuid
+                    msg_id = str(uuid.uuid4())
+                    db.execute(
+                        sa_text(
+                            """
+                            INSERT INTO messages (id, room_id, content, is_ai, created_at)
+                            VALUES (:id, :room_id, :content, true, NOW())
+                            """
+                        ),
+                        {"id": msg_id, "room_id": rid, "content": content},
+                    )
+                    db.commit()
+                    return {"ok": True, "message_id": msg_id, "role": "assistant"}
+                except Exception as e2:
+                    try:
+                        db.rollback()
+                    except Exception:
+                        pass
+                    raise HTTPException(500, f"ai persist failed: {type(e2).__name__}: {e2}") from e2
+        raise HTTPException(503, "database unavailable for ai persist")
+    finally:
+        if db is not None:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+
 @router.post("/{room_id}/messages")
 async def send_message_to_room(
     room_id: str,

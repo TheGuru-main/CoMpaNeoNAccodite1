@@ -148,7 +148,14 @@ class CognitionControl:
                 "allow_mutations": _policy.allow_mutations,
             })
             if _policy.prompt_domain:
-                effective_policy["domain_pack"] = _policy.prompt_domain
+                _pd = str(_policy.prompt_domain).strip().lower()
+                # plan|research|board* are PROMPTS keys -> bundle "domain"
+                # topic packs (technology, news, ...) stay on domain_pack only
+                if _pd in ("plan", "research", "board", "board_light"):
+                    effective_policy["domain"] = _pd
+                    # do not overwrite domain_pack with a prompt template name
+                else:
+                    effective_policy["domain_pack"] = _policy.prompt_domain
         except Exception:
             _decision = None
             _policy = None
@@ -232,6 +239,7 @@ class CognitionControl:
                     "allow_mutations": _policy.allow_mutations,
                     "read_only": _policy.read_only,
                     "emit_planning_status": _policy.emit_planning_status,
+                    "prompt_domain": getattr(_policy, "prompt_domain", None),
                 }
         except Exception:
             pass
@@ -284,6 +292,9 @@ class CognitionControl:
             "max_iterations": effective["max_iterations"],
             "allow_mutations": effective["allow_mutations"],
             "domain_pack": effective["domain_pack"],
+            "domain": effective.get("domain")
+                or ((intent or {}).get("domain") if isinstance(intent, dict) else "")
+                or "",
             "dialect": effective["dialect"],
             "approval_required_for": effective["approval_required_for"],
             "preference_context": preference_context,

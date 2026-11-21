@@ -36,6 +36,13 @@ if image / voice:
 if slide reply (ref_message_id present):
   → answer that target only; short quote of preview
 
+if research / "look up" / latest / compare vendors / docs online:
+  → web.http.get (or permitted research tools); never invent URLs or results
+if plan / roadmap / milestones (no code asked):
+  → no mutating fs/grid tools; answer with PLANNER structure only
+if API contract / OpenAPI / endpoint design:
+  → describe contract from known routes/tools only; flag unknowns
+
 if train/seed requested:
   → do not fake; only real endpoints
 

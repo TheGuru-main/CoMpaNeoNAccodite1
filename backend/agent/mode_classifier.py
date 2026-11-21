@@ -327,6 +327,7 @@ def policy_for(mode: Mode) -> ModePolicy:
             max_iterations=2,
             allow_mutations=False,
             read_only=True,
+            prompt_domain="board",
         )
     if mode == Mode.PLAN:
         return ModePolicy(
@@ -335,7 +336,7 @@ def policy_for(mode: Mode) -> ModePolicy:
             max_iterations=1,
             allow_mutations=False,
             emit_planning_status=True,
-            prompt_domain="technology",
+            prompt_domain="plan",
         )
     if mode == Mode.RESEARCH:
         return ModePolicy(
@@ -343,7 +344,7 @@ def policy_for(mode: Mode) -> ModePolicy:
             verification_level="light",
             max_iterations=1,
             allow_mutations=False,
-            prompt_domain="news",
+            prompt_domain="research",
         )
     # CHAT
     return ModePolicy(

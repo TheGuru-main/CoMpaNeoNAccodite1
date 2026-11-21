@@ -126,6 +126,79 @@ from code_languages import (
 # SHARED ASSISTANT DIRECTIVES
 # ==============================================================================
 
+
+def resolve_prompt_domain(user_text: str = "", intent: Any = None, explicit: str = "") -> str:
+    """
+    Map user intent → PROMPTS key.
+    research | plan | board | board_light | general (caller may override).
+    Does not invent new classifiers; thin keyword + intent fields only.
+    """
+    ex = (explicit or "").strip().lower()
+    if ex in ("research", "plan", "board", "board_light", "general", "coding"):
+        return ex
+
+    blob = " " + (user_text or "").lower() + " "
+    intent_s = ""
+    if intent is not None:
+        if isinstance(intent, dict):
+            intent_s = str(intent.get("intent") or intent.get("domain") or intent.get("type") or "").lower()
+            blob += " " + intent_s + " " + str(intent.get("summary") or "").lower()
+        else:
+            intent_s = str(intent).lower()
+            blob += " " + intent_s + " "
+
+    # plan / roadmap before research (roadmap often contains "research")
+    plan_keys = ("roadmap", "milestone", "milestones", " plan ", "planning", "phased", "next steps")
+    if any(k in blob for k in plan_keys) and "build now" not in blob and "implement now" not in blob:
+        return "plan"
+
+    research_keys = ("research", "look up", "lookup", "latest", "compare vendors", "sources", "cite", "web ")
+    if any(k in blob for k in research_keys):
+        return "research"
+
+    if "board_light" in blob or "quick review" in blob:
+        return "board_light"
+    if " expert board" in blob or "full board" in blob or "critique" in blob or "review board" in blob:
+        return "board"
+
+    return "general"
+
+
+def pstm_board_block(pstm: Any = None) -> str:
+    """Inject worker/user PSTM only — never org phone as identity."""
+    if not pstm or not isinstance(pstm, dict):
+        return ""
+    role = str(pstm.get("role") or "").strip()
+    dept = str(pstm.get("department") or pstm.get("dept") or "").strip()
+    title = str(pstm.get("title") or "").strip()
+    path = str(pstm.get("conversation_path") or pstm.get("path") or "").strip()
+    name = str(pstm.get("name") or pstm.get("display_name") or "").strip()
+    pid = str(pstm.get("pstm_id") or pstm.get("phone") or "").strip()
+    # refuse obvious UUID as pstm id
+    if len(pid) == 36 and pid.count("-") == 4:
+        pid = ""
+    bits = []
+    if name:
+        bits.append(f"name={name}")
+    if role:
+        bits.append(f"role={role}")
+    if dept:
+        bits.append(f"dept={dept}")
+    if title:
+        bits.append(f"title={title}")
+    if path:
+        bits.append(f"path={path}")
+    if pid:
+        bits.append(f"pstm_phone={pid}")
+    if not bits:
+        return ""
+    return (
+        "PSTM (this speaker only; not org grid phone): "
+        + "; ".join(bits)
+        + ". Scope answers and tools to this role/dept. "
+    )
+
+
 BASE_DIRECTIVE = (
     "You are Accodite (CoMpaNeoN stack): a rigorous, technically precise, "
     "friendly, truthful, project-aware, progressively educative agent. "
@@ -841,6 +914,40 @@ PROMPTS["board"] = (
 # PROMPT MANAGER
 # ==============================================================================
 
+
+def _format_pstm_block(pstm_context) -> str:
+    """Worker/user PSTM only — never treat org phone as speaker identity."""
+    if not pstm_context or not isinstance(pstm_context, dict):
+        return ""
+    role = str(pstm_context.get("role") or "").strip()
+    dept = str(pstm_context.get("department") or pstm_context.get("dept") or "").strip()
+    title = str(pstm_context.get("title") or "").strip()
+    path = str(pstm_context.get("conversation_path") or pstm_context.get("path") or "").strip()
+    name = str(pstm_context.get("name") or pstm_context.get("display_name") or "").strip()
+    pid = str(pstm_context.get("pstm_id") or pstm_context.get("phone") or "").strip()
+    if len(pid) == 36 and pid.count("-") == 4:
+        pid = ""
+    bits = []
+    if name:
+        bits.append("name=" + name)
+    if role:
+        bits.append("role=" + role)
+    if dept:
+        bits.append("dept=" + dept)
+    if title:
+        bits.append("title=" + title)
+    if path:
+        bits.append("path=" + path)
+    if pid:
+        bits.append("pstm_phone=" + pid)
+    if not bits:
+        return ""
+    return (
+        "PSTM (this speaker only; not org grid phone): "
+        + "; ".join(bits)
+        + ". Scope tools and answers to this role/dept."
+    )
+
 class PromptManager:
 
     def __init__(
@@ -1423,6 +1530,7 @@ class PromptManager:
         dialect: Optional[str] = None,
         approval_required_for: Optional[List[str]] = None,
         preference_context: str = "",
+        pstm_context: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
         Assemble the final prompt string sent to the model.
@@ -1448,6 +1556,40 @@ class PromptManager:
             parts.append(CODING_AGENT_IF_BRANCHES.strip())
         temp_key = normalize_temperament(temp)
         parts.append(f"Country: {c} | Language: {lang} | Temperament: {temp_key}")
+        # Board / plan / research templates when domain matches PROMPTS keys
+        _dom = (domain or "").strip().lower()
+        if _dom in ("research", "plan", "board", "board_light") and _dom in PROMPTS:
+            try:
+                _tpl = PROMPTS[_dom].format(
+                    country=c,
+                    language=lang,
+                    temperament=temp_key,
+                    domain=_dom,
+                    intent=intent or "",
+                    question_type=question_type or "",
+                    context=(context or "")[:2000],
+                    conversation_history=(conversation_history or "")[:2000],
+                    workspace_context=(workspace_context or "")[:1000],
+                    memory_context=(memory_context or "")[:1000],
+                    permission_context=(permission_context or "")[:500],
+                    last_message=(last_message or "")[:500],
+                    project_name=project_name or workspace_name or "",
+                    project_pin=project_pin or "",
+                    project_trace=project_trace or "",
+                    current_project_state=current_project_state or "",
+                    historical_project_state=historical_project_state or "",
+                    memory_passport=memory_passport or "",
+                    conflict_context="",
+                    self_correction_context="",
+                    verifier=verifier or "",
+                )
+                parts.append(_tpl)
+            except Exception:
+                parts.append(str(PROMPTS.get(_dom) or "")[:4000])
+        _pstm = _format_pstm_block(pstm_context)
+        if _pstm:
+            parts.append(_pstm)
+
         parts.append(temperament_directive(temp_key))
         if dialect:
             parts.append(f"Dialect for narration: {dialect}")
@@ -1626,6 +1768,7 @@ class PromptManager:
             "allow_mutations", "domain_pack", "dialect",
             "approval_required_for",
             "preference_context",
+            "pstm_context",
         }
         kwargs = {k: v for k, v in (bundle or {}).items() if k in allowed}
         return self.build_prompt(**kwargs)

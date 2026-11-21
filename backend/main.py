@@ -2524,19 +2524,41 @@ try:
         try:
             from model.weight_resolve import resolve_weight_dir
             from memory.owner_identity import phone_uid as _phone_uid
-            _kind = "org" if getattr(req, "org_id", None) else "user"
-            _ph = _phone_uid(getattr(user, "phone", None)) or ""
-            if _kind == "org":
+            # NEVER mix: user_phone = PSTM actor; org_phone = org grid/weights only
+            _user_phone = _phone_uid(getattr(user, "phone", None)) or ""
+            _org_phone = ""
+            _kind = "user"
+            if getattr(req, "org_id", None):
+                _kind = "org"
                 try:
-                    # prefer org phone when available on req/membership later
-                    _oph = getattr(req, "org_phone", None) or _ph
-                    _ph = str(_oph or _ph)
-                except Exception:
-                    pass
-            if _ph:
-                _d, _src = resolve_weight_dir(kind=_kind, phone_uid=_ph)
-                print("[ACCD-STREAM] weights", _src, _d)
-                # optional hot-swap: if instance dir has weights, point finder at it
+                    _org_phone = _phone_uid(getattr(req, "org_phone", None)) or ""
+                    if not _org_phone:
+                        from database import SessionLocal
+                        from db_models import Organization
+                        import uuid as _uuid
+                        _dbw = SessionLocal()
+                        try:
+                            _org = _dbw.query(Organization).filter(
+                                Organization.id == _uuid.UUID(str(req.org_id))
+                            ).first()
+                            if _org is not None:
+                                _org_phone = _phone_uid(getattr(_org, "phone", None)) or ""
+                        finally:
+                            _dbw.close()
+                except Exception as _op:
+                    print("[ACCD-STREAM] org_phone resolve:", type(_op).__name__, _op)
+                # org weights only if we have real org phone — do not fall back to user phone
+                if _org_phone:
+                    _d, _src = resolve_weight_dir(kind="org", phone_uid=_org_phone)
+                    print("[ACCD-STREAM] weights", _src, _d, "owner=org")
+                    if _src == "instance_b2":
+                        import os as _os
+                        _os.environ["ACCD_MODEL_DIR_INSTANCE"] = str(_d)
+                else:
+                    print("[ACCD-STREAM] weights skip: org context without org_phone")
+            elif _user_phone:
+                _d, _src = resolve_weight_dir(kind="user", phone_uid=_user_phone)
+                print("[ACCD-STREAM] weights", _src, _d, "owner=user")
                 if _src == "instance_b2":
                     import os as _os
                     _os.environ["ACCD_MODEL_DIR_INSTANCE"] = str(_d)
@@ -2545,20 +2567,23 @@ try:
         try:
             from memory.pstm_scope import hydrate_worker_pstm, apply_pstm_scope
             from integration import get_state
+            from memory.owner_identity import phone_uid as _phone_uid2
             st = get_state()
             pstm = st.get("pstm")
-            scope = hydrate_worker_pstm(
-                user=user,
-                membership=None,
-                workspace_id=getattr(req, "workspace_id", None) or getattr(req, "room_id", None) or "",
-                org_phone="",
-                room_kind="",
-            )
-            # fill membership if org_id
+            # PSTM actor = user phone only; org_phone is metadata, never pstm_id
+            _ws = getattr(req, "workspace_id", None) or getattr(req, "room_id", None) or ""
+            _org_phone_meta = ""
+            try:
+                _org_phone_meta = _phone_uid2(getattr(req, "org_phone", None)) or ""
+            except Exception:
+                _org_phone_meta = ""
+            _membership = None
+            _room_kind = ""
             if getattr(req, "org_id", None):
+                _room_kind = "org"
                 try:
                     from database import SessionLocal
-                    from db_models import OrganizationMembership
+                    from db_models import OrganizationMembership, Organization
                     import uuid as _uuid
                     _db = SessionLocal()
                     try:
@@ -2568,17 +2593,42 @@ try:
                             OrganizationMembership.credential_active.is_(True),
                         ).first()
                         if m:
-                            scope = hydrate_worker_pstm(
-                                user=user, membership=m,
-                                workspace_id=getattr(req, "workspace_id", None) or getattr(req, "room_id", None) or "",
-                                org_phone="", room_kind="org",
-                            )
+                            _membership = m
+                        if not _org_phone_meta:
+                            _org = _db.query(Organization).filter(
+                                Organization.id == _uuid.UUID(str(req.org_id))
+                            ).first()
+                            if _org is not None:
+                                _org_phone_meta = _phone_uid2(getattr(_org, "phone", None)) or ""
                     finally:
                         _db.close()
                 except Exception as _m:
                     print("[ACCD-STREAM] membership hydrate:", type(_m).__name__, _m)
-            if pstm and scope.get("pstm_id"):
-                apply_pstm_scope(pstm, str(getattr(req, "room_id", None) or "stream"), scope["pstm_id"], scope)
+            scope = hydrate_worker_pstm(
+                user=user,
+                membership=_membership,
+                workspace_id=_ws,
+                org_phone=_org_phone_meta,  # org only; empty if unknown — never user phone
+                room_kind=_room_kind,
+            )
+            # hard guard: pstm_id must not equal org_phone when both set
+            _uid = (scope.get("phone_uid") or "").strip()
+            _oid = (scope.get("org_phone_uid") or "").strip()
+            if _uid and _oid and _uid == _oid:
+                print("[ACCD-STREAM] WARN pstm phone == org phone; keeping user as pstm_id, check org record")
+            _pstm_key = _uid or (scope.get("pstm_id") or "")
+            if _pstm_key and _oid and _pstm_key == _oid and getattr(user, "phone", None):
+                # refuse to key PSTM as org: force user phone normalize
+                _pstm_key = _phone_uid2(getattr(user, "phone", None)) or _pstm_key
+                scope["pstm_id"] = _pstm_key
+                scope["phone_uid"] = _pstm_key
+            if pstm and _pstm_key:
+                apply_pstm_scope(
+                    pstm,
+                    str(getattr(req, "room_id", None) or "stream"),
+                    _pstm_key,
+                    scope,
+                )
         except Exception as _ps:
             print("[ACCD-STREAM] pstm:", type(_ps).__name__, _ps)
 

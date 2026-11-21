@@ -2193,6 +2193,7 @@ def _accd_general_prompt(
     req,
     analysis,
     memory_context,
+    pstm_context=None,
 ):
     """
     Build a general CoMpaNeoN prompt using the existing PromptManager.
@@ -2200,7 +2201,17 @@ def _accd_general_prompt(
     No second prompt engine is introduced.
     """
 
-    domain = analysis.get("domain") or ""
+    # Mode templates (plan|research|board) beat topic detect_domain
+    _mode_domain = ""
+    try:
+        from agent.mode_classifier import classify as _cl, policy_for as _pf
+        _d = _cl(text=getattr(req, "prompt", None) or "")
+        _pd = str(getattr(_pf(_d.mode), "prompt_domain", "") or "").lower()
+        if _pd in ("plan", "research", "board", "board_light"):
+            _mode_domain = _pd
+    except Exception:
+        _mode_domain = ""
+    domain = _mode_domain or (analysis.get("domain") or "")
     intent = analysis.get("intent") or ""
     question_type = analysis.get("question_type") or "general"
 
@@ -2262,7 +2273,10 @@ def _accd_general_prompt(
         verification_level="light",
         max_iterations=1,
         allow_mutations=False,
-        domain_pack=domain or "general",
+        domain_pack=(
+            domain if domain not in ("plan", "research", "board", "board_light") else "general"
+        ) or "general",
+        pstm_context=pstm_context if isinstance(pstm_context, dict) else None,
     )
 
 
@@ -2564,6 +2578,7 @@ try:
                     _os.environ["ACCD_MODEL_DIR_INSTANCE"] = str(_d)
         except Exception as _wr:
             print("[ACCD-STREAM] weight_resolve:", type(_wr).__name__, _wr)
+        scope = {}  # ACCD-PSTM-SCOPE — always defined for prompt
         try:
             from memory.pstm_scope import hydrate_worker_pstm, apply_pstm_scope
             from integration import get_state
@@ -2653,7 +2668,7 @@ try:
                 except Exception as exc:
                     print("[ACCD-STREAM] memory context skipped:", type(exc).__name__, exc)
                     memory_context = ""
-                prompt = _accd_general_prompt(req=req, analysis=analysis, memory_context=memory_context)
+                prompt = _accd_general_prompt(req=req, analysis=analysis, memory_context=memory_context, pstm_context=scope if isinstance(scope, dict) else None)
             except Exception as exc:
                 yield "data: " + json.dumps({
                     "event": "error", "error": "Request preparation failed: " + type(exc).__name__ + ": " + str(exc)

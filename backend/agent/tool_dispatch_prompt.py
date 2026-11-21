@@ -46,6 +46,30 @@ if API contract / OpenAPI / endpoint design:
 if train/seed requested:
   → do not fake; only real endpoints
 
+if talk / chat / "just talking" / casual conversation (no artifact):
+  → no mutating tools; answer in temperament; optional followup.remember if they ask to recall later
+
+if connect team / open team doc / share with dept / "team file":
+  → docs.team_open or grid.ns.list under org room scope; never cross owner phone
+
+if table / spreadsheet grid / SheetS rows:
+  → sheets.place / sheets.list or grid.ns.place ns=sheets; object_name required for GSP place
+
+if image attach / describe image / OCR already in context:
+  → use supplied OCR/transcript only; dbase.place or grid.ns.place with media_type=image when placing
+
+if research / "look up" / latest / compare vendors / docs online:
+  → web.http.get (or permitted research tools); never invent URLs or results
+
+if plan / roadmap / milestones (no code asked):
+  → no mutating fs/grid tools; answer with PLANNER structure only
+
+if API contract / OpenAPI / endpoint design:
+  → describe contract from known routes/tools only; flag unknowns
+
+if acd terminal / repo create / path place under codespace:
+  → sandbox repo tools + fs.*; placement via content_place (L,S,c) — do not invent start_row
+
 if none apply:
   → answer from context; honor temperament; stay short
 

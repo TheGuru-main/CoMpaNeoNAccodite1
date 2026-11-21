@@ -588,6 +588,18 @@ if a tool call fails:
 
 if you do not yet have a tool result for a file:
   -> do not state its contents. Read it first.
+
+if team-scoped repo / active project sandbox:
+  -> inspect only the active owner phone repo; list roots with fs.list_dir before editing. Do not open another tenant's paths.
+
+if acd commands (acd repo, acd place, acd rootcheck, acd status):
+  -> treat as terminal/sandbox ops under the active repo; report exit and paths; do not invent GSP rows.
+
+if create repo / new path / folder in codespace:
+  -> create under active repo only; object/path placement uses tokenizer uid_chain (letters + digit 000-009 + symbol markers); S = abs(sum); c = first letter index; start_row after L and S.
+
+if tokenizer / letter chain / code markers:
+  -> letters are 0-based alphabet indexes; digits keep markers 000-009; registered symbols keep negative id strings; do not strip leading zeros from letter indexes in uid strings.
 """
 
 # __ACC_PROMPTS_V2__

@@ -54,3 +54,27 @@ def apply_pstm_scope(pstm, room_id: str, pstm_id: str, scope: Dict[str, Any]) ->
             pstm.set_extra(room_id, pstm_id, k, v)
     except Exception as e:
         print("[pstm_scope] apply:", type(e).__name__, e)
+
+# --- P0 registration_country on hydrate (append) ---
+def hydrate_worker_pstm_with_country(
+    *,
+    user=None,
+    membership=None,
+    workspace_id: str = "",
+    org_phone: str = "",
+    room_kind: str = "",
+    org_country: str = "",
+):
+    """Same as hydrate_worker_pstm + registration_country metadata. pstm_id stays phone."""
+    base = hydrate_worker_pstm(
+        user=user,
+        membership=membership,
+        workspace_id=workspace_id,
+        org_phone=org_phone,
+        room_kind=room_kind,
+    )
+    reg = (org_country or getattr(user, "country", None) or "").strip()
+    if reg:
+        base["registration_country"] = reg
+        base["org_country"] = reg  # metadata only; never pstm_id
+    return base

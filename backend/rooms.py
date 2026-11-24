@@ -1202,3 +1202,141 @@ async def delete_message(
         return {"ok": True, "id": str(message_id)}
     finally:
         db.close()
+
+# --- P0 AI persist Message ORM helper (append) ---
+async def _persist_ai_message_orm(room_id: str, content: str, user_id=None, ref_message_id=None, prompt: str = ""):
+    """Persist streamed AI with Message ORM: workspace_id + role=ai. No room_id column."""
+    content = (content or "").strip()[:50000]
+    if not content:
+        raise HTTPException(400, "content required")
+    db = SessionLocal()
+    try:
+        ws = db.query(Workspace).filter(Workspace.id == room_id).first()
+        if ws is None:
+            raise HTTPException(404, "room not found")
+        import uuid as _uuid
+        _ref = None
+        if ref_message_id:
+            try:
+                _ref = _uuid.UUID(str(ref_message_id))
+            except Exception:
+                _ref = None
+        row = Message(
+            workspace_id=ws.id,
+            user_id=user_id,
+            role="ai",
+            content=content,
+            replies_to=_ref,
+        )
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return {
+            "ok": True,
+            "message_id": str(row.id),
+            "role": "ai",
+            "content": content,
+            "full_name": "Accodite",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        raise HTTPException(500, f"ai persist failed: {type(e).__name__}: {e}") from e
+    finally:
+        db.close()
+
+# =============================================================================
+# MARATHON P0-A — stream AI persist (EOF rebind, dedupe-safe)
+# Same Message schema as server AI: workspace_id + role="ai"
+# =============================================================================
+async def _accd_post_ai_message_fixed(room_id: str, request: Request, body: dict = None):
+    body = body or {}
+    if not body:
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+    content = (body.get("content") or body.get("text") or "").strip()
+    if not content:
+        raise HTTPException(400, "content required")
+    content = content[:50000]
+
+    user = None
+    try:
+        user = await get_current_user(request)
+    except Exception:
+        try:
+            from auth.auth import get_current_user as _gcu
+            user = await _gcu(request)
+        except Exception:
+            try:
+                from auth import get_current_user as _gcu2
+                user = await _gcu2(request)
+            except Exception:
+                user = None
+    if user is None:
+        raise HTTPException(401, "auth required")
+
+    db = SessionLocal()
+    try:
+        ws_row = db.query(Workspace).filter(Workspace.id == room_id).first()
+        if ws_row is None:
+            raise HTTPException(404, "room not found")
+        if not _is_member(db, ws_row, user.id):
+            raise HTTPException(403, "not a member")
+
+        _ref_uuid = None
+        ref_raw = body.get("ref_message_id")
+        if ref_raw:
+            try:
+                import uuid as _uuid_ref
+                _ref_uuid = _uuid_ref.UUID(str(ref_raw))
+            except Exception:
+                _ref_uuid = None
+
+        ai_row = Message(
+            workspace_id=ws_row.id,
+            user_id=user.id,
+            role="ai",
+            content=content,
+            replies_to=_ref_uuid,
+        )
+        db.add(ai_row)
+        db.commit()
+        db.refresh(ai_row)
+
+        return {
+            "ok": True,
+            "message_id": str(ai_row.id),
+            "role": "ai",
+            "content": content,
+            "replies_to": str(_ref_uuid) if _ref_uuid else None,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        raise HTTPException(500, f"ai persist failed: {type(e).__name__}: {e}") from e
+    finally:
+        db.close()
+
+
+if not getattr(router, "_accd_ai_persist_fixed", False):
+    for _r in list(getattr(router, "routes", []) or []):
+        _path = str(getattr(_r, "path", "") or "")
+        _methods = set(getattr(_r, "methods", None) or [])
+        if _path.endswith("/messages/ai") and ("POST" in _methods or not _methods):
+            _r.endpoint = _accd_post_ai_message_fixed
+            if hasattr(_r, "dependant") and getattr(_r, "dependant", None) is not None:
+                try:
+                    _r.dependant.call = _accd_post_ai_message_fixed
+                except Exception:
+                    pass
+    router._accd_ai_persist_fixed = True

@@ -46,3 +46,23 @@ def variants(phone: Optional[str]) -> List[str]:
 def looks_like_phone(s: str) -> bool:
     digits = re.sub(r"\D", "", s or "")
     return 7 <= len(digits) <= 15
+
+# --- P0 country_to_iso (append) ---
+COUNTRY_NAME_TO_ISO = {
+    "nigeria": "NG", "ghana": "GH", "kenya": "KE", "south africa": "ZA",
+    "egypt": "EG", "ethiopia": "ET", "morocco": "MA", "cameroon": "CM",
+    "ivory coast": "CI", "cote d'ivoire": "CI", "uganda": "UG",
+    "united states": "US", "usa": "US", "united kingdom": "GB", "uk": "GB",
+    "india": "IN", "canada": "CA", "australia": "AU", "germany": "DE",
+    "france": "FR", "china": "CN", "brazil": "BR", "united arab emirates": "AE",
+    "uae": "AE",
+}
+
+def country_to_iso(name_or_iso: str | None) -> str:
+    """Map registration country name or ISO to 2-letter. Default NG only when missing."""
+    if not name_or_iso:
+        return "NG"
+    s = str(name_or_iso).strip()
+    if len(s) == 2 and s.isalpha():
+        return s.upper()
+    return COUNTRY_NAME_TO_ISO.get(s.lower(), "NG")

@@ -6359,3 +6359,386 @@ window.accdPersistStreamAi = async function (text, serverPersist, options) {
 
 
 
+// MARATHON P0-A: stream complete → persist AI bubble
+(function () {
+  if (window.__accdStreamPersistWired) return;
+  window.__accdStreamPersistWired = true;
+  var orig = window.accdStreamAiReply;
+  if (typeof orig !== "function") return;
+  window.accdStreamAiReply = async function (promptText, opts) {
+    opts = opts || {};
+    var target = opts.slideTarget || (typeof _replyTo !== "undefined" ? _replyTo : null);
+    var room =
+      (typeof currentRoomId !== "undefined" && currentRoomId) ||
+      (opts.room_id || opts.workspace_id) ||
+      null;
+    try {
+      await orig(promptText, opts);
+    } catch (e) {
+      console.warn("[ACCD] stream", e);
+    }
+    try {
+      var fullText = "";
+      var chatBox = document.getElementById("chatBox");
+      var last = chatBox && chatBox.querySelector(
+        ".message.ai:last-of-type .frame-prose, .message.ai:last-of-type, #streamAiBody, .stream-ai-body"
+      );
+      if (last) fullText = (last.textContent || "").trim();
+      if (!fullText && typeof window.__accdLastStreamText === "string") {
+        fullText = window.__accdLastStreamText;
+      }
+      if (fullText && typeof window.accdPersistStreamAi === "function") {
+        await window.accdPersistStreamAi(fullText, null, {
+          room_id: room,
+          workspace_id: room,
+          ref_message_id: target && target.id ? target.id : null,
+          prompt: String(promptText || "").slice(0, 2000),
+        });
+      }
+    } catch (e2) {
+      console.warn("[ACCD] persist after stream", e2);
+    }
+  };
+})();
+// MARATHON bubble style: AI always dark; human color by name first unit 1-54
+(function () {
+  if (window.__accdBubbleStyle) return;
+  window.__accdBubbleStyle = true;
+
+  var PALETTE = [
+    "#4f46e5","#7c3aed","#db2777","#e11d48","#ea580c","#ca8a04","#65a30d","#16a34a",
+    "#0d9488","#0891b2","#2563eb","#9333ea","#c026d3","#e11d48","#f97316","#eab308",
+    "#84cc16","#22c55e","#14b8a6","#06b6d4","#3b82f6","#8b5cf6","#d946ef","#f43f5e",
+    "#fb923c","#facc15","#a3e635","#4ade80","#2dd4bf","#22d3ee","#60a5fa","#a78bfa",
+    "#e879f9","#fb7185","#fdba74","#fde047","#bef264","#86efac","#5eead4","#67e8f9",
+    "#93c5fd","#c4b5fd","#f0abfc","#fda4af","#6366f1","#a855f7","#ec4899","#f59e0b",
+    "#10b981","#0ea5e9","#8b5cf6","#f472b6","#34d399","#38bdf8"
+  ];
+
+  function firstUnitIndex(name) {
+    var s = String(name || "").trim().toLowerCase();
+    if (!s) return 0;
+    // digraph-aware for yo/ig (longest first)
+    var digraphs = ["gb","ch","gh","gw","kp","kw","nw","ny","sh","ts"];
+    for (var i = 0; i < digraphs.length; i++) {
+      if (s.indexOf(digraphs[i]) === 0) {
+        return (digraphs[i].charCodeAt(0) + digraphs[i].charCodeAt(1)) % 54;
+      }
+    }
+    var ch = s.charAt(0);
+    var code = ch.charCodeAt(0);
+    if (code >= 97 && code <= 122) return (code - 97) % 54;
+    return Math.abs(code) % 54;
+  }
+
+  function colorForName(name) {
+    return PALETTE[firstUnitIndex(name) % PALETTE.length];
+  }
+
+  function paintBubble(el, role, fullName) {
+    if (!el || !el.classList) return;
+    if (role === "ai" || el.classList.contains("ai")) {
+      el.style.background = "#0f172a";
+      el.style.color = "#e2e8f0";
+      el.style.borderColor = "#1e293b";
+      return;
+    }
+    var c = colorForName(fullName || "");
+    el.style.borderLeft = "3px solid " + c;
+    el.style.setProperty("--msg-accent", c);
+  }
+
+  var _origAppend = typeof appendMessage === "function" ? appendMessage : null;
+  if (_origAppend && !_origAppend._accdPaint) {
+    window.appendMessage = function (role, content) {
+      var r = _origAppend.apply(this, arguments);
+      try {
+        var box = document.getElementById("chatBox");
+        var el = box && box.lastElementChild;
+        var name = (typeof currentUser !== "undefined" && currentUser && role === "user")
+          ? (currentUser.full_name || currentUser.phone || "")
+          : "";
+        paintBubble(el, role, name);
+      } catch (_) {}
+      return r;
+    };
+    window.appendMessage._accdPaint = true;
+  }
+
+  var _origRender = typeof renderMessageItem === "function" ? renderMessageItem : null;
+  if (_origRender && !_origRender._accdPaint) {
+    window.renderMessageItem = function (m, opts) {
+      var r = _origRender.apply(this, arguments);
+      try {
+        var box = document.getElementById("chatBox");
+        var el = box && box.lastElementChild;
+        var role = (m && (m.role === "ai" || m.role === "assistant")) ? "ai" : "user";
+        paintBubble(el, role, (m && (m.full_name || m.phone)) || "");
+      } catch (_) {}
+      return r;
+    };
+    window.renderMessageItem._accdPaint = true;
+  }
+})();
+// MARATHON bubble style: AI always dark; human color by name first unit 1-54
+(function () {
+  if (window.__accdBubbleStyle) return;
+  window.__accdBubbleStyle = true;
+
+  var PALETTE = [
+    "#4f46e5","#7c3aed","#db2777","#e11d48","#ea580c","#ca8a04","#65a30d","#16a34a",
+    "#0d9488","#0891b2","#2563eb","#9333ea","#c026d3","#e11d48","#f97316","#eab308",
+    "#84cc16","#22c55e","#14b8a6","#06b6d4","#3b82f6","#8b5cf6","#d946ef","#f43f5e",
+    "#fb923c","#facc15","#a3e635","#4ade80","#2dd4bf","#22d3ee","#60a5fa","#a78bfa",
+    "#e879f9","#fb7185","#fdba74","#fde047","#bef264","#86efac","#5eead4","#67e8f9",
+    "#93c5fd","#c4b5fd","#f0abfc","#fda4af","#6366f1","#a855f7","#ec4899","#f59e0b",
+    "#10b981","#0ea5e9","#8b5cf6","#f472b6","#34d399","#38bdf8"
+  ];
+
+  function firstUnitIndex(name) {
+    var s = String(name || "").trim().toLowerCase();
+    if (!s) return 0;
+    // digraph-aware for yo/ig (longest first)
+    var digraphs = ["gb","ch","gh","gw","kp","kw","nw","ny","sh","ts"];
+    for (var i = 0; i < digraphs.length; i++) {
+      if (s.indexOf(digraphs[i]) === 0) {
+        return (digraphs[i].charCodeAt(0) + digraphs[i].charCodeAt(1)) % 54;
+      }
+    }
+    var ch = s.charAt(0);
+    var code = ch.charCodeAt(0);
+    if (code >= 97 && code <= 122) return (code - 97) % 54;
+    return Math.abs(code) % 54;
+  }
+
+  function colorForName(name) {
+    return PALETTE[firstUnitIndex(name) % PALETTE.length];
+  }
+
+  function paintBubble(el, role, fullName) {
+    if (!el || !el.classList) return;
+    if (role === "ai" || el.classList.contains("ai")) {
+      el.style.background = "#0f172a";
+      el.style.color = "#e2e8f0";
+      el.style.borderColor = "#1e293b";
+      return;
+    }
+    var c = colorForName(fullName || "");
+    el.style.borderLeft = "3px solid " + c;
+    el.style.setProperty("--msg-accent", c);
+  }
+
+  var _origAppend = typeof appendMessage === "function" ? appendMessage : null;
+  if (_origAppend && !_origAppend._accdPaint) {
+    window.appendMessage = function (role, content) {
+      var r = _origAppend.apply(this, arguments);
+      try {
+        var box = document.getElementById("chatBox");
+        var el = box && box.lastElementChild;
+        var name = (typeof currentUser !== "undefined" && currentUser && role === "user")
+          ? (currentUser.full_name || currentUser.phone || "")
+          : "";
+        paintBubble(el, role, name);
+      } catch (_) {}
+      return r;
+    };
+    window.appendMessage._accdPaint = true;
+  }
+
+  var _origRender = typeof renderMessageItem === "function" ? renderMessageItem : null;
+  if (_origRender && !_origRender._accdPaint) {
+    window.renderMessageItem = function (m, opts) {
+      var r = _origRender.apply(this, arguments);
+      try {
+        var box = document.getElementById("chatBox");
+        var el = box && box.lastElementChild;
+        var role = (m && (m.role === "ai" || m.role === "assistant")) ? "ai" : "user";
+        paintBubble(el, role, (m && (m.full_name || m.phone)) || "");
+      } catch (_) {}
+      return r;
+    };
+    window.renderMessageItem._accdPaint = true;
+  }
+})();
+// MARATHON: one AI bubble per trigger (multi-trigger → N personal appends)
+(function () {
+  if (window.__accdOneBubblePerTrigger) return;
+  window.__accdOneBubblePerTrigger = true;
+
+  function collectTriggers(text, slideTarget) {
+    var list = [];
+    var t = String(text || "");
+    if (slideTarget && slideTarget.id) {
+      list.push({
+        kind: "slide",
+        ref_message_id: slideTarget.id,
+        author: slideTarget.author || "",
+        preview: String(slideTarget.preview || "").slice(0, 120),
+        prompt: t,
+      });
+    }
+    // each @AI / @Accodite is its own trigger unit
+    var re = /@(AI|Accodite)\b/gi;
+    var m;
+    var n = 0;
+    while ((m = re.exec(t)) !== null) {
+      n++;
+      list.push({
+        kind: "mention",
+        ref_message_id: null,
+        index: n,
+        prompt: t,
+      });
+    }
+    // solo / auto path: no slide, no @AI → one direct trigger
+    if (!list.length) {
+      list.push({ kind: "direct", ref_message_id: null, prompt: t });
+    }
+    // cap triple as planned
+    return list.slice(0, 3);
+  }
+
+  var orig = window.accdStreamAiReply;
+  if (typeof orig !== "function") return;
+
+  window.accdStreamAiReply = async function (promptText, opts) {
+    opts = opts || {};
+    var slide = opts.slideTarget || (typeof _replyTo !== "undefined" ? _replyTo : null);
+    var triggers = collectTriggers(promptText, slide);
+    var room =
+      (typeof currentRoomId !== "undefined" && currentRoomId) ||
+      opts.room_id ||
+      opts.workspace_id ||
+      null;
+
+    for (var i = 0; i < triggers.length; i++) {
+      var tr = triggers[i];
+      var oneOpts = Object.assign({}, opts, {
+        slideTarget: tr.ref_message_id
+          ? {
+              id: tr.ref_message_id,
+              author: tr.author || "",
+              preview: tr.preview || "",
+            }
+          : null,
+      });
+      try {
+        await orig(tr.prompt, oneOpts);
+      } catch (e) {
+        console.warn("[ACCD] trigger stream", i, e);
+      }
+      // persist this bubble only (personal append)
+      try {
+        var fullText = "";
+        var box = document.getElementById("chatBox");
+        var last =
+          box &&
+          box.querySelector(
+            ".message.ai:last-of-type .frame-prose, .message.ai:last-of-type, #streamAiBody, .stream-ai-body"
+          );
+        if (last) fullText = (last.textContent || "").trim();
+        if (fullText && typeof window.accdPersistStreamAi === "function") {
+          await window.accdPersistStreamAi(fullText, null, {
+            room_id: room,
+            workspace_id: room,
+            ref_message_id: tr.ref_message_id || null,
+            prompt: String(tr.prompt || "").slice(0, 2000),
+          });
+        }
+      } catch (e2) {
+        console.warn("[ACCD] trigger persist", i, e2);
+      }
+    }
+  };
+})();
+// MARATHON: one AI bubble per trigger (multi-trigger → N personal appends)
+(function () {
+  if (window.__accdOneBubblePerTrigger) return;
+  window.__accdOneBubblePerTrigger = true;
+
+  function collectTriggers(text, slideTarget) {
+    var list = [];
+    var t = String(text || "");
+    if (slideTarget && slideTarget.id) {
+      list.push({
+        kind: "slide",
+        ref_message_id: slideTarget.id,
+        author: slideTarget.author || "",
+        preview: String(slideTarget.preview || "").slice(0, 120),
+        prompt: t,
+      });
+    }
+    // each @AI / @Accodite is its own trigger unit
+    var re = /@(AI|Accodite)\b/gi;
+    var m;
+    var n = 0;
+    while ((m = re.exec(t)) !== null) {
+      n++;
+      list.push({
+        kind: "mention",
+        ref_message_id: null,
+        index: n,
+        prompt: t,
+      });
+    }
+    // solo / auto path: no slide, no @AI → one direct trigger
+    if (!list.length) {
+      list.push({ kind: "direct", ref_message_id: null, prompt: t });
+    }
+    // cap triple as planned
+    return list.slice(0, 3);
+  }
+
+  var orig = window.accdStreamAiReply;
+  if (typeof orig !== "function") return;
+
+  window.accdStreamAiReply = async function (promptText, opts) {
+    opts = opts || {};
+    var slide = opts.slideTarget || (typeof _replyTo !== "undefined" ? _replyTo : null);
+    var triggers = collectTriggers(promptText, slide);
+    var room =
+      (typeof currentRoomId !== "undefined" && currentRoomId) ||
+      opts.room_id ||
+      opts.workspace_id ||
+      null;
+
+    for (var i = 0; i < triggers.length; i++) {
+      var tr = triggers[i];
+      var oneOpts = Object.assign({}, opts, {
+        slideTarget: tr.ref_message_id
+          ? {
+              id: tr.ref_message_id,
+              author: tr.author || "",
+              preview: tr.preview || "",
+            }
+          : null,
+      });
+      try {
+        await orig(tr.prompt, oneOpts);
+      } catch (e) {
+        console.warn("[ACCD] trigger stream", i, e);
+      }
+      // persist this bubble only (personal append)
+      try {
+        var fullText = "";
+        var box = document.getElementById("chatBox");
+        var last =
+          box &&
+          box.querySelector(
+            ".message.ai:last-of-type .frame-prose, .message.ai:last-of-type, #streamAiBody, .stream-ai-body"
+          );
+        if (last) fullText = (last.textContent || "").trim();
+        if (fullText && typeof window.accdPersistStreamAi === "function") {
+          await window.accdPersistStreamAi(fullText, null, {
+            room_id: room,
+            workspace_id: room,
+            ref_message_id: tr.ref_message_id || null,
+            prompt: String(tr.prompt || "").slice(0, 2000),
+          });
+        }
+      } catch (e2) {
+        console.warn("[ACCD] trigger persist", i, e2);
+      }
+    }
+  };
+})();

@@ -669,7 +669,7 @@ def train(
     owner_kind: Optional[str] = None,
     owner_id: Optional[str] = None,
     data_dir: Optional[str] = None,
-    epochs: int = 100,
+    epochs: int = 7,
     batch_size: int = 8,
     seq_len: int = 300,
     lr: float = 1e-4,

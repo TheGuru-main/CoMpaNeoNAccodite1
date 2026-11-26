@@ -1496,3 +1496,385 @@ def _accd_persist_after_train(grid, vocab=None):
             print("[train] vocab b2", persist_vocab_snapshot(vocab if isinstance(vocab, dict) else {"v": vocab}))
     except Exception as e:
         print("[train] vocab b2", e)
+
+# =============================================================================
+
+
+# ACCD-OPEN-CHAIN-INTEGRATE
+# Specials = marker identities 0000-0004 only. Never content seats.
+# Content board from 0: lang → code symbols → numbers → chains (units > 2).
+# Identity stream e.g. home: 0003, 7, 14, 12, 4, 0004
+# Tensor rows: specials 0..4 (markers); content seat s → 5+s (model only).
+# Code symbols: negative marker identity; positive content seat. No v2.
+
+_ACCD_OPEN = {
+    "scheme": "open_chain_v1",
+    "next_id": 0,
+    "uid_to_embed": {},
+    "chain_to_embed": {},
+    "embed_meta": {},
+    "occupied": set(),
+    "special_id": {
+        "0000": "pad",
+        "0001": "unk",
+        "0002": "reserved",
+        "0003": "start",
+        "0004": "end",
+    },
+    "special_tensor": {  # marker -> fixed tensor row 0..4 (not content)
+        "0000": 0,
+        "0001": 1,
+        "0002": 2,
+        "0003": 3,
+        "0004": 4,
+    },
+    "content_tensor_base": 5,  # content seat s → tensor 5+s
+}
+
+def _accd_probe_seat(preferred=None):
+    occ = _ACCD_OPEN["occupied"]
+    if preferred is not None:
+        pref = int(preferred)
+        if pref >= 0 and pref not in occ:
+            occ.add(pref)
+            if pref >= _ACCD_OPEN["next_id"]:
+                _ACCD_OPEN["next_id"] = pref + 1
+            return pref
+    n = max(0, int(_ACCD_OPEN["next_id"]))
+    while n in occ:
+        n += 1
+    occ.add(n)
+    _ACCD_OPEN["next_id"] = n + 1
+    return n
+
+def _accd_seat_unit(identity, *, kind, surface, id_index=None, preferred=None):
+    key = identity if isinstance(identity, str) else int(identity)
+    if key in _ACCD_OPEN["uid_to_embed"]:
+        return _ACCD_OPEN["uid_to_embed"][key]
+    seat = _accd_probe_seat(preferred if preferred is not None else id_index)
+    _ACCD_OPEN["uid_to_embed"][key] = seat
+    _ACCD_OPEN["embed_meta"][seat] = {
+        "kind": kind,
+        "identity": key,
+        "surface": surface,
+        "id_index": id_index,
+    }
+    return seat
+
+def _accd_import_tokenizer():
+    try:
+        import tokenizer as T
+        return T
+    except Exception:
+        try:
+            from tokenizer import tokenizer as T
+            return T
+        except Exception:
+            return None
+
+def _accd_content_tensor(seat: int) -> int:
+    return int(_ACCD_OPEN["content_tensor_base"]) + int(seat)
+
+def _accd_special_tensor(marker: str) -> int:
+    return int(_ACCD_OPEN["special_tensor"][marker])
+
+def _accd_seed_singular_units():
+    T = _accd_import_tokenizer()
+    alphabets = {}
+    if T is not None:
+        alphabets = getattr(T, "ALPHABETS", None) or getattr(T, "LANGUAGE_ALPHABETS", None) or {}
+    if not isinstance(alphabets, dict) or not alphabets:
+        alphabets = {"en": "abcdefghijklmnopqrstuvwxyz"}
+
+    # 1) languages — a index 0 → content seat 0
+    for lang, alpha in alphabets.items():
+        if not isinstance(alpha, str):
+            continue
+        seen = set()
+        for i, ch in enumerate(alpha):
+            if ch in seen:
+                continue
+            seen.add(ch)
+            if lang in ("en", "default"):
+                ident, pref = int(i), int(i)
+            else:
+                ident, pref = f"{lang}:{i}:{ch}", None
+            _accd_seat_unit(ident, kind="lang", surface=ch, id_index=int(i), preferred=pref)
+
+    # 2) code symbols — negative identity, content seat after langs
+    markers = []
+    if T is not None:
+        for name in ("CODE_SYMBOL_MARKERS", "SYMBOL_MARKERS", "NEGATIVE_MARKERS", "SYMBOL_UIDS"):
+            v = getattr(T, name, None)
+            if isinstance(v, dict) and v:
+                markers = list(v.items())
+                break
+            if isinstance(v, (list, tuple)) and v:
+                markers = [(m, m) for m in v]
+                break
+    if not markers:
+        syms = list("{}[]()<>+-*/%=&|^\~!?:;@#$\\'\"`.,")
+        markers = [(-(100 + i), ch) for i, ch in enumerate(syms)]
+    special_ids = set(_ACCD_OPEN["special_id"])
+    for mid, surface in markers:
+        try:
+            neg = int(mid)
+        except Exception:
+            neg = -(abs(hash(str(mid)) % 100000) + 1)
+        if neg >= 0:
+            neg = -abs(neg) if neg != 0 else -1
+        ident = f"sym:{neg}"
+        if ident in special_ids or f"{abs(neg):04d}" in special_ids:
+            continue
+        _accd_seat_unit(ident, kind="code", surface=str(surface), id_index=neg, preferred=None)
+
+    # 3) numbers
+    digit_markers = {}
+    if T is not None:
+        digit_markers = getattr(T, "DIGIT_MARKERS", None) or {}
+    if not isinstance(digit_markers, dict) or not digit_markers:
+        digit_markers = {str(d): f"{d:03d}" for d in range(10)}
+    for d, marker in digit_markers.items():
+        m = str(marker)
+        if m in special_ids:
+            m = f"dig:{m}"
+        ident = m if str(m).startswith("dig:") else f"dig:{m}"
+        _accd_seat_unit(
+            ident, kind="number", surface=str(d),
+            id_index=int(d) if str(d).isdigit() else None, preferred=None,
+        )
+    print("[open_chain] content singular next_id=", _ACCD_OPEN["next_id"])
+
+def _accd_units_for_token(token_str, lang="en"):
+    T = _accd_import_tokenizer()
+    s = str(token_str or "").strip()
+    if not s:
+        return []
+    code = "en"
+    if T is not None and hasattr(T, "normalize_lang"):
+        try:
+            code = T.normalize_lang(lang)
+        except Exception:
+            code = lang or "en"
+    norm = s
+    if T is not None and hasattr(T, "normalize_lexical_token"):
+        try:
+            norm = T.normalize_lexical_token(s, code) or s
+        except Exception:
+            norm = s
+    raw = None
+    if T is not None:
+        fn = getattr(T, "uid_chain", None) or getattr(T, "uid_sequence", None)
+        if callable(fn):
+            try:
+                raw = fn(norm, code)
+            except Exception:
+                raw = None
+    units = []
+    if raw:
+        for u in raw:
+            if isinstance(u, int):
+                units.append((f"sym:{u}", str(u)) if u < 0 else (int(u), str(u)))
+            else:
+                ss = str(u)
+                if ss in _ACCD_OPEN["special_id"]:
+                    continue
+                if ss.startswith("-") and ss[1:].isdigit():
+                    units.append((f"sym:{ss}", ss))
+                elif ss.isdigit() and len(ss) == 3:
+                    units.append((f"dig:{ss}", ss))
+                elif ss.startswith("u") and ss[1:].isdigit():
+                    units.append((f"sym:-{ss[1:]}", ss))
+                else:
+                    try:
+                        units.append((int(ss), ss))
+                    except Exception:
+                        units.append((f"raw:{ss}", ss))
+        return units
+    alpha = "abcdefghijklmnopqrstuvwxyz"
+    if T is not None and hasattr(T, "alphabet_for"):
+        try:
+            alpha = T.alphabet_for(code) or alpha
+        except Exception:
+            pass
+    for ch in norm:
+        if ch.isdigit():
+            units.append((f"dig:{int(ch):03d}", ch))
+        elif ch.lower() in alpha:
+            units.append((int(alpha.index(ch.lower())), ch))
+        else:
+            units.append((f"sym:-{ord(ch)}", ch))
+    return units
+
+def _accd_register_chain(uids):
+    parts = []
+    for u in uids:
+        if isinstance(u, int):
+            parts.append(str(u))
+        else:
+            parts.append(str(u).replace("sym:", "").replace("dig:", ""))
+    key = "_".join(parts)
+    if key in _ACCD_OPEN["chain_to_embed"]:
+        return key, _ACCD_OPEN["chain_to_embed"][key]
+    seat = _accd_probe_seat(None)
+    _ACCD_OPEN["chain_to_embed"][key] = seat
+    _ACCD_OPEN["embed_meta"][seat] = {"kind": "chain", "key": key, "uids": list(uids)}
+    return key, seat
+
+def letter_chain_id(token_str: str, lang: str = "en") -> int:
+    """Content seat for chain (>2 units) or last unit. Not a special marker."""
+    units = _accd_units_for_token(token_str, lang)
+    if not units:
+        return -1
+    uids = []
+    for ident, surface in units:
+        if isinstance(ident, int) and ident >= 0:
+            _accd_seat_unit(ident, kind="lang", surface=surface, id_index=ident, preferred=ident)
+            uids.append(ident)
+        else:
+            kind = "code" if str(ident).startswith("sym:") else "number"
+            _accd_seat_unit(ident, kind=kind, surface=surface, id_index=None, preferred=None)
+            uids.append(ident)
+    if len(uids) > 2:
+        _key, seat = _accd_register_chain(uids)
+        return int(seat)
+    last = uids[-1]
+    return int(_ACCD_OPEN["uid_to_embed"].get(last, -1))
+
+def chain_to_row(chain_id: int, embed_rows: int = None) -> int:
+    if chain_id is None or int(chain_id) < 0:
+        return _accd_special_tensor("0001")  # unk tensor
+    return _accd_content_tensor(int(chain_id))
+
+def build_vocab(records, embed_rows: int = None):
+    _ACCD_OPEN["uid_to_embed"].clear()
+    _ACCD_OPEN["chain_to_embed"].clear()
+    _ACCD_OPEN["embed_meta"].clear()
+    _ACCD_OPEN["occupied"] = set()
+    _ACCD_OPEN["next_id"] = 0
+
+    _accd_seed_singular_units()
+    # specials NOT seated on content board
+
+    vocab = {
+        "<pad>": _accd_special_tensor("0000"),
+        "<unk>": _accd_special_tensor("0001"),
+        "<reserved>": _accd_special_tensor("0002"),
+        "<start>": _accd_special_tensor("0003"),
+        "<end>": _accd_special_tensor("0004"),
+        "0000": _accd_special_tensor("0000"),
+        "0001": _accd_special_tensor("0001"),
+        "0002": _accd_special_tensor("0002"),
+        "0003": _accd_special_tensor("0003"),
+        "0004": _accd_special_tensor("0004"),
+    }
+    reverse = {v: k for k, v in vocab.items() if k.startswith("<")}
+
+    for record in records or []:
+        lang = record.get("lang") or "en"
+        for token in record.get("tokens") or []:
+            if not isinstance(token, dict):
+                continue
+            word = (token.get("normalized") or token.get("stem") or token.get("original") or "")
+            word = str(word).strip()
+            if not word:
+                continue
+            seat = letter_chain_id(word, lang)
+            if seat < 0:
+                continue
+            tid = _accd_content_tensor(seat)
+            vocab[word] = tid
+            reverse.setdefault(tid, word)
+
+    for ident, seat in _ACCD_OPEN["uid_to_embed"].items():
+        tid = _accd_content_tensor(seat)
+        vocab[f"uid:{ident}"] = tid
+        reverse.setdefault(tid, f"uid:{ident}")
+    for key, seat in _ACCD_OPEN["chain_to_embed"].items():
+        tid = _accd_content_tensor(seat)
+        vocab[f"chain:{key}"] = tid
+        reverse.setdefault(tid, f"chain:{key}")
+
+    content_n = int(_ACCD_OPEN["next_id"])
+    table_size = int(_ACCD_OPEN["content_tensor_base"]) + content_n
+    build_vocab._last_chain_to_word = dict(_ACCD_OPEN["chain_to_embed"])  # type: ignore
+    build_vocab._embed_rows = table_size  # type: ignore
+    build_vocab._accd_open = _ACCD_OPEN  # type: ignore
+    print(
+        "[open_chain] content_seats", content_n,
+        "tensor_table", table_size,
+        "specials", "0000-0004→tensor0-4",
+        "units", len(_ACCD_OPEN["uid_to_embed"]),
+        "chains", len(_ACCD_OPEN["chain_to_embed"]),
+    )
+    return vocab, reverse
+
+def encode_records(records, vocab, embed_rows: int = None):
+    """
+    Identity stream (debug): 0003, unit_uids..., 0004
+    Tensor stream (train):   special_tensor, content_tensor(seat)..., special_tensor
+    Returns tensor ids for MiniCompanionAI; also sets encode_records.last_identity.
+    """
+    encoded = []
+    identities = []
+    start_m, end_m, unk_m = "0003", "0004", "0001"
+    start_t = _accd_special_tensor(start_m)
+    end_t = _accd_special_tensor(end_m)
+    unk_t = _accd_special_tensor(unk_m)
+
+    for record in records or []:
+        lang = record.get("lang") or "en"
+        ids = [start_t]
+        ident_row = [start_m]
+        for token in record.get("tokens") or []:
+            if not isinstance(token, dict):
+                continue
+            word = (token.get("normalized") or token.get("stem") or token.get("original") or "")
+            word = str(word).strip()
+            if not word:
+                ids.append(unk_t)
+                ident_row.append(unk_m)
+                continue
+            units = _accd_units_for_token(word, lang)
+            if not units:
+                ids.append(unk_t)
+                ident_row.append(unk_m)
+                continue
+            uids = []
+            for unit_ident, surface in units:
+                if isinstance(unit_ident, int) and unit_ident >= 0:
+                    seat = _accd_seat_unit(
+                        unit_ident, kind="lang", surface=surface,
+                        id_index=unit_ident, preferred=unit_ident,
+                    )
+                    uids.append(unit_ident)
+                    ids.append(_accd_content_tensor(seat))
+                    ident_row.append(unit_ident)
+                else:
+                    kind = "code" if str(unit_ident).startswith("sym:") else "number"
+                    seat = _accd_seat_unit(
+                        unit_ident, kind=kind, surface=surface,
+                        id_index=None, preferred=None,
+                    )
+                    uids.append(unit_ident)
+                    ids.append(_accd_content_tensor(seat))
+                    # identity: keep negative marker for code, dig for numbers
+                    if str(unit_ident).startswith("sym:"):
+                        try:
+                            ident_row.append(int(str(unit_ident).split(":", 1)[1]))
+                        except Exception:
+                            ident_row.append(unit_ident)
+                    else:
+                        ident_row.append(unit_ident)
+            if len(uids) > 2:
+                _accd_register_chain(uids)
+        ids.append(end_t)
+        ident_row.append(end_m)
+        if len(ids) > 2:
+            encoded.append(ids)
+            identities.append(ident_row)
+
+    encode_records.last_identity = identities  # type: ignore
+    return encoded
+
+print("[open_chain] integrated: specials=0000-0004 markers only; content seats from 0; home identity 0003,7,14,12,4,0004")

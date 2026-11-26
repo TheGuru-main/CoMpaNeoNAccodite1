@@ -839,10 +839,12 @@ def train(
     # ENCODE
     # ----------------------------------------------------------------
 
+    # ACCD-OPEN-TABLE-SIZE: use open-chain table after build_vocab (not fixed 8192)
+    _open_rows = int(getattr(build_vocab, "_embed_rows", 0) or 0)
     encoded_docs = encode_records(
         records,
         vocab,
-        embed_rows=int(__import__("os").environ.get("ACCD_EMBED_ROWS", str(EMBED_ROWS))),
+        embed_rows=_open_rows if _open_rows >= 8 else None,
     )
 
     if not encoded_docs:
@@ -861,8 +863,17 @@ def train(
     # MODEL
     # ----------------------------------------------------------------
 
-    embed_rows = int(__import__("os").environ.get("ACCD_EMBED_ROWS", str(EMBED_ROWS)))
-    print(f"Letter-chain scheme: embed_rows={embed_rows} (home chain id example 714124)")
+    # ACCD-OPEN-TABLE-SIZE: clear fixed 8192 path for model
+    _open_rows = int(getattr(build_vocab, "_embed_rows", 0) or 0)
+    if _open_rows < 8:
+        raise RuntimeError(
+            "open-chain table missing after build_vocab — "
+            "ACCD-OPEN-CHAIN-INTEGRATE must define build_vocab._embed_rows"
+        )
+    embed_rows = _open_rows
+    import os as _os_accd
+    _os_accd.environ["ACCD_EMBED_ROWS"] = str(embed_rows)  # downstream readers see open size
+    print(f"Open-chain table: embed_rows={embed_rows} (specials 0-4 + content seats)")
     model = MiniCompanionAI(
         vocab_size=embed_rows,
     )

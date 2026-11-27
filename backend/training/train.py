@@ -1631,7 +1631,7 @@ def _accd_seed_singular_units():
                 markers = [(m, m) for m in v]
                 break
     if not markers:
-        syms = list(r"{}[]()<>+-*/%=&|^\~!?:;@#$\'\"`.,")
+        syms = list(r"{}[]()<>+-*/%=&|^\~!?:;@#$'\"`.,")
         markers = [(-(100 + i), ch) for i, ch in enumerate(syms)]
     special_ids = set(_ACCD_OPEN["special_id"])
     for mid, surface in markers:

@@ -873,7 +873,7 @@ def train(
     embed_rows = _open_rows
     import os as _os_accd
     _os_accd.environ["ACCD_EMBED_ROWS"] = str(embed_rows)  # downstream readers see open size
-    print(f"Open-chain table: embed_rows={embed_rows} (specials 0-4 + content seats)")
+    print(f"Open-chain table: embed_rows={embed_rows} (tokens 0+; markers 0000-0004 after content)")
     model = MiniCompanionAI(
         vocab_size=embed_rows,
     )
@@ -1532,15 +1532,19 @@ _ACCD_OPEN = {
         "0003": "start",
         "0004": "end",
     },
-    "special_tensor": {  # marker -> fixed tensor row 0..4 (not content)
-        "0000": 0,
-        "0001": 1,
-        "0002": 2,
-        "0003": 3,
-        "0004": 4,
-    },
-    "content_tensor_base": 5,  # content seat s → tensor 5+s
+    "special_tensor": None,  # filled after content: marker -> next_id+k (not 0-4)
+    "content_tensor_base": 0,  # training tokens: seat s -> tensor s
 }
+
+def _accd_bind_special_tensors():
+    """Specials = hardcoded 0000-0004. Tensor rows AFTER content seats (never 0-4 as specials)."""
+    base = int(_ACCD_OPEN["next_id"])
+    st = {}
+    for k, marker in enumerate(["0000", "0001", "0002", "0003", "0004"]):
+        st[marker] = base + k
+    _ACCD_OPEN["special_tensor"] = st
+    return st
+
 
 def _accd_probe_seat(preferred=None):
     occ = _ACCD_OPEN["occupied"]
@@ -1587,7 +1591,10 @@ def _accd_content_tensor(seat: int) -> int:
     return int(_ACCD_OPEN["content_tensor_base"]) + int(seat)
 
 def _accd_special_tensor(marker: str) -> int:
-    return int(_ACCD_OPEN["special_tensor"][marker])
+    st = _ACCD_OPEN.get("special_tensor")
+    if not st:
+        st = _accd_bind_special_tensors()
+    return int(st[marker])
 
 def _accd_seed_singular_units():
     T = _accd_import_tokenizer()
@@ -1624,7 +1631,7 @@ def _accd_seed_singular_units():
                 markers = [(m, m) for m in v]
                 break
     if not markers:
-        syms = list("{}[]()<>+-*/%=&|^\~!?:;@#$\\'\"`.,")
+        syms = list(r"{}[]()<>+-*/%=&|^\~!?:;@#$\'\"`.,")
         markers = [(-(100 + i), ch) for i, ch in enumerate(syms)]
     special_ids = set(_ACCD_OPEN["special_id"])
     for mid, surface in markers:
@@ -1765,7 +1772,8 @@ def build_vocab(records, embed_rows: int = None):
     _ACCD_OPEN["next_id"] = 0
 
     _accd_seed_singular_units()
-    # specials NOT seated on content board
+    # specials: hardcoded 0000-0004 only; tensor AFTER content (not rows 0-4)
+    _accd_bind_special_tensors()
 
     vocab = {
         "<pad>": _accd_special_tensor("0000"),
@@ -1807,7 +1815,8 @@ def build_vocab(records, embed_rows: int = None):
         reverse.setdefault(tid, f"chain:{key}")
 
     content_n = int(_ACCD_OPEN["next_id"])
-    table_size = int(_ACCD_OPEN["content_tensor_base"]) + content_n
+    # content 0..content_n-1; specials next_id..next_id+4
+    table_size = content_n + 5
     build_vocab._last_chain_to_word = dict(_ACCD_OPEN["chain_to_embed"])  # type: ignore
     build_vocab._embed_rows = table_size  # type: ignore
     build_vocab._accd_open = _ACCD_OPEN  # type: ignore

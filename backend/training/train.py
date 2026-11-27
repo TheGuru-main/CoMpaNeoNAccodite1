@@ -1823,7 +1823,7 @@ def build_vocab(records, embed_rows: int = None):
     print(
         "[open_chain] content_seats", content_n,
         "tensor_table", table_size,
-        "specials", "0000-0004→tensor0-4",
+        "specials", "0000-0004 after content",
         "units", len(_ACCD_OPEN["uid_to_embed"]),
         "chains", len(_ACCD_OPEN["chain_to_embed"]),
     )
